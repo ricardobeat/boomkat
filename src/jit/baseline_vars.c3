@@ -65,6 +65,8 @@ fn VarLayout* var_layout() @private {
 fn bool is_var_op(Opcode op) {
     switch (op) {
         case INC_VAR:
+        case INC_GLOBAL:
+        case DEC_GLOBAL:
         case RESOLVEVAR:
         case THROW_UNRESOLVED:
         case PUTGLOBAL:
@@ -86,6 +88,11 @@ fn bool Asm.emit_var_access(&self, bool has_ic, long ic, long vic, bool consts_f
         case INC_VAR:
             if (!has_ic) return false;
             self.emit_inc_var(w.a, vic);
+        case INC_GLOBAL:
+        case DEC_GLOBAL:
+            if (!has_ic) return false;
+            self.global_store_slot(vic);
+            self.emit_step_slot(w.a, w.op == INC_GLOBAL ? 1 : -1);
         case RESOLVEVAR:
             if (!has_ic) return false;
             self.emit_resolve_var(w.a, vic);
@@ -206,10 +213,17 @@ fn void Asm.emit_inc_var(&self, uint ra, long vic) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, l.vic_flags);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, l.accessor_mask | l.writable_mask);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, l.writable_mask));
+    self.emit_step_slot(ra, 1);
+}
+
+// Add `step` to the fastint in the slot at R0, for the slot and register `ra`: th_inc_var's
+// and th_inc_global_impl's arithmetic, with the slow path for any other value or result.
+fn void Asm.emit_step_slot(&self, uint ra, long step) {
+    void* c = self.c;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R0, 0);
     self.guard_int(R1);
     sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 16);
-    sljit_emit_op2(c, SLJIT_ADD | SLJIT_SET_OVERFLOW, R1, 0, R1, 0, SLJIT_IMM, 1L << 16);
+    sljit_emit_op2(c, SLJIT_ADD | SLJIT_SET_OVERFLOW, R1, 0, R1, 0, SLJIT_IMM, step << 16);
     self.call.add(sljit_emit_jump(c, SLJIT_OVERFLOW));
     self.box_shifted(R1);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R1, 0);
@@ -251,21 +265,26 @@ fn void Asm.emit_throw_unresolved(&self, uint ra) {
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
 }
 
-// PUTGLOBAL as th_putglobal: a writable non-configurable data global (the
-// entry says so), the value moving out of register `rv`.
-fn void Asm.emit_put_global(&self, uint rv, long vic) {
+// R0 = the slot of the global the entry `vic` caches, R2 the entry: a writable non-configurable
+// data global (the entry says so) while the recycle epoch is the one it was filled under, as
+// th_global_ic_hit and the handlers that store through it test.
+fn void Asm.global_store_slot(&self, long vic) {
     void* c = self.c;
     Layout* l = self.lay;
-    VarLayout* v = var_layout();
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, vic);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.vic_epoch);
     sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | self.heap, l.heap_epoch);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R1, 0));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, l.vic_slot);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, v.vic_store_ok);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, var_layout().vic_store_ok);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R2, l.vic_bindings);
+}
+
+// PUTGLOBAL as th_putglobal, the value moving out of register `rv`.
+fn void Asm.emit_put_global(&self, uint rv, long vic) {
+    self.global_store_slot(vic);
+    sljit_emit_op1(self.c, SLJIT_MOV, R1, 0, SLJIT_MEM | R2, self.lay.vic_bindings);
     self.store_slot_moved(rv);
     self.store(rv, SLJIT_IMM, K_UNDEF);
 }
