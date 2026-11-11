@@ -827,11 +827,31 @@ fn void Asm.emit_return_body(&self) {
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, m | self.heap, l.heap_gc_phase, SLJIT_MOV_U8);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
-    // th_frame_is_replaceable, with no tracked registers.
+    // th_frame_is_replaceable, with no tracked registers, or a base
+    // constructor's frame as th_return_general pops it.
+    bool constructs = !self.f.is_arrow() && !self.f.is_derived_ctor() && !self.f.is_generator();
     self.mov(R4, 0, m | ds, l.ds_act);
     self.mov(R1, 0, m | R4, k.act_flags, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~(long)vm::TH_LEAN_FRAME_FLAGS & 0xFFFFFFFF);
-    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    void* lean_frame = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0);
+    helper.add(constructs ? sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_CONSTRUCT) : sljit_emit_jump(c, SLJIT_JUMP));
+    if (constructs) {
+        // [[Construct]] answers `this` unless the body returned an object (ES2015 §9.2.2 step 13).
+        sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
+        void* returned_object = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT);
+        self.mov(R0, 0, m | R4, l.act_this);
+        sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
+        helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT));
+        self.mov(sp, SUB_VALUE_OFF, R0, 0);
+        sljit_set_label(returned_object, sljit_emit_label(c));
+        // Idempotent, so a later decline to vm::jit_ret records it again harmlessly.
+        self.mov(R0, 0, R4, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::record_constructor_capacity);
+        self.mov(R0, 0, sp, SUB_VALUE_OFF);
+        self.mov(R4, 0, m | ds, l.ds_act);
+        self.mov(R3, 0, m | ds, k.ds_vm);
+    }
+    sljit_set_label(lean_frame, sljit_emit_label(c));
     self.mov(R1, 0, m | R4, k.act_cat);
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, m | R4, k.act_forin);
