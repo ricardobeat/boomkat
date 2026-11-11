@@ -178,6 +178,17 @@ fn bool Early.run(&self, uint root, ParseOptions opts = {}) {
     return !self.failed;
 }
 
+// Check the statements of an ordinary function's body before the parser
+// discards them. The function's own node is checked with the code around it.
+fn bool Early.body(&self, uint[] stmts, bool strict) {
+    self.ctx = { .strict = strict };
+    foreach (n : stmts) {
+        if (self.failed) break;
+        self.node(n);
+    }
+    return !self.failed;
+}
+
 fn void Early.list(&self, uint list) {
     uint n = self.ast.list_len(list);
     for (uint i = 0; i < n && !self.failed; i++) self.node(self.ast.list_item(list, i));

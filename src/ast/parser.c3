@@ -92,6 +92,8 @@ struct Parser {
     bool is_module;
     // Parse deferrable bodies in full for validation but discard their nodes.
     bool defer_bodies;
+    // Checks a recorded body's nodes before they are discarded.
+    Early* early;
     // `in` is not an operator while a for-statement head's init expression parses.
     bool no_in;
     // The class being parsed sits in sloppy code; see Parser.strict_thunk.

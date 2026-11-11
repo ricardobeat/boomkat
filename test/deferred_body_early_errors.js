@@ -133,6 +133,23 @@ accepts("continue to an outer label of a chain", "function f(){ a: b: while (0) 
 accepts("annex B if-function with a later let", "function f(){ if (1) function g(){} let g; }");
 accepts("annex B if-function with a later class", "function f(){ if (1) function g(){} class g {} }");
 
+// ---- a strict function nested in a deferred sloppy body ----
+// The outer body is recorded and its nodes dropped, so the inner function's
+// strict-mode rules have to be checked before they go.
+rejects("nested strict: with", "function outer(){ function inner(){ 'use strict'; with (a) {} } }");
+rejects("nested strict: eval as a binding", "function outer(){ function inner(){ 'use strict'; var eval = 1; } }");
+rejects("nested strict: assignment to arguments", "function outer(){ function inner(){ 'use strict'; arguments = 1; } }");
+rejects("nested strict: delete of a name", "function outer(){ function inner(){ 'use strict'; delete x; } }");
+rejects("nested strict: legacy octal literal", "function outer(){ function inner(){ 'use strict'; 010; } }");
+rejects("nested strict: octal escape", "function outer(){ function inner(){ 'use strict'; '\\010'; } }");
+rejects("nested strict: yield as a binding", "function outer(){ function inner(){ 'use strict'; var yield = 1; } }");
+rejects("nested strict: duplicate parameters", "function outer(){ function inner(){ 'use strict'; function f(a, a) {} } }");
+rejects("nested strict: reserved word as a label", "function outer(){ function inner(){ 'use strict'; let: 1; } }");
+rejects("nested strict: update of eval", "function outer(){ function inner(){ 'use strict'; eval++; } }");
+rejects("nested strict: eval as a pattern target", "function outer(){ function inner(){ 'use strict'; ({ eval } = {}); } }");
+rejects("nested strict: reserved function name", "function outer(){ function inner(){ 'use strict'; function interface() {} } }");
+accepts("the same forms in a nested sloppy function", "function outer(){ function inner(){ var eval = 1; delete eval; 010; with (inner) {} } }");
+
 // ---- sanity: valid deferred bodies are still accepted ----
 accepts("valid uncalled body", "function f(){ let x; return x + 1; }");
 accepts("valid nested capture", "var n = 0; function outer(){ function inner(){ n++; } return inner; }");

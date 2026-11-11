@@ -67,6 +67,10 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
     c.lexer = lexer::lexer_init(source, heap);
     c.tree.init(source);
     if (c.src_buf != null) c.tree.shared_line_starts = c.src_buf.line_starts;
+    Early early;
+    early.init(&c.tree);
+    defer early.free();
+    c.parser.early = &early;
     uint? root = parse_program(&c.parser, &c.tree, &c.lexer, opts);
     if (catch root) return c;
     $if $feat(FRONTEND_STATS):
@@ -80,9 +84,6 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
         return c;
     }
     c.use = true;
-    Early early;
-    early.init(&c.tree);
-    defer early.free();
     if (!early.run(root, opts) || !early.conflicts(&c.res)) {
         c.parser.fail_at(early.err_pos, early.error_message());
         c.use = false;

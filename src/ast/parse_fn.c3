@@ -298,6 +298,9 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
         // Keep only the references and dynamic-scope facts its enclosing compile
         // needs. The body re-parses this source on first call.
         char body_flags = self.dv_flags;
+        if (!self.early.body(self.scratch.data[mark:(sz)self.scratch.len - mark], self.ctx.strict)) {
+            return self.fail_at(self.early.err_pos, self.early.error_message())~;
+        }
         self.ast.truncate(amark);
         self.scratch.truncate(mark);
         uint nrefs = self.dv_unique_refs(ref0, (uint)self.dv_refs.len - ref0);
