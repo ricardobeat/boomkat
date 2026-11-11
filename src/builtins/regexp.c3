@@ -2761,14 +2761,26 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
 // Own numeric `lastIndex` values are common on genuine RegExp objects. Resolve
 // the slot each time: ToInteger may run script that changes the value or its
 // writable attribute, so neither a slot pointer nor its flags survive it.
+// The slot of `rx`'s own lastIndex when it is a data property (a writable
+// one if `writable`), else -1. A RegExp still on the shape
+// regexp_init_last_index gives it holds a writable one in slot 0.
+fn int regexp_last_index_slot(Heap* heap, HObject* rx, HString* key, bool writable) @inline {
+    if (rx.shape_id == heap.regexp_shape && heap.regexp_shape != 0
+        && heap.regexp_shape_epoch == heap.shape_recycle_epoch
+        && key == heap.str(heap::BuiltinStr.LAST_INDEX)) return 0;
+    int idx = rx.find_prop_idx((void*)key, heap);
+    if (idx < 0) return -1;
+    hobject::PropFlags flags = rx.get_prop_flags((uint)idx, heap);
+    if (flags.is_accessor || (writable && !flags.writable)) return -1;
+    return idx;
+}
+
 fn bool regexp_fast_last_index_read(BuiltinContext* ctx, HObject* rx,
                                     HString* key, TVal* value) {
     if (rx == null || rx.get_class() != hobject::ObjClass.REGEXP
         || rx.is_proxy()) return false;
-    int idx = rx.find_prop_idx((void*)key, ctx.heap);
+    int idx = regexp_last_index_slot(ctx.heap, rx, key, false);
     if (idx < 0) return false;
-    hobject::PropFlags flags = rx.get_prop_flags((uint)idx, ctx.heap);
-    if (flags.is_accessor) return false;
     TVal current = rx.prop_values()[idx].get();
     if (!current.is_fastint()) return false;
     *value = current;
@@ -2780,10 +2792,8 @@ fn bool regexp_fast_last_index_write(BuiltinContext* ctx, HObject* rx,
                                      HString* key, TVal* value) {
     if (rx == null || rx.get_class() != hobject::ObjClass.REGEXP
         || rx.is_proxy()) return false;
-    int idx = rx.find_prop_idx((void*)key, ctx.heap);
+    int idx = regexp_last_index_slot(ctx.heap, rx, key, true);
     if (idx < 0) return false;
-    hobject::PropFlags flags = rx.get_prop_flags((uint)idx, ctx.heap);
-    if (flags.is_accessor || !flags.writable) return false;
     ctx.heap.store_slot_ref(rx, &rx.prop_values()[idx], value);
     gcprofile::gcprof_regexp_lastindex_fast_write();
     return true;
