@@ -191,9 +191,13 @@ struct OptInlineSite {
     uint* child_of;
     // One case of a polymorphic call (OptBuild.poly_sites): the body runs when the callee is a
     // closure of cf, after a test of the callee (fl_kind 5) that otherwise goes on to the next
-    // case, poly_next minus one, or after the last to the call itself.
+    // case, poly_next minus one, or after the last to the call itself. Each case's body starts a
+    // block of its own: the first test notes the read that put the callee in its register for all of
+    // them (method_read, null when there is none).
     bool poly;
     uint poly_next;
+    CompiledFunction* method_read;
+    uint method_read_pc;
 }
 
 struct OptBuild {
@@ -1647,40 +1651,55 @@ fn uint OptBuild.copied(&self, uint n) {
 }
 
 // Give the guard `chk` of an inlined method call at `callee_reg` the function object its method
-// read names (method_constant), and note a receiver that read already proved an object (bit 3).
-fn void OptBuild.settle_method(&self, uint chk, uint callee_reg, CompiledFunction* cf) {
+// read names (method_constant), and note a receiver that read already proved an object (bit 3). A
+// case of a polymorphic call `s` reads it where its first test noted it.
+fn void OptBuild.settle_method(&self, uint chk, uint callee_reg, CompiledFunction* cf, OptInlineSite* s = null) {
     bool proven;
-    self.g.nodes[chk].key = self.method_constant(callee_reg, cf, &proven);
-    if (self.g.nodes[chk].key != null && proven) self.g.nodes[chk].cc |= 8;
+    OptNode* n = &self.g.nodes[chk];
+    n.key = self.method_constant(callee_reg, cf, &proven);
+    if (n.key == null && s != null && s.poly && s.method_read != null) n.key = self.read_constant(s.method_read, s.method_read_pc, cf);
+    if (n.key != null && proven) n.cc |= 8;
 }
 
-// The function object in the callee register of a method call about to be inlined, when the read
-// that defined the register is an inherited one whose cache names the property's owner under the
-// prototype epoch as it stands, and that function is a closure of `cf` the call's guard would pass
-// now; else null. The guard then compares the register with it. It is observed, so its death moves
-// the epoch: while the epoch stands, its address names it alone. `read_from_receiver`: the read's
-// receiver node is the call's.
-fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* cf, bool* read_from_receiver) {
+// The inherited read (function `f`, pc `pc`) that defined the callee register of a method call:
+// the register's node, through the copies that moved it there, or the read into its slot.
+// `read_from_receiver`: the read's receiver node is the call's.
+fn bool OptBuild.method_read(&self, uint callee_reg, CompiledFunction** f, uint* pc, bool* read_from_receiver) {
     *read_from_receiver = false;
-    if (callee_reg + 1 >= self.nregs) return null;
-    CompiledFunction* f;
-    uint pc;
-    // The register's node, through the copies that moved it there, or the read into its slot.
+    if (callee_reg + 1 >= self.nregs) return false;
     uint n = self.copied(self.cur[callee_reg].node);
     if (n != NO_NODE) {
         OptNode* load = &self.g.nodes[n];
-        if (load.op != OptOp.LOAD_FIELD || load.cc != 2) return null;
-        f = self.g.fns[load.fidx].f;
-        pc = load.pc;
+        if (load.op != OptOp.LOAD_FIELD || load.cc != 2) return false;
+        *f = self.g.fns[load.fidx].f;
+        *pc = load.pc;
         // The read proved its receiver an object: the call's, when that is the same node.
         *read_from_receiver = load.b != NO_NODE && self.copied(load.b) == self.copied(self.cur[callee_reg + 1].node);
-    } else {
-        uint key = self.load_def[callee_reg];
-        uint site = key >> 24;
-        if (key == NO_NODE || site > (uint)self.sites.len()) return null;
-        f = site == 0 ? self.f : self.sites[(sz)site - 1].cf;
-        pc = key & 0xFFFFFF;
+        return true;
     }
+    uint key = self.load_def[callee_reg];
+    uint site = key >> 24;
+    if (key == NO_NODE || site > (uint)self.sites.len()) return false;
+    *f = site == 0 ? self.f : self.sites[(sz)site - 1].cf;
+    *pc = key & 0xFFFFFF;
+    return true;
+}
+
+// The function object in the callee register of a method call about to be inlined, when the read
+// that defined the register (method_read) names one under the prototype epoch as it stands
+// (read_constant); else null.
+fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* cf, bool* read_from_receiver) {
+    CompiledFunction* f;
+    uint pc;
+    if (!self.method_read(callee_reg, &f, &pc, read_from_receiver)) return null;
+    return self.read_constant(f, pc, cf);
+}
+
+// A closure of `cf` the call's guard would pass now that the inherited read at `pc` of `f` reads
+// under the prototype epoch as it stands, of any receiver its cache entry settled: the one it holds
+// and those it retained (hobject::ICProtoSet). Else null. The guard compares the callee with it.
+// It is observed, so its death moves the epoch: while the epoch stands, its address names it alone.
+fn HObject* OptBuild.read_constant(&self, CompiledFunction* f, uint pc, CompiledFunction* cf) {
     if (pc >= f.code_count || f.ic_entries == null) return null;
     Opcode op = f.code[pc].op;
     if (op != Opcode.GETPROPC && op != Opcode.GETPROPC_CACHED && op != Opcode.GETTHISC) return null;
@@ -1690,7 +1709,14 @@ fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* c
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.next_pc - 1];
     hobject::ICChainEpoch* e = opt_epoch_entry(self.h, ic);
     if (e == null) return null;
-    return constant_callee(e.owner.prop_values()[ic.prop_idx].get(), cf);
+    HObject* fo = constant_callee(e.owner.prop_values()[ic.prop_idx].get(), cf);
+    hobject::ICProtoSet* set = ic.chain.protos;
+    if (fo != null || set == null || set.epoch != e.value) return fo;
+    for (uint k = 0; k < set.count && fo == null; k++) {
+        hobject::ICProtoCase* other = &set.cases[k];
+        if (other.owner != null && other.idx < other.owner.prop_count) fo = constant_callee(other.owner.prop_values()[other.idx].get(), cf);
+    }
+    return fo;
 }
 
 // `v` when it is a closure of `cf` that CHECK_CALLEE's tests pass, observed so that its death moves
@@ -3416,7 +3442,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
     }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     self.g.nodes[chk].cc = s.construct ? 2 : (s.method ? 1 : 0);
-    if (s.method && !s.forward) self.settle_method(chk, callee_reg, s.cf);
+    if (s.method && !s.forward) self.settle_method(chk, callee_reg, s.cf, s);
     self.snapshot(chk);
     if (s.forward) {
         bool pending = false;
@@ -3862,7 +3888,20 @@ fn bool OptBuild.callee_test(&self) {
         // The test still ends the block.
         return self.terminator(OptOp.JUMP);
     }
-    return self.terminator(OptOp.BRANCH_CALLEE, node, NO_NODE, (long)(usz)s.cf);
+    // The first test sees the read of the callee; the cases' bodies, and the later tests, start
+    // blocks of their own.
+    CompiledFunction* f;
+    uint pc;
+    bool proven;
+    if (s.method && self.method_read(s.base - 2, &f, &pc, &proven)) {
+        for (uint c = si + 1; c != 0; c = self.sites[(sz)c - 1].poly_next) {
+            self.sites[(sz)c - 1].method_read = f;
+            self.sites[(sz)c - 1].method_read_pc = pc;
+        }
+    }
+    uint t = self.add(OptOp.BRANCH_CALLEE, OptRep.NONE, node, NO_NODE, (long)(usz)s.cf);
+    if (s.method && s.method_read != null) self.g.nodes[t].key = self.read_constant(s.method_read, s.method_read_pc, s.cf);
+    return true;
 }
 
 // Lower instruction `self.insn`.
