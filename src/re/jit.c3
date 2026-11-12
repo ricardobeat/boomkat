@@ -27,6 +27,12 @@ import boomkat::jit;
 import boomkat::re_bindings;
 import boomkat::re_native;
 import std::core::mem;
+import std::io;
+
+// Set by the CLI's --jit-dump-feedback: each compiled body's address range goes to stderr as a
+// `map re#N` line of the code map scripts/jit_profile.py reads (`w` marks a wide-subject body).
+bool print_code_map;
+uint bodies_compiled;
 
 // A compiled body: the program and the run, over the position to start at.
 alias ReJitFn = fn int(re_native::ReNative* n, re_native::ReExec* e, usz start);
@@ -1209,7 +1215,12 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
         }
         jit::sljit_set_label(fix.jump, label);
     }
-    return jit::sljit_generate_code(c, 0, null);
+    void* code = jit::sljit_generate_code(c, 0, null);
+    if (code != null && print_code_map) {
+        usz end = (usz)code + jit::sljit_shim_code_size(c);
+        io::eprintfn("map re#%d%s n%d %x %x %x %x", bodies_compiled++, wide ? "w" : "", n.prog.insns.len, (usz)code, end, end, end);
+    }
+    return code;
 }
 
 // ---------------------------------------------------------------------------
