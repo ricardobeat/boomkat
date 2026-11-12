@@ -2976,7 +2976,7 @@ fn String OptGraph.reg_blocker(&self, CompiledFunction* f, bool moves = false) {
             case MOD_I32: case I32_TO_F64: case F64_TO_I32: case ADD_F64: case SUB_F64: case MUL_F64:
             case DIV_F64: case NEG_F64: case CHECK_CALLEE: case LOAD_GLOBAL: case COPY_WINDOW:
             case STORE_CONST: case COMPARE: case COMPARE_WINDOW: case LNOT: case EXIT: case JUMP: case BRANCH:
-            case BRANCH_TRUTH: case BRANCH_WINDOW: case CALL_REG:
+            case BRANCH_TRUTH: case BRANCH_WINDOW: case CALL_REG: case LOAD_ELEM: case STORE_ELEM: case CHECK_BUILTIN:
                 break;
             // The function's own scoped read takes the running record's scope (Asm.var_slot).
             case LOAD_VAR:
