@@ -3457,8 +3457,9 @@ fn bool OptBuild.lower_op(&self) {
             if (rb >= self.nregs) return self.generic();
             // A property read's result still in the window may be wanted as an object node.
             if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_object(rb);
-            // A window value moved within an inlined body, typically an argument of a nested call.
-            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && self.cur_fn != 0) {
+            // A window value moved as it is, typically an argument of a call: a copy, which leaves
+            // the values held in registers in place where baseline code would not.
+            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) {
                 if (!self.window_copy(ra, 2)) return false;
                 self.same_facts(ra, rb);
                 return true;
