@@ -1347,13 +1347,11 @@ struct Heap {
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
     uint                shape_capacity;
-    // Counts how many times a shape id has been handed back out for reuse.
-    // A variable inline cache stores the value it saw and compares it instead
-    // of loading the per-shape generation, which lets it skip a dependent load
-    // into the shapes table on every access. Property storage growing is the
-    // other reason a shape generation moves, and that one a variable cache does
-    // not care about, because it addresses values by index and re-reads the
-    // base pointer every time.
+    // The validity of every variable inline cache, which stores the value it saw
+    // and compares it instead of loading the generation of each shape it names.
+    // It advances when retired shape ids become reusable (purge_retired_shapes),
+    // when a bound object's values move (HObject.layout_moved), and before eval
+    // adds a binding (invalidate_var_ic_entries).
     uint                shape_recycle_epoch;
     // Advanced only by mutations to prototype objects observed by read caches.
     ulong               prototype_epoch;
@@ -2150,10 +2148,6 @@ fn uint Heap.alloc_shape_slot(&self) {
         self.shape_free_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
         self.shape_reuse_gen = ++self.shape_gen_clock;
         self.shapes[id] = null;
-        // This id is about to name a different shape, so every variable cache
-        // holding it is now stale even though the id itself is unchanged.
-        self.shape_recycle_epoch++;
-        $if $feat(OP_PROFILE): hobject::opprof_epoch[0]++; $endif
         return id;
     }
     self.shape_reuse_gen = 0;
@@ -2255,6 +2249,10 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
         }
     }
     $if $feat(SLJIT): jit::opt_purge_shapes(self); $endif
+    // A variable cache compares the shape ids it holds with no generation, so the epoch it was
+    // filled under ends with the ids it may name, once per batch rather than once per reuse.
+    self.shape_recycle_epoch++;
+    $if $feat(OP_PROFILE): hobject::opprof_epoch[0]++; $endif
     while (self.shape_retired_head != SHAPE_FREE_END) {
         uint id = self.shape_retired_head;
         self.shape_retired_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
