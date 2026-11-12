@@ -608,7 +608,7 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     if (obj == null) return JIT_CALL_SLOW;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return JIT_CALL_SLOW;
-    if (site != null && obj.prop_count <= hobject::INLINE_PROPS && obj.prop_alloc == null && obj.prop_hash == null
+    if (site != null && obj.prop_count <= hobject::INLINE_PROPS && !obj.has_prop_block() && obj.prop_hash == null
         && jit_new_arm(vm.heap, ctor, target, ic, obj.prototype, obj.prop_count, obj.shape_id, hobject::INLINE_PROPS, site)) {
         for (uint j = 0; j < obj.prop_count; j++) {
             site.arg[j] = target.code[j].a < insn.c ? target.code[j].a : jit::NEW_ARG_UNDEF;

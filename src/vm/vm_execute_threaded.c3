@@ -20,7 +20,7 @@ import boomkat::builtins;
 //   emptyloop:     INC_GLOBAL + GETVAR + JMP_LT
 //
 // The global-slot ops (GETGLOBAL/PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL) thread their
-// perf-all VarRef fast path: one prop_alloc pointer compare + a direct slot
+// perf-all VarRef fast path: one props pointer compare + a direct slot
 // load/store, no shape-id load, no env walk. Any IC miss / slow path bails to
 // the switch.
 //

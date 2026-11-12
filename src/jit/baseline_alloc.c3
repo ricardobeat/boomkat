@@ -146,7 +146,9 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_count, SLJIT_IMM, (long)p.prop_count);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_size, SLJIT_IMM, (long)p.array_size);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_used, SLJIT_IMM, (long)p.array_used);
-    sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_prop_alloc, SLJIT_IMM, 0);
+    // HObject.init_header: the inline slots, after the words GcBits.inline_words counts.
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R0, 0, SLJIT_IMM, (long)((types::GcBits)p.gc).inline_words * 8);
+    sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_props, R1, 0);
     sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_prop_hash, SLJIT_IMM, 0);
     if (p.array_inline != 0) {
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_len, SLJIT_IMM, (long)p.array_used);

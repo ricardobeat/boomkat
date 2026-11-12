@@ -130,7 +130,7 @@ fn void env_record_set_gray_queued(void* env_ptr, bool queued) {
 
 // PropValue slots carried inside the object allocation, after HObjectBase and
 // any subtype fields. An object with no more than this many named properties,
-// which is the common case, needs no separate prop_alloc.
+// which is the common case, needs no out-of-line block.
 const uint INLINE_PROPS = 4;
 const uint COMPACT_INLINE_PROPS = 2;
 const uint SHAPED_INLINE_MAX_PROPS = 8;
@@ -1125,7 +1125,9 @@ struct HObjectBase {
     uint          prop_count;
     uint          array_size;
     uint          array_used;
-    void*         prop_alloc;
+    // Where the property values are, the dense part after them: the inline slots
+    // (inline_props_ptr) or the out-of-line block (has_prop_block).
+    void*         props;
     PropHashInfo* prop_hash;
 }
 
@@ -1417,10 +1419,13 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
 // HObject: property allocation helpers
 // ============================================================================
 
-// Size of the external block in prop_alloc. Embedded short array storage is
-// part of the object allocation and is not included here.
+// Whether the property values live in an out-of-line block rather than in the object's own slots.
+fn bool HObject.has_prop_block(&self) @inline => self.props != (void*)self.inline_props_ptr();
+
+// Size of the out-of-line block. Embedded short array storage is part of the
+// object allocation and is not included here.
 fn usz HObject.prop_alloc_size(&self) {
-    if (self.prop_alloc == null) {
+    if (!self.has_prop_block()) {
         return (usz)self.prop_capacity * PropValue::size;
     }
     usz size = (usz)self.prop_capacity * PropValue::size;
@@ -1428,8 +1433,8 @@ fn usz HObject.prop_alloc_size(&self) {
     return size;
 }
 
-// The inline prop storage at the end of the object allocation, valid only
-// while prop_alloc is null.
+// The inline prop storage at the end of the object allocation, where props
+// points while the object has no block.
 fn PropValue* HObject.inline_props_ptr(&self) @inline {
     return (PropValue*)((char*)self + (usz)self.gc.inline_words * 8);
 }
@@ -1444,23 +1449,16 @@ fn uint inline_words_for_class(ObjClass cls) @inline {
     return (uint)((alloc_size_for_class(cls) - inline_bytes) / 8);
 }
 
-// The property values array: inline storage while prop_alloc is null, and the
-// heap-allocated block once it is not.
-fn PropValue* HObject.prop_values(&self) @inline {
-    if (self.prop_alloc != null) return (PropValue*)self.prop_alloc;
-    return self.inline_props_ptr();
-}
+// The property values array: inline storage or the out-of-line block.
+fn PropValue* HObject.prop_values(&self) @inline => (PropValue*)self.props;
 
-// The dense array part, which follows the property values inside prop_alloc.
-// A short literal uses the trailing bytes of its header until growth or
-// a named-property insertion moves both parts into prop_alloc.
+// The dense array part, which follows the property values. A short literal
+// uses the trailing bytes of its header, where an array's props points, until
+// growth or a named-property insertion moves both parts into a block.
 fn PropValue* HObject.array_part(&self) @inline {
     if (self.array_size == 0) return null;
-    if (self.prop_alloc == null) {
-        if (self.array_inline_capacity() > 0) return (PropValue*)((char*)self + OBJ_SIZE_ARRAY);
-        return null;
-    }
-    return (PropValue*)((char*)self.prop_alloc + (usz)self.prop_capacity * PropValue::size);
+    if (!self.has_prop_block() && self.array_inline_capacity() == 0) return null;
+    return (PropValue*)((char*)self.props + (usz)self.prop_capacity * PropValue::size);
 }
 
 // ============================================================================
@@ -1551,14 +1549,14 @@ fn void HObject.seal(&self, heap::Heap* h, bool frozen = false) {
     // must keep matching the size it was allocated with. If the shrink fails
     // (an oversized object at OOM), array_size stays so the block still
     // matches, and the abandoned slots read as undefined.
-    if (self.prop_alloc != null) {
+    if (self.has_prop_block()) {
         usz old_size = self.prop_alloc_size();
         usz new_size = (usz)self.prop_capacity * PropValue::size;
         void* new_raw = h.pool_alloc(new_size) ?? null;
         if (new_raw != null) {
-            mem::copy(new_raw, self.prop_alloc, (sz)((usz)self.prop_count * PropValue::size));
-            h.pool_free(self.prop_alloc, old_size);
-            self.prop_alloc = new_raw;
+            mem::copy(new_raw, self.props, (sz)((usz)self.prop_count * PropValue::size));
+            h.pool_free(self.props, old_size);
+            self.props = new_raw;
             self.array_size = 0;
             self.layout_moved(h);
         }
@@ -2643,7 +2641,7 @@ fn bool HObject.move_dense(&self, uint to, uint from, uint count, heap::Heap* h)
 // named property moves the array off its header.
 fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capacity,
                                       heap::Heap* h) {
-    if (self.flags.obj_class != ObjClass.ARRAY || self.prop_alloc != null
+    if (self.flags.obj_class != ObjClass.ARRAY || self.has_prop_block()
         || self.prop_count != 0 || self.prop_capacity != 0 || self.array_size != 0) {
         return false;
     }
@@ -2659,7 +2657,7 @@ fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capa
     if (catch err = raw) return false;
     mem::clear(raw, (sz)total_bytes);
 
-    self.prop_alloc = raw;
+    self.props = raw;
     self.prop_capacity = prop_capacity;
     self.array_size = array_capacity;
     PropValue* slots = self.array_part();
@@ -2670,7 +2668,7 @@ fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capa
 // Reserve backing storage without making any properties visible.
 fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
     if (cap <= self.prop_capacity) return;
-    if (self.prop_count != 0 || self.prop_alloc != null || self.array_size != 0) {
+    if (self.prop_count != 0 || self.has_prop_block() || self.array_size != 0) {
         self.grow_props(h, cap);
         return;
     }
@@ -2678,7 +2676,7 @@ fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
     void* raw = h.pool_alloc(bytes) ?? null;
     if (raw == null) return;
     mem::clear(raw, (sz)bytes);
-    self.prop_alloc = raw;
+    self.props = raw;
     self.prop_capacity = cap;
 }
 
@@ -2697,7 +2695,7 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
     usz new_size = new_prop_bytes + (usz)self.array_size * TVal::size;
 
     void* new_raw;
-    if (self.prop_alloc == null) {
+    if (!self.has_prop_block()) {
         // Leaving inline storage: allocate, then copy the inline data across.
         new_raw = h.pool_alloc(new_size) ?? null;
         if (new_raw == null) return;
@@ -2717,20 +2715,20 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
         usz old_prop_bytes = (usz)self.prop_capacity * PropValue::size;
         new_raw = h.pool_alloc(new_size) ?? null;
         if (new_raw == null) return;
-        mem::copy(new_raw, self.prop_alloc, (sz)old_prop_bytes);
+        mem::copy(new_raw, self.props, (sz)old_prop_bytes);
         if (self.array_size > 0) {
             mem::copy((char*)new_raw + new_prop_bytes,
-                      (char*)self.prop_alloc + old_prop_bytes,
+                      (char*)self.props + old_prop_bytes,
                       (sz)((usz)self.array_size * TVal::size));
         }
-        h.pool_free(self.prop_alloc, old_size);
+        h.pool_free(self.props, old_size);
     }
 
-    self.prop_alloc = new_raw;
+    self.props = new_raw;
     uint old_prop_capacity = self.prop_capacity;
     self.prop_capacity = new_cap;
 
-    // prop_alloc may have moved, so inline caches holding prop_value pointers
+    // props may have moved, so inline caches holding prop_value pointers
     // must be invalidated. shape_id is unchanged, so the generation bump is what
     // does it.
     h.bump_shape_gen(self.shape_id);
@@ -2753,7 +2751,7 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     usz new_bytes = (usz)self.prop_capacity * PropValue::size + (usz)new_size * TVal::size;
 
     void* new_raw;
-    if (self.prop_alloc == null) {
+    if (!self.has_prop_block()) {
         // Transition from inline to heap: allocate and copy inline props.
         new_raw = h.pool_alloc(new_bytes) ?? null;
         if (new_raw == null) return;
@@ -2770,12 +2768,12 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
         usz old_size = self.prop_alloc_size();
         new_raw = h.pool_alloc(new_bytes) ?? null;
         if (new_raw == null) return;
-        mem::copy(new_raw, self.prop_alloc, (sz)old_size);
-        h.pool_free(self.prop_alloc, old_size);
+        mem::copy(new_raw, self.props, (sz)old_size);
+        h.pool_free(self.props, old_size);
     }
     if (new_raw == null) return;
 
-    self.prop_alloc = new_raw;
+    self.props = new_raw;
     self.layout_moved(h);
     usz old_array_size = self.array_size;
     self.array_size = new_size;
@@ -2821,7 +2819,7 @@ fn void HObject.init_header(&self, ObjFlags flags, GcBits gc, uint prop_capacity
     self.prop_count = 0;
     self.array_size = 0;
     self.array_used = 0;
-    self.prop_alloc = null;
+    self.props = self.inline_props_ptr();
     self.prop_hash = null;
 }
 
@@ -2900,7 +2898,6 @@ $endif
 
     HObject* obj = (HObject*)raw;
 
-    obj.prop_alloc = null;
     obj.prop_capacity = cls == ObjClass.ARRAY || cls == ObjClass.GETTER_SETTER ? 0 : INLINE_PROPS;
     obj.prop_count = 0;
 
@@ -2909,6 +2906,7 @@ $endif
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
     obj.gc                 = { .inline_words = inline_words_for_class(cls) };
+    obj.props              = obj.inline_props_ptr();
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -3112,14 +3110,14 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
 
     // Free the block holding prop_values and array_part. The shape is shared
     // and owned by the heap, so it stays.
-    if (obj.prop_alloc != null) {
+    if (obj.has_prop_block()) {
         if (hp != null) {
             heap::Heap* h = hp;
-            h.pool_free(obj.prop_alloc, obj.prop_alloc_size());
+            h.pool_free(obj.props, obj.prop_alloc_size());
         } else {
-            mem::free(obj.prop_alloc);
+            mem::free(obj.props);
         }
-        obj.prop_alloc = null;
+        obj.props = obj.inline_props_ptr();
     }
 
     // Release the header after its slots and subtype resources, unless the
@@ -3171,7 +3169,7 @@ fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget
 fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
     ObjClass cls = obj.flags.obj_class;
     if ((cls != ObjClass.OBJECT && cls != ObjClass.ARRAY) || obj.flags.pool_fallback
-        || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed
+        || obj.has_prop_block() || obj.prop_hash != null || obj.gc.prototype_observed
         || obj.gc.weak_target
         || h.tearing_down) return false;
     if (obj.shape_id != 0) {
@@ -3179,7 +3177,7 @@ fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
         if (sh != null && sh.parent == PRIVATE_SHAPE_PARENT) return false;
     }
     if (cls == ObjClass.ARRAY) {
-        // Without prop_alloc an array has no named slots, and its elements
+        // Without a block an array has no named slots, and its elements
         // are inline only in a literal's header block.
         uint capacity = obj.array_inline_capacity();
         if (capacity == 0) return false;
@@ -4234,7 +4232,7 @@ fn bool HObject.in_dict_mode(&self, heap::Heap* h) @inline {
 // describes the live graph. The caller checks the receiver's own shape_id;
 // this replays the recorded prototype walk, rejecting a repointed link, a
 // shadowing property on an intermediate, and a delete on the owner (which
-// moves the owner's shape but not its prop_alloc).
+// moves the owner's shape but not its props).
 fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     if (!ic.has_proto) return hobj;
     if (ic.chain_len == IC_CHAIN_EPOCH) {
@@ -4399,10 +4397,6 @@ struct VarICEntry {
     // shape: a different activation of the same code can then re-arm the
     // entry instead of missing. VAR_IC_NO_REARM otherwise.
     char    rearm_depth;
-    // Byte offset from bindings to its inline property storage. An object's
-    // class, and so this offset, never changes, which spares a hit the
-    // class-dependent size lookup that prop_values() performs.
-    uint    props_off;
     // The validated chain head. A new activation needs re-arm checks before
     // replacing it. The GETGLOBAL family runs in one activation.
     void*   search_head;
@@ -4423,8 +4417,7 @@ const uint VAR_IC_REARM_MAX = 4;
 // checks, which keep prop_idx current.
 fn PropValue* VarICEntry.slot(&self) @inline {
     HObject* b = (HObject*)self.bindings;
-    PropValue* values = b.prop_alloc != null ? (PropValue*)b.prop_alloc : (PropValue*)((char*)b + self.props_off);
-    return &values[self.prop_idx];
+    return &b.prop_values()[self.prop_idx];
 }
 
 // Populate a variable IC entry, writing every guard field together: readers
@@ -4439,8 +4432,6 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     vic.prop_idx = prop_idx;
     vic.prop_flags = bindings != null ? ((HObject*)bindings).get_prop_flags(prop_idx, h) : (PropFlags){};
     vic.recycle_epoch = h.shape_recycle_epoch;
-    vic.props_off = bindings != null
-        ? (uint)((char*)((HObject*)bindings).inline_props_ptr() - (char*)bindings) : 0;
     vic.search_head = search_head;
     vic.varref_store_ok = store_ok;
     vic.rearm_depth = VAR_IC_NO_REARM;
@@ -4492,7 +4483,6 @@ fn void var_ic_alias_import(VarICEntry* vic, heap::Heap* h) {
         vic.shape_id = src.shape_id;
         vic.prop_idx = (uint)idx;
         vic.prop_flags = src.get_prop_flags((uint)idx, h);
-        vic.props_off = (uint)((char*)src.inline_props_ptr() - (char*)src);
         src.gc.ic_bound = true;
         vic.slot_ptr = vic.slot();
         vic.prop_flags.writable = false;
@@ -4511,7 +4501,6 @@ fn void var_ic_clear(VarICEntry* vic) {
     vic.prop_idx = 0;
     vic.prop_flags = {};
     vic.recycle_epoch = 0;
-    vic.props_off = 0;
     vic.search_head = null;
     vic.varref_store_ok = false;
     vic.slot_ptr = null;

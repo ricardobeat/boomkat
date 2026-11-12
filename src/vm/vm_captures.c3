@@ -118,7 +118,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             // Private cells have values but no property keys. Inline slots
             // avoid a second allocation; ordinary object tracing owns values.
             if (count > cells.prop_capacity) {
-                cells.prop_alloc = vm.heap.pool_alloc((usz)count * hobject::PropValue::size)!;
+                cells.props = vm.heap.pool_alloc((usz)count * hobject::PropValue::size)!;
                 cells.prop_capacity = count;
             }
             for (uint i = 0; i < count; i++) cells.prop_values()[i].set_undefined();

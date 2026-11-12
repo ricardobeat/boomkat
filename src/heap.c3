@@ -1016,7 +1016,7 @@ struct Heap {
     // TVals visited by the last mark phase.
     //
     // live_obj_count counts allocation nodes. Marking cost is not
-    // that number: an array's elements live inside its prop_alloc rather than
+    // that number: an array's elements live inside its props block rather than
     // as separate nodes, so a 200k-element array marks 226k values while
     // contributing ~1 to live_obj_count. Budgeting against the node count
     // therefore let mark cost grow with the array while the allocations
@@ -3759,7 +3759,7 @@ fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) {
 fn void? Heap.install_shape(&self, HObject* obj, uint shape_id, uint count) @inline {
     if (count > obj.prop_capacity) {
         void* storage = self.pool_alloc((usz)count * hobject::PropValue::size)!;
-        obj.prop_alloc = storage;
+        obj.props = storage;
         obj.prop_capacity = count;
     }
     hobject::fill_undefined(obj.prop_values(), count);

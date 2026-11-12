@@ -39,7 +39,7 @@ struct Layout {
     long obj_shape;
     long obj_gc;
     long obj_proto;
-    long obj_prop_alloc;
+    long obj_props;
     long obj_prop_count;
     long obj_array_len;
     long fn_capture_refs;
@@ -98,8 +98,6 @@ struct Layout {
     long reachable_mask;
     long heap_gc_kind;
     long heap_gc_oracle;
-    long inline_words_shift;
-    long inline_words_mask;
     long accessor_mask;
     long writable_mask;
     long symbol_mask;
@@ -202,7 +200,7 @@ fn Layout* layout() {
     l.obj_shape = (char*)&o.shape_id - base;
     l.obj_gc = (char*)&o.gc - base;
     l.obj_proto = (char*)&o.prototype - base;
-    l.obj_prop_alloc = (char*)&o.prop_alloc - base;
+    l.obj_props = (char*)&o.props - base;
     l.obj_prop_count = (char*)&o.prop_count - base;
     l.obj_array_len = (char*)&o.extra.array_length - base;
     l.fn_capture_refs = (char*)&o.extra.func.capture_refs - base;
@@ -336,14 +334,6 @@ fn Layout* layout() {
     g = {};
     g.prototype_observed = true;
     l.proto_observed_mask = (long)(uint)g;
-    g = {};
-    g.inline_words = 1;
-    uint one = (uint)g;
-    long shift = 0;
-    while ((one >> shift) != 1) shift++;
-    l.inline_words_shift = shift;
-    g.inline_words = 31;
-    l.inline_words_mask = (long)((uint)g >> shift);
     hobject::PropFlags pf;
     pf.is_accessor = true;
     l.accessor_mask = (long)(char)pf;
@@ -540,14 +530,7 @@ fn void Asm.guard_plain(&self, int obj) {
 fn void Asm.prop_base(&self, int dst, int obj) {
     void* c = self.c;
     Layout* l = self.lay;
-    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_MEM | obj, l.obj_prop_alloc);
-    void* done = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, dst, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV_U32, dst, 0, SLJIT_MEM | obj, l.obj_gc);
-    sljit_emit_op2(c, SLJIT_LSHR, dst, 0, dst, 0, SLJIT_IMM, l.inline_words_shift);
-    sljit_emit_op2(c, SLJIT_AND, dst, 0, dst, 0, SLJIT_IMM, l.inline_words_mask);
-    sljit_emit_op2(c, SLJIT_SHL, dst, 0, dst, 0, SLJIT_IMM, 3);
-    sljit_emit_op2(c, SLJIT_ADD, dst, 0, dst, 0, obj, 0);
-    sljit_set_label(done, sljit_emit_label(c));
+    sljit_emit_op1(self.c, SLJIT_MOV, dst, 0, SLJIT_MEM | obj, self.lay.obj_props);
 }
 
 // Jump to `to` while incremental marking runs.
@@ -1268,17 +1251,12 @@ fn void Asm.emit_array_slot_body(&self) {
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_array_size);
     // Unsigned, so a negative index fails too.
     fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R2, 0));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_prop_alloc);
-    void* allocated = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_array_inline_cap);
-    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
-    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R1, 0, SLJIT_IMM, (long)hobject::OBJ_SIZE_ARRAY);
-    void* based = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(allocated, sljit_emit_label(c));
+    // The dense part follows the property values: in a block, or in the header of a literal, where
+    // props points with no property slots before it.
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_props);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_prop_capacity);
     sljit_emit_op2(c, SLJIT_SHL, R2, 0, R2, 0, SLJIT_IMM, 3);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R2, 0);
-    sljit_set_label(based, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);

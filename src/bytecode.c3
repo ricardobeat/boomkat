@@ -877,7 +877,7 @@ enum Opcode : char {
     JMP_SNEQI,
 
     // Specialized GETPROPC: IC is known-warm. Skips ic_base null check and
-    // key comparison. Falls back to GETPROPC if shape_id or prop_alloc changed.
+    // key comparison. Falls back to GETPROPC if shape_id or props changed.
     GETPROPC_CACHED,
 
     // Require that the value in register A is coercible to object (not null

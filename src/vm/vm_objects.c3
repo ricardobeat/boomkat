@@ -229,7 +229,7 @@ fn bool? copy_plain_properties(Vm* vm, HObject* target, HObject* source) {
     if (!hobject::plain_property_object(source) || !hobject::plain_property_object(target)
         || source.flags.has_nondefault_flags || source.array_size != 0
         || target.shape_id != 0 || target.prop_count != 0
-        || target.prop_alloc != null || target.prop_hash != null
+        || target.has_prop_block() || target.prop_hash != null
         || target.array_size != 0 || !target.flags.extensible) return false;
     hobject::Shape* shape = vm.heap.get_shape(source.shape_id);
     if (shape == null || !shape.shared || shape.parent == hobject::PRIVATE_SHAPE_PARENT

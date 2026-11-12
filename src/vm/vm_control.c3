@@ -990,7 +990,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // next_reg as C for exactly this).
             //
             // Checking the resolved value is what makes this sound: a shape
-            // generation only bumps when prop_alloc moves, so overwriting
+            // generation only bumps when props moves, so overwriting
             // ArrayIteratorPrototype.next in place leaves it untouched and a
             // generation guard would sail straight past the patch.
             TVal nextv = rc[0];
