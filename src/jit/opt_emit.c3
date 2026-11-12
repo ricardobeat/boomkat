@@ -1528,8 +1528,8 @@ fn void OptCg.chain_miss(&self, OptNode* n) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// PUTPROP of a number to an element, as emit_put_elem: it overwrites a present element of a
-// dense array, or stores into a typed array; anything else leaves for the baseline code.
+// PUTPROP of a number or an OBJECT node to an element, as emit_put_elem: it overwrites a present
+// element of a dense array, or stores into a typed array; anything else leaves for the baseline code.
 fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -1540,8 +1540,11 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     self.decode(n);
     a.call.len = 0;
     OptView view;
-    // An int32 value: the builder converts a double to the integer kinds (OptBuild.put_elem).
-    if (self.const_view(n, true, &view) && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[view.kind].is_float())) {
+    // A typed array converts a number inline (an int32 one: the builder converts a double to the
+    // integer kinds, OptBuild.put_elem); an object goes to the subroutine, as in the baseline code.
+    OptRep rep = self.g.nodes[n.b].rep;
+    bool object = rep == OptRep.OBJECT;
+    if (!object && self.const_view(n, true, &view) && (rep == OptRep.INT32 || TYPED_KINDS[view.kind].is_float())) {
         int v = self.typed_store_value(n, TYPED_KINDS[view.kind]);
         self.emit_typed_store(TYPED_KINDS[view.kind], v, self.const_elem(i, n.a, &view));
         return;
@@ -1557,7 +1560,7 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     bool unseen;
     int k = self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
     // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
-    if (k >= 0 && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[k].is_float())) {
+    if (!object && k >= 0 && (rep == OptRep.INT32 || TYPED_KINDS[k].is_float())) {
         int v = self.typed_store_value(n, TYPED_KINDS[k]);
         int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, a.lay.indexed_named_mask, true);
         self.exit_calls(i, OptExit.SLOW_PATH);
@@ -1568,10 +1571,14 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
     a.array_slot();
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
-    self.box_node(n.b, R2);
+    self.value_to(n.b, R2);
     Jumps counted;
-    a.guard_old_value(&counted);
-    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
+    a.guard_old_value(&counted, object);
+    if (object) {
+        a.store_value_r2(&counted, true);
+    } else {
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
+    }
     self.store_counted(i, &counted);
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
@@ -1579,7 +1586,7 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         if (unseen) {
             self.unprofiled_exit(i);
         } else {
-            self.box_node(n.b, R0);
+            self.value_to(n.b, R0);
             a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
             a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
         }
@@ -1678,6 +1685,16 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SHAPE);
 }
 
+// The boxed value of node `v` in register `dst`: an OBJECT node's own, a number boxed.
+fn void OptCg.value_to(&self, uint v, int dst) {
+    if (self.g.nodes[v].rep != OptRep.OBJECT) {
+        self.box_node(v, dst);
+        return;
+    }
+    int r = self.obj_reg(v, dst);
+    if (r != dst) sljit_emit_op1(self.a.c, SLJIT_MOV, dst, 0, r, 0);
+}
+
 // Node `i`'s store into the slot at R0 of the object in R1: of node `v`, or of window register
 // `rv` when it has none.
 fn void OptCg.store_slot_value(&self, uint i, uint v, uint rv) {
@@ -1686,11 +1703,8 @@ fn void OptCg.store_slot_value(&self, uint i, uint v, uint rv) {
     Jumps counted;
     if (v == NO_NODE) {
         a.load(R2, rv);
-    } else if (self.g.nodes[v].rep == OptRep.OBJECT) {
-        int vr = self.obj_reg(v, R2);
-        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
     } else {
-        self.box_node(v, R2);
+        self.value_to(v, R2);
     }
     // An OBJECT node (an object or an inert value) mostly replaces an object.
     bool object = v != NO_NODE && self.g.nodes[v].rep == OptRep.OBJECT;
@@ -2103,12 +2117,7 @@ fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
     if (n.a == NO_NODE) {
         sljit_emit_op2(c, SLJIT_ADD, R3, 0, a.regs, 0, SLJIT_IMM, (long)a.w.a * TVal::size);
     } else {
-        if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
-            int vr = self.obj_reg(n.a, R2);
-            if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
-        } else {
-            self.box_node(n.a, R2);
-        }
+        self.value_to(n.a, R2);
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM, boxed, R2, 0);
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, boxed);
     }
@@ -2154,11 +2163,8 @@ fn bool OptCg.emit_known_add(&self, OptNode* n, void** done) {
         sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, k_obj_op(), k_obj_w());
         other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
         sljit_set_label(inert, sljit_emit_label(c));
-    } else if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
-        int vr = self.obj_reg(n.a, R2);
-        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
     } else {
-        self.box_node(n.a, R2);
+        self.value_to(n.a, R2);
     }
     int rr = self.obj_reg(n.b, R1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
@@ -2510,11 +2516,8 @@ fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
     uint callee = a.w.b;
     if (n.a == NO_NODE) {
         a.load(R2, callee + 2);
-    } else if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
-        int v = self.obj_reg(n.a, R2);
-        if (v != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, v, 0);
     } else {
-        self.box_node(n.a, R2);
+        self.value_to(n.a, R2);
     }
     if (n.b == NO_NODE) {
         a.load(R1, callee + 1);

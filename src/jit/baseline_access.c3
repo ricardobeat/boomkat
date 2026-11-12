@@ -95,6 +95,7 @@ struct Layout {
     long class_array;
     long class_regexp;
     long old_mask;
+    long remembered_mask;
     long reachable_mask;
     long heap_gc_kind;
     long heap_gc_oracle;
@@ -327,6 +328,9 @@ fn Layout* layout() {
     types::GcBits g;
     g.old = true;
     l.old_mask = (long)(uint)g;
+    g = {};
+    g.remembered = true;
+    l.remembered_mask = (long)(uint)g;
     types::HeapFlags hf;
     hf.reachable = true;
     l.reachable_mask = (long)(uint)hf;
@@ -1041,9 +1045,16 @@ fn void Asm.store_value_r2(&self, Jumps* miss = null, bool uncounted = false) {
         miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
     }
     self.guard_not_marking_to(miss, R3);
+    // Heap.write_barrier: only an old owner not yet in the remembered set that takes a young object
+    // has to be remembered.
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_gc);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.old_mask | l.remembered_mask);
+    void* covered = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.old_mask);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R2, 0, k_obj_op(), k_obj_w());
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R3, l.obj_gc);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.old_mask);
-    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_set_label(covered, sljit_emit_label(c));
     sljit_set_label(inert, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
 }

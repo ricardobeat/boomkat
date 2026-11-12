@@ -97,8 +97,9 @@ enum OptOp : char {
     // A GETPROP (imm its pc) of the dense or typed array element at INT32 node a, as a number of
     // the node's rep; exits for any other object, an index out of range, a hole or another value.
     LOAD_ELEM,
-    // A PUTPROP (imm its pc) of the number node b to the element at INT32 node a, exiting where
-    // LOAD_ELEM would. It defines nothing.
+    // A PUTPROP (imm its pc) of node b (a number, or an OBJECT node stored through the barrier) or
+    // of the window value when b is NO_NODE, to the element at INT32 node a, exiting where LOAD_ELEM
+    // would. It defines nothing.
     STORE_ELEM,
     // A GETPROPC, GETPROPC_CACHED or GETTHISC (imm its pc) read of the own data property its
     // cache names, from a non-proxy object of the cache's shapes; exits for any other receiver. The

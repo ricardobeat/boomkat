@@ -266,8 +266,9 @@ fn void bytecode_cfg_finish(DecodedCfg* cfg, uint* scratch) {
     bytecode_cfg_number_blocks(cfg);
 }
 
-// With `exact`, the operands of CALL_VAR, CALL_GLOBAL and PUTPROPC that are constant indices or counts
-// are not taken for registers, as the conservative analysis of move elimination does.
+// With `exact`, the operands of CALL_VAR, CALL_GLOBAL and PUTPROPC that are constant indices or counts,
+// and the receiver slot a NEW_OBJ writes, are not taken for registers read, as the conservative
+// analysis of move elimination takes them.
 fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true, bool exact = false) {
     if (exact) {
         DecodedInsn ins = self.view.insn;
@@ -276,6 +277,14 @@ fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true, bool
                 // The call loads its callee into A and stores undefined into the receiver slot: only
                 // the arguments are read.
                 if (call_windows && ins.b != 0) moveelim_mark_range(uses, (uint)ins.a + 2, (uint)ins.a + 1 + (uint)ins.b);
+                return;
+            case NEW_OBJ:
+                // The receiver slot is where the construct puts its object: only the callee and the
+                // arguments are read.
+                if (call_windows) {
+                    uses.set((uint)ins.b);
+                    if (ins.c != 0) moveelim_mark_range(uses, (uint)ins.b + 2, (uint)ins.b + 1 + (uint)ins.c);
+                }
                 return;
             case PUTPROPC:
                 uses.set((uint)ins.a);

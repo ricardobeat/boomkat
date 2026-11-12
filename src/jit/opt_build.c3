@@ -2113,18 +2113,18 @@ fn bool OptBuild.put_elem(&self) {
         self.snapshot(n);
         return true;
     }
-    bool numeric = self.cur[rv].node != NO_NODE && !self.is_object(rv);
-    if (!numeric && self.cur[rv].node == NO_NODE && self.load_def[rv] != NO_NODE) {
+    bool node = self.cur[rv].node != NO_NODE;
+    if (!node && self.load_def[rv] != NO_NODE) {
         // A copy between typed arrays (a[i] = b[j]) has no numeric use to ask its read for a
         // number: the store asks for the one its array holds, and the next round has the node.
         OptRep want = self.typed_store_rep();
         if (want != OptRep.NONE) self.ask_load(self.load_def[rv], rv, want);
     }
-    if (!numeric && (self.cur_fn == 0 || !self.in_window(rv))) return self.generic();
+    if (!node && (self.cur_fn == 0 || !self.in_window(rv))) return self.generic();
     if (!self.elem_receiver(self.w.a, &rnode)) return self.generic();
     uint idx = self.operand(self.w.b, OptRep.INT32);
     if (idx == NO_NODE) return self.generic();
-    uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, numeric ? self.cur[rv].node : NO_NODE, (long)self.pc);
+    uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, self.cur[rv].node, (long)self.pc);
     self.g.nodes[n].c = rnode;
     self.snapshot(n);
     return true;
