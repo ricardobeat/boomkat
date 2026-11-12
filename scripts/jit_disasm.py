@@ -41,7 +41,8 @@ if triple is None:
 run = subprocess.run([cmd[0], '--jit-dump-code'] + cmd[1:], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                      text=True, errors='replace')
 
-# fn#N -> list of (start, nodes, code); nodes are (address, op, pc, fn, index), sorted by address.
+# fn#N -> list of (start, nodes, code); nodes are (address, op, pc, fn, index, opcode), sorted by
+# address.
 bodies = OrderedDict()
 pending = None
 for line in run.stderr.splitlines():
@@ -50,10 +51,10 @@ for line in run.stderr.splitlines():
         nodes = []
         for tok in p[4:]:
             if tok.startswith('end:'):
-                nodes.append((int(tok[4:], 16), 'stubs', '', '0', ''))
+                nodes.append((int(tok[4:], 16), 'stubs', '', '0', '', ''))
             else:
-                ad, op, pc, fidx, idx = tok.split(':')
-                nodes.append((int(ad, 16), op, pc, fidx, idx))
+                ad, op, pc, fidx, idx, opcode = (tok.split(':') + [''])[:6]
+                nodes.append((int(ad, 16), op, pc, fidx, idx, opcode))
         nodes.sort(key=lambda x: x[0])
         pending = (p[1], nodes)
     elif line.startswith('ocode ') and pending is not None:
@@ -85,7 +86,7 @@ def disassemble(code):
 def show(fn, start, nodes, code):
     insns = disassemble(code)
     print('== %s at %#x, %d bytes, %d instructions' % (fn, start, len(code), len(insns)))
-    bounds = [(ad - start, op, pc, fidx, idx) for ad, op, pc, fidx, idx in nodes]
+    bounds = [(n[0] - start,) + n[1:] for n in nodes]
     k = 0
     counts = {}
     current = None
@@ -94,7 +95,7 @@ def show(fn, start, nodes, code):
             current = bounds[k]
             k += 1
             if args.node_op is None or current[1] == args.node_op:
-                where = ('pc %s' % current[2]) + (' fn %s' % current[3] if current[3] not in ('0', '') else '')
+                where = ('pc %s %s' % (current[2], current[5])) + (' fn %s' % current[3] if current[3] not in ('0', '') else '')
                 print('  n%s %s %s' % (current[4], current[1], where) if current[1] != 'stubs' else '  stubs')
         if current is None:
             label = 'prologue'

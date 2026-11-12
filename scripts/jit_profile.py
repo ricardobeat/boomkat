@@ -51,10 +51,11 @@ for line in open(map_path, errors='replace'):
         nodes = []
         for tok in p[4:]:
             if tok.startswith('end:'):
-                nodes.append((int(tok[4:], 16), 'stubs', '', ''))
+                nodes.append((int(tok[4:], 16), 'stubs', '', '', ''))
             else:
-                ad, op, pc, fidx = tok.split(':')[:4]
-                nodes.append((int(ad, 16), op, pc, fidx))
+                ad, op, pc, fidx, _, opcode = (tok.split(':') + ['', ''])[:6]
+                # A GENERIC node is named by the instruction the baseline code runs for it.
+                nodes.append((int(ad, 16), op + ' ' + opcode if op == 'GENERIC' and opcode else op, pc, fidx, opcode))
         nodes.sort(key=lambda x: x[0])
         onodes[int(p[2], 16)] = (p[1], nodes)
     elif line.startswith('map '):
@@ -108,12 +109,12 @@ def code_map(pc):
     return maps[i] if i >= 0 and maps[i]['start'] <= pc < maps[i]['end'] else None
 
 def node_at(start, pc):
-    """The node of the optimized code at `start` whose code holds pc: (fn, op, pc, inlined fn)."""
+    """The node of the optimized code at `start` whose code holds pc: (fn, op, pc, inlined fn, opcode)."""
     if start not in onodes:
         return None
     fn, nodes = onodes[start]
     k = bisect.bisect_right([x[0] for x in nodes], pc) - 1
-    return (fn,) + nodes[k][1:] if k >= 0 else (fn, 'prologue', '', '')
+    return (fn,) + nodes[k][1:] if k >= 0 else (fn, 'prologue', '', '', '')
 
 def label(tok):
     """A function-level name for an address token of the sample file."""
@@ -165,7 +166,8 @@ for l in lines[1:]:
             nd = node_at(mp['start'], pc) if mp['opt'] else None
             if nd:
                 nodekinds[nd[1]] += 1
-                nodesites['%s %s pc %s%s' % (nd[0], nd[1], nd[2], ' (inlined fn %s)' % nd[3] if nd[3] not in ('', '0') else '')] += 1
+                op = nd[1] if nd[1].startswith('GENERIC') or not nd[4] else '%s (%s)' % (nd[1], nd[4])
+                nodesites['%s %s pc %s%s' % (nd[0], op, nd[2], ' (inlined fn %s)' % nd[3] if nd[3] not in ('', '0') else '')] += 1
         elif name.startswith('sub '):
             cat['generated code'] += 1
             subc[name[4:]] += 1

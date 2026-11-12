@@ -3178,8 +3178,9 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
 }
 
 // Print where the code of each node of the optimized code `bc` starts, for attributing profiler
-// samples to nodes: "onodes fn#<index> <start> <end> <address>:<op>:<pc>:<fn>:<node> ..." in node order,
-// then "end:<address>" past the last node, where the stubs begin (--jit-dump-feedback). With
+// samples to nodes: "onodes fn#<index> <start> <end> <address>:<op>:<pc>:<fn>:<node>:<opcode> ..." in
+// node order, with the opcode of the bytecode instruction the node came from, then "end:<address>"
+// past the last node, where the stubs begin (--jit-dump-feedback). With
 // --jit-dump-code, "ocode fn#<index> <start> <hex bytes>" follows.
 fn void opt_dump_nodes(Heap* h, CompiledFunction* f, OptGraph* g, BaselineCode* bc, void*[] labels) {
     // One write, as dump_code_map makes it.
@@ -3190,7 +3191,9 @@ fn void opt_dump_nodes(Heap* h, CompiledFunction* f, OptGraph* g, BaselineCode* 
     for (sz i = 0; i < g.nodes.len(); i++) {
         if (labels[i] == null) continue;
         OptNode* n = &g.nodes[i];
-        out.appendf(" %x:%s:%d:%d:%d", (usz)sljit_shim_label_addr(labels[i]), n.op, n.pc, n.fidx, i);
+        CompiledFunction* nf = g.fns[n.fidx].f;
+        bytecode::DecodedBytecode d = bytecode::decode_bytecode(nf.code, nf.code_count, n.pc);
+        out.appendf(" %x:%s:%d:%d:%d:%s", (usz)sljit_shim_label_addr(labels[i]), n.op, n.pc, n.fidx, i, d.valid ? d.insn.op : Opcode.NOP);
     }
     out.appendf(" end:%x", (usz)sljit_shim_label_addr(labels[g.nodes.len()]));
     if (h.jit_stats.dump_code) {
