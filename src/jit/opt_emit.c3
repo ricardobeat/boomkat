@@ -1266,37 +1266,55 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     self.def_obj(i, R0);
 }
 
-// select_chain_slot's result for the receiver the entry `ic` holds now, when that is an epoch case the
-// heap's epoch still proves: its shape, first prototype and the owner's slot as constants, under
-// that epoch. Returns the jump taken with the slot address in R0; every other receiver, and a moved
-// epoch, continue after it with R1 kept, but another shape leaves from the exact node `i`. Null,
-// with nothing emitted, for any other entry.
-fn void* OptCg.settled_chain_slot(&self, hobject::ICEntry* ic, uint i) {
+// select_chain_slot's result for the receivers whose cases the epoch entry `ic` settled: the one it
+// holds now and those it retained (hobject::ICProtoSet), when the heap's epoch is still theirs. Each
+// is its shape, first prototype and the owner's slot as constants, under that epoch. The jumps
+// taken, with the slot address in R0, go to `settled`; every other receiver, and a moved epoch,
+// continue after them with R1 kept, but another shape leaves from the exact node `i`. Nothing is
+// emitted for any other entry.
+fn void OptCg.settled_chain_slots(&self, hobject::ICEntry* ic, uint i, Jumps* settled) {
     void* c = self.a.c;
     Asm* a = self.a;
     Layout* l = a.lay;
     hobject::Shape* sh = opt_settled_shape(self.h, ic);
-    if (sh == null) return null;
+    if (sh == null) return;
     hobject::ICChainEpoch* e = &ic.chain.epoch;
     sh.pinned = true;
-    void*[4] other;
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
-    other[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)ic.shape_id);
+    hobject::ICProtoCase[1 + hobject::IC_PROTO_MAX] cases;
+    uint count = 0;
+    cases[count++] = { .shape = ic.shape_id, .idx = ic.prop_idx, .first = e.first, .owner = e.owner };
+    // An exact node has the one receiver shape.
     bool exact = self.g.nodes[i].exact;
-    if (exact) self.exit_at(other[0], i, OptExit.RECEIVER);
+    hobject::ICProtoSet* set = ic.chain.protos;
+    if (!exact && set != null && set.epoch == e.value) {
+        for (uint k = 0; k < set.count; k++) {
+            hobject::Shape* other = self.h.get_shape(set.cases[k].shape);
+            if (other == null || set.cases[k].first == null) continue;
+            other.pinned = true;
+            cases[count++] = set.cases[k];
+        }
+    }
+    Jumps rest;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
+    if (exact) self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)ic.shape_id), i, OptExit.RECEIVER);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-    other[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
-    other[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(usz)e.first);
+    rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, l.heap_proto_epoch);
-    other[3] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)e.value);
-    // An observed object's values stay where they are while the epoch stands (HObject.layout_moved).
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)(usz)&e.owner.prop_values()[ic.prop_idx]);
-    void* settled = sljit_emit_jump(c, SLJIT_JUMP);
-    void* rest = sljit_emit_label(c);
-    foreach (k, j : other) if (k != 0 || !exact) sljit_set_label(j, rest);
-    return settled;
+    rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)e.value));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
+    for (uint k = 0; k < count; k++) {
+        hobject::ICProtoCase* pc = &cases[k];
+        void* shape = exact ? null : sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)pc.shape);
+        void* first = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(usz)pc.first);
+        // An observed object's values stay where they are while the epoch stands (HObject.layout_moved).
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)(usz)&pc.owner.prop_values()[pc.idx]);
+        settled.add(sljit_emit_jump(c, SLJIT_JUMP));
+        void* next = sljit_emit_label(c);
+        if (shape != null) sljit_set_label(shape, next);
+        sljit_set_label(first, next);
+    }
+    rest.bind(sljit_emit_label(c));
 }
 
 // The slot address in R0 of the property the read entry `ic` names for the plain object in R1
@@ -1454,9 +1472,10 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         if (chain) {
             a.guard_not_proxy(R1, R2);
             hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
-            void* settled = self.settled_chain_slot(ic, i);
+            Jumps settled;
+            self.settled_chain_slots(ic, i, &settled);
             self.select_chain_slot(ic);
-            if (settled != null) sljit_set_label(settled, sljit_emit_label(c));
+            settled.bind(sljit_emit_label(c));
             known_slot = true;
         } else if (poly.count > 1) {
             self.select_slot(poly);
