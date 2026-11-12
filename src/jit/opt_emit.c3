@@ -2730,6 +2730,10 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
     }
 }
 
+// Slots past a register leaf's frame its inlined bodies may use, which its callers' entries test
+// for room.
+const uint REG_ROOM_EXTRA = 32;
+
 // CALL_REG: enter the register leaf n.key with its window (the call's registers from the callee
 // register on, which the stores of the node's snapshot hold) in R1. The leaf runs in this frame,
 // on its window, clobbering every register but the pinned ones: the values live across the call
@@ -2743,9 +2747,9 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     bool var_call = a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL;
     uint callee_reg = var_call ? a.w.a : a.w.b;
     CompiledFunction* cf = (CompiledFunction*)n.key;
-    // The callee's window lies in the room the entry tests.
+    // The callee's window, and those of the calls it inlined, lie in the room the entry tests.
     a.room_acts = max(a.room_acts, 1u);
-    a.room_slots = max(a.room_slots, callee_reg + 2 + cf.num_regs);
+    a.room_slots = max(a.room_slots, callee_reg + 2 + cf.num_regs + REG_ROOM_EXTRA);
     self.spill_live(i, true);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)(callee_reg + 2) * TVal::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
@@ -2904,6 +2908,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case MOVE_WINDOW:
             self.emit_move_window(n);
         case EXIT:
+            if (self.a.reg_leaf) self.a.emit_reg_leave(REG_CALLEE_EXIT);
             self.store_dirty(n.dirty_first, n.dirty_count);
             self.materialize(i);
             self.a.i = n.pc;
@@ -2919,31 +2924,42 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
 
 // Whether the code of `f` from this graph can run in register mode (OptCg.emit_call_reg): with no
 // frame of its own, on a window in its caller's, so reading nothing but its window and the heap,
-// writing nothing but its window, calling nothing, and leaving only by a return or an exit, which
-// return to the caller (Asm.emit_reg_leave) before any effect, its arguments unchanged (an exit
-// stores nothing in register mode). No loops: a back edge polls.
-fn bool OptGraph.reg_leaf(&self, CompiledFunction* f) {
-    if (self.fns.len() != 1 || self.region.end != 0 || f.maps_formals()) return false;
-    foreach (&blk : self.blocks) if (blk.header || blk.osr) return false;
+// writing nothing but its window and object fields, calling nothing, and leaving only by a return
+// or an exit, which returns to the caller (Asm.emit_reg_leave): the caller then runs the call
+// again, so an exit must come before any effect, the arguments unchanged (an exit stores nothing
+// in register mode) and no field stored. No loops: a back edge polls. Returns the reason it
+// cannot, or "" when it can.
+fn String OptGraph.reg_blocker(&self, CompiledFunction* f) {
+    if (self.region.end != 0) return "region";
+    if (f.maps_formals()) return "mapped arguments";
+    foreach (&blk : self.blocks) if (blk.header || blk.osr) return "loop";
+    // Nodes positions follow the blocks, which hold no loop: whatever runs after a store comes
+    // later in this order.
+    bool stored = false;
     foreach (&nd : self.nodes) {
         switch (nd.op) {
-            case CONST_I32: case CONST_F64: case CHECK_I32: case CHECK_NUM: case LOAD_FIELD: case LOAD_LENGTH:
-            case PHI: case COPY: case ADD_I32: case SUB_I32: case MUL_I32: case AND_I32: case OR_I32:
-            case XOR_I32: case NOT_I32: case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32:
-            case I32_TO_F64: case F64_TO_I32: case ADD_F64: case SUB_F64: case MUL_F64: case DIV_F64:
-            case NEG_F64: case COMPARE: case LNOT: case EXIT: case JUMP: case BRANCH:
+            case CONST_I32: case CONST_F64: case PHI: case COPY: case AND_I32: case OR_I32: case XOR_I32:
+            case NOT_I32: case SHL_I32: case SAR_I32: case I32_TO_F64: case ADD_F64: case SUB_F64:
+            case MUL_F64: case DIV_F64: case NEG_F64: case COMPARE: case LNOT: case JUMP: case BRANCH:
                 break;
-            // A callee exit runs the call again from its window: its arguments are kept.
+            case CHECK_I32: case CHECK_NUM: case LOAD_FIELD: case LOAD_LENGTH: case ADD_I32: case SUB_I32:
+            case MUL_I32: case SHR_I32: case MOD_I32: case F64_TO_I32: case EXIT: case LOAD_GLOBAL:
+            case LOAD_VAR: case BRANCH_TRUTH: case BRANCH_WINDOW: case COMPARE_WINDOW: case CHECK_CALLEE:
+            case COPY_WINDOW:
+                if (stored) return "exit after a store";
+            case STORE_FIELD:
+                if (stored) return "exit after a store";
+                stored = true;
             case STORE_CONST: case STORE_OBJ:
-                if ((uint)nd.imm < f.num_formals) return false;
+                if ((uint)nd.imm < f.num_formals) return "argument assigned";
             case GENERIC:
                 Opcode op = f.code[(uint)nd.imm].op;
-                if (op != Opcode.RET && op != Opcode.RETUNDEF) return false;
+                if (op != Opcode.RET && op != Opcode.RETUNDEF) return Opcode::names[op.ordinal];
             default:
-                return false;
+                return OptOp::names[nd.op.ordinal];
         }
     }
-    return true;
+    return "";
 }
 
 // Generate native code for the graph. Null when code generation fails.
@@ -2957,7 +2973,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     Asm a = asm_new(c, h, f);
     defer a.release();
     a.opt = true;
-    a.reg_leaf = g.reg_leaf(f);
+    a.reg_leaf = g.reg_blocker(f).len == 0;
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;
     foreach (&nd : g.nodes) {
@@ -3016,7 +3032,9 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     }
     // A register leaf's register entry: the caller's return address kept in the Dispatch, the
     // window in R1, the registers past the formals undefined as a call entry leaves them.
-    if (a.reg_leaf) {
+    // A body that read the running record's scope (Asm.reads_env) would read its caller's, and
+    // its inlined bodies' windows must lie in the room its callers test (OptCg.emit_call_reg).
+    if (a.reg_leaf && !a.reads_env && a.room_slots <= f.num_regs + REG_ROOM_EXTRA) {
         a.reg_label = sljit_emit_label(c);
         sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM | a.ds, a.lay.ds_reg_ret);
         sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, R1, 0);

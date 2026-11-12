@@ -730,7 +730,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined or is entered
     // directly.
-    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && !g.reg_leaf(f) && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
+    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && g.reg_blocker(f).len != 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
         f.opt_declined++;
         return false;
     }
@@ -782,6 +782,28 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
         opt_log_fn(f);
         io::eprintf(" words %d nodes %d inlined %d reopt %d", f.code_count, g.nodes.len(), inlined, f.opt_reopts);
         if (region) io::eprintf(" region %d-%d", g.region.start, g.region.end);
+        uint[3] calls;
+        foreach (&nd : g.nodes) {
+            if (nd.op == OptOp.CALL_REG) {
+                calls[0]++;
+            } else if (nd.op == OptOp.GENERIC) {
+                switch (f.code[(uint)nd.imm].op) {
+                    case CALL: case CALL_PROP: case CALL_UNDEF_THIS: case NEW_OBJ: case CALL_S: case NEW_OBJ_S:
+                    case CALL_VAR: case CALL_GLOBAL:
+                        calls[nd.key != null ? 1 : 2]++;
+                    default:
+                }
+            }
+        }
+        io::eprintf(" calls reg %d direct %d generic %d", calls[0], calls[1], calls[2]);
+        String blocker = g.reg_blocker(f);
+        if (code.reg_entry != null) {
+            io::eprintf(" leaf");
+        } else if (blocker.len == 0) {
+            io::eprintf(" not-leaf scope");
+        } else {
+            io::eprintf(" not-leaf %s", blocker);
+        }
         io::eprintfn("");
     }
     return true;
@@ -823,7 +845,8 @@ fn bool opt_make_room(Heap* h) @noinline {
 
 // "fn#N name:line" for the --opt-log lines.
 fn void opt_log_fn(CompiledFunction* f) {
-    io::eprintf("fn#%d %s:%d", f.func_index, (String)f.name_ptr[:f.name_len], f.code_count != 0 ? f.get_line(0) : 0);
+    String name = f.name_len != 0 ? (String)f.name_ptr[:f.name_len] : "<anonymous>";
+    io::eprintf("fn#%d %s:%d", f.func_index, name, f.code_count != 0 ? f.get_line(0) : 0);
 }
 
 fn void opt_discard(Heap* h, CompiledFunction* f) {
@@ -1105,6 +1128,13 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         return vm::jit_inline_materialize(ds, site);
     }
     opt_note_exit_op(&h.opt, callee, site.pc);
+    if (h.opt.log) {
+        io::eprintf("opt exit ");
+        opt_log_fn(callee);
+        io::eprintf(" +%d %s %s inlined in ", site.pc, callee.code[site.pc].op, ((OptExit)reason).label);
+        opt_log_fn(oc.f);
+        io::eprintfn("");
+    }
     if (opt_exit_transient(h, reason)) return vm::jit_inline_materialize(ds, site);
     oc.exits++;
     // A site of an inlined body cannot be lowered generically: the next build leaves the call it is
