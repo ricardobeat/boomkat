@@ -287,7 +287,7 @@ struct OptPolicy {
 // it branched back to and its window, which a function compiled by loops needs.
 //
 // Entries count in rounds of OPT_ENTRY_THRESHOLD, the count at which the baseline call entry
-// declines to the helper that calls this: each round folds into f.opt_rounds and starts the count
+// calls this (jit_entry_service): each round folds into f.opt_rounds and starts the count
 // over, so that a function waiting out a longer cool-off (opt_rounds_due) keeps its direct calls.
 fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1, uint osr_pc = uint::max, TVal* regs = null) @noinline {
     if (f.opt_state == OPT_REGION && f.opt_code == null) {
@@ -299,7 +299,7 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1, uint osr_p
         return;
     }
     if (f.opt_state != OPT_NONE || f.opt_code != null) {
-        // The baseline call entry declines at the threshold; start its count over.
+        // The baseline call entry calls at the threshold; start its count over.
         opt_reset_count(f);
         if (f.opt_code != null) ((BaselineCode*)f.jit_code).touched = 1;
         return;

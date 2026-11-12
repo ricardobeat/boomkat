@@ -87,6 +87,8 @@ struct CallLayout {
     long vm_valstack_end;
     long heap_realm;
     long heap_gc_pending;
+    long heap_gc_call_budget;
+    long heap_gc_full_requested;
     long fn_var_env;
     long fn_lex_env;
     long fn_builtin;
@@ -148,6 +150,8 @@ fn CallLayout* call_layout() {
     l.vm_valstack_end = (char*)&vm.valstack_end - base;
     l.heap_realm = (char*)&h.realm - base;
     l.heap_gc_pending = (char*)&h.gc_pending - base;
+    l.heap_gc_call_budget = (char*)&h.gc_call_budget - base;
+    l.heap_gc_full_requested = (char*)&h.gc_full_requested - base;
     l.fn_var_env = (char*)&o.extra.func.var_env - base;
     l.fn_lex_env = (char*)&o.extra.func.lex_env - base;
     l.fn_builtin = (char*)&o.extra.func.builtin_fn_index - base;
@@ -195,9 +199,8 @@ fn void Asm.mov(&self, int dst, long dstw, int src, long srcw, int op = SLJIT_MO
 // The call entry of the function being compiled (see the top of this file).
 // Emitted after the body; enters the body at its first instruction. `scratches`
 // and `locals` are the frame the body was emitted for. With `count_opt` the entry
-// counts toward the optimizing tier, and declines when the count reaches the
-// threshold so that the helper path considers the function. `touch` marks the code as entered
-// (BaselineCode.touched).
+// counts toward the optimizing tier, considering the function at the threshold
+// (jit_entry_service). `touch` marks the code as entered (BaselineCode.touched).
 fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bool touch = false) {
     void* c = self.c;
     CompiledFunction* f = self.f;
@@ -248,8 +251,6 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     // th_lean_target, @lean_gate and the receiver test, before any write.
     self.mov(R1, 0, m | self.heap, k.heap_realm);
     decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)f.realm));
-    self.mov(R1, 0, m | self.heap, k.heap_gc_pending, SLJIT_MOV_U8);
-    decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     // Any argument count, as th_publish_lean takes it: surplus arguments are
     // ignored, missing formals start undefined (cleared below, unrolled up to
     // ENTRY_MISSING_MAX formals). A rest parameter's length needs the count.
@@ -271,13 +272,6 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     }
     proven.bind(sljit_emit_label(c));
-    if (count_opt) {
-        self.mov(R4, 0, SLJIT_IMM, (long)(usz)&f.opt_entries);
-        self.mov(R0, 0, m | R4, 0, SLJIT_MOV_U32);
-        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 1);
-        self.mov(m | R4, 0, R0, 0, SLJIT_MOV_U32);
-        decline.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, OPT_ENTRY_THRESHOLD));
-    }
     // The record after the caller's, which takes the result slot (R2) once there is room for it.
     self.mov(vm, 0, m | ds, k.ds_vm);
     sljit_emit_op2(c, SLJIT_ADD, la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
@@ -363,12 +357,49 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     self.mov(self.regs, 0, bottom, 0);
     // Optimized code records the entry for the eviction sweep (opt_make_room).
     if (touch) self.mov(m, (long)(usz)&bc.touched, SLJIT_IMM, 1, SLJIT_MOV_U8);
+    // The count toward optimizing the function and the call-time safepoint run in the frame, so
+    // that neither declines the call: a declined call from optimized code leaves that code.
+    Jumps service;
+    if (count_opt) {
+        self.mov(R4, 0, SLJIT_IMM, (long)(usz)&f.opt_entries);
+        self.mov(R0, 0, m | R4, 0, SLJIT_MOV_U32);
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 1);
+        self.mov(m | R4, 0, R0, 0, SLJIT_MOV_U32);
+        service.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, OPT_ENTRY_THRESHOLD));
+    }
+    self.mov(R1, 0, m | self.heap, k.heap_gc_pending, SLJIT_MOV_U8);
+    void* pending = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0);
+    void* body = sljit_emit_label(c);
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.labels[0]);
+    // Heap.safepoint_gc_on_call's countdown, inline unless it expires or a full collection waits.
+    sljit_set_label(pending, sljit_emit_label(c));
+    if (!$feat(GC_STRESS)) {
+        self.mov(R1, 0, m | self.heap, k.heap_gc_call_budget, SLJIT_MOV_U32);
+        service.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, SLJIT_IMM, 1));
+        self.mov(R2, 0, m | self.heap, k.heap_gc_full_requested, SLJIT_MOV_U8);
+        service.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+        sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, 1);
+        self.mov(m | self.heap, k.heap_gc_call_budget, R1, 0, SLJIT_MOV_U32);
+        sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), body);
+    }
+    service.bind(sljit_emit_label(c));
+    self.mov(m | ds, self.pc_off, SLJIT_IMM, (long)(usz)f.code);
+    self.mov(R0, 0, ds, 0);
+    self.c_call(SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&jit_entry_service);
+    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), body);
 
     decline.bind(sljit_emit_label(c));
     self.mov(R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW);
     sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM | reg_sp(), SUB_RET_OFF);
     return entry;
+}
+
+// The service a call entry runs in the frame it pushed (Asm.emit_call_entry): the count toward
+// optimizing the function at its threshold, and the call-time safepoint while a collection waits.
+fn void jit_entry_service(Dispatch* ds) {
+    CompiledFunction* f = (CompiledFunction*)ds.act.func;
+    if (f.opt_entries >= OPT_ENTRY_THRESHOLD) opt_note_entry(ds.heap, f, 0);
+    ds.heap.safepoint_gc_on_call();
 }
 
 // Slots [from, end) of the window at `base` set to undefined, which `u1` and
