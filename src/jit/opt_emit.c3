@@ -198,7 +198,7 @@ fn int OptCg.obj_reg(&self, uint n, int tmp) {
 // heap_reg_count over it as Asm.publish does. Uses R2 and R3.
 fn void OptCg.store_object(&self, uint slot, int src) {
     self.a.store(slot, src);
-    self.a.track_heap_store(slot, R3, R2);
+    self.a.track_heap_store(slot);
 }
 
 // The value of OBJECT node `nd`, in `src`, stored to window slot `slot`: plainly when a boolean.
@@ -221,7 +221,7 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
     } else if (nd.op == OptOp.CONST_OBJ) {
         self.a.store(slot, SLJIT_IMM, nd.imm);
         TVal v = { .bits = (ulong)nd.imm };
-        if (!v.is_inert()) self.a.track_heap_store(slot, R3, R2);
+        if (!v.is_inert()) self.a.track_heap_store(slot);
     } else if (nd.reg < 0) {
         // Lives in its home slot already.
     } else if (nd.rep == OptRep.OBJECT) {
@@ -817,13 +817,12 @@ fn void OptCg.emit_cap_refs(&self) {
     Layout* l = self.a.lay;
     Jumps fail;
     self.a.reads_callee = true;
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.a.la, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.a.la, l.act_tv_func);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, k_obj_op(), k_obj_w());
     fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.fn_comp_func);
-    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R1, l.act_func));
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | self.a.la, l.act_func));
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     fail.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 0);
@@ -1847,8 +1846,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
             miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
         }
         if (n.b == NO_NODE && callee_reg + 1 >= a.frame_regs) {
-            sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.la, 0);
-            sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R0, a.lay.act_hrc);
+            sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | a.la, a.lay.act_hrc);
             miss[misses++] = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, SLJIT_IMM, (long)callee_reg + 1);
         }
     }
@@ -2610,7 +2608,7 @@ fn void OptCg.emit_move_window(&self, OptNode* n) {
     Asm* a = self.a;
     a.load(R0, (uint)n.imm);
     a.store(n.home, R0);
-    a.track_heap_store(n.home, R3, R2);
+    a.track_heap_store(n.home);
 }
 
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {

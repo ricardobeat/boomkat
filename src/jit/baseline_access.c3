@@ -494,8 +494,7 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
 
 fn void Asm.load_this(&self, int reg) {
     Layout* l = self.lay;
-    sljit_emit_op1(self.c, SLJIT_MOV, reg, 0, self.la, 0);
-    sljit_emit_op1(self.c, SLJIT_MOV, reg, 0, SLJIT_MEM | reg, l.act_this);
+    sljit_emit_op1(self.c, SLJIT_MOV, reg, 0, SLJIT_MEM | self.la, l.act_this);
 }
 
 // dst = the HObject* `src` boxes; the slow path when it is not an object.
@@ -572,7 +571,7 @@ fn void Asm.publish(&self, uint ra) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
     void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
     self.store(ra, R0);
-    self.track_heap_store(ra, R3, R2);
+    self.track_heap_store(ra);
     void* done_obj = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_object, sljit_emit_label(c));
     sljit_set_label(marking, sljit_emit_label(c));
@@ -630,11 +629,10 @@ fn void Asm.emit_publish_body(&self) {
     publishable.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, mem_index(self.regs, R1), 3, R0, 0);
     // track_heap_store
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, self.la, 0);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.act_hrc);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | self.la, l.act_hrc);
     void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, R1, 0);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, R1, 0, SLJIT_IMM, 1);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, l.act_hrc, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | self.la, l.act_hrc, R2, 0);
     sljit_set_label(covered, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, 0);
     void* ok = sljit_emit_jump(c, SLJIT_JUMP);
@@ -644,15 +642,14 @@ fn void Asm.emit_publish_body(&self) {
 }
 
 // track_heap_store for slot `ra`, which only a slot beyond the frame's own
-// registers needs (Asm.frame_regs). Uses `act` and `tmp`.
-fn void Asm.track_heap_store(&self, uint ra, int act = R1, int tmp = R2) {
+// registers needs (Asm.frame_regs). Uses `tmp`.
+fn void Asm.track_heap_store(&self, uint ra, int tmp = R2) {
     if (ra < self.frame_regs) return;
     void* c = self.c;
     Layout* l = self.lay;
-    sljit_emit_op1(c, SLJIT_MOV, act, 0, self.la, 0);
-    sljit_emit_op1(c, SLJIT_MOV_U32, tmp, 0, SLJIT_MEM | act, l.act_hrc);
+    sljit_emit_op1(c, SLJIT_MOV_U32, tmp, 0, SLJIT_MEM | self.la, l.act_hrc);
     void* covered = sljit_emit_cmp(c, SLJIT_GREATER, tmp, 0, SLJIT_IMM, ra);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | act, l.act_hrc, SLJIT_IMM, (long)ra + 1);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | self.la, l.act_hrc, SLJIT_IMM, (long)ra + 1);
     sljit_set_label(covered, sljit_emit_label(c));
 }
 
@@ -1630,15 +1627,14 @@ fn void Asm.emit_capture_ref_body(&self) {
     void* c = self.c;
     Layout* l = self.lay;
     Jumps fail;
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.la, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.la, l.act_tv_func);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, k_obj_op(), k_obj_w());
     fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
     fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.fn_comp_func);
     fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
-    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R1, l.act_func));
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | self.la, l.act_func));
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R3, l.cf_capture_count);
     fail.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R3, 0, R2, 0));
     sljit_emit_op2(c, SLJIT_MUL, R2, 0, R2, 0, SLJIT_IMM, (long)hobject::CaptureRef::size);
