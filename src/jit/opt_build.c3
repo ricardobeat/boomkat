@@ -1560,6 +1560,33 @@ fn bool OptBuild.const_object(&self, uint r) {
     return r < self.nregs && self.cur[r].node != NO_NODE && self.g.nodes[self.cur[r].node].op == OptOp.CONST_OBJ;
 }
 
+// The WINDOW_CONST id of the undefined, null or boolean a STORE_CONST put in register `r`'s window
+// slot, or 0.
+fn char OptBuild.window_const(&self, uint r) {
+    if (r >= self.nregs || self.cur[r].node != NO_NODE || self.const_def[r] == NO_NODE) return 0;
+    return window_const_id(self.g.nodes[self.const_def[r]].imm);
+}
+
+// Whether register `r` holds a constant that is never a number: a CONST_OBJ node, or the
+// undefined, null or boolean a STORE_CONST put in its window slot.
+fn bool OptBuild.const_non_number(&self, uint r) => self.const_object(r) || self.window_const(r) != 0;
+
+// The cc and operand slots (imm, b | c << 20) of an equality node of `kind` (0 strict, 1 strict
+// negated, 2 loose, 3 loose negated) between slots rb and rc: against an undefined, null or boolean
+// stored as a constant, a strict test compares the other slot with it, a loose one with undefined
+// or null is the null test (kind 4, 5). `other` gets the slot tested alone, or stays as it was.
+fn char OptBuild.equality_cc(&self, uint kind, uint rb, uint rc, long* imm, uint* other) {
+    char kb = self.window_const(rb);
+    char kc = self.window_const(rc);
+    if (kb == 0 && kc == 0) return (char)kind;
+    char id = kc != 0 ? kc : kb;
+    uint r = kc != 0 ? rb : rc;
+    if (kind >= 2 && id > 2) return (char)kind;
+    *imm = (long)r | ((long)r << 20);
+    *other = r;
+    return kind >= 2 ? (char)(kind + 2) : (char)(kind | (id << WINDOW_CONST_SHIFT));
+}
+
 // Store the OBJECT node of register `r` to its window slot if it is dirty.
 fn void OptBuild.publish_object(&self, uint r) {
     if (!self.cur[r].dirty) return;
@@ -2189,7 +2216,7 @@ fn bool OptBuild.compare_value(&self) {
     bool equality = op.ordinal < Opcode.LT.ordinal;
     char fb = self.feedback();
     // A folded constant that is not a number says as much as the feedback.
-    bool non_number = (fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0 || self.const_object(rb) || self.const_object(rc);
+    bool non_number = (fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0 || self.const_non_number(rb) || self.const_non_number(rc);
     if (equality) {
         if (self.is_object(rb)) self.publish_object(rb);
         if (self.is_object(rc)) self.publish_object(rc);
@@ -2202,8 +2229,11 @@ fn bool OptBuild.compare_value(&self) {
         // Values the number path would only exit on: the baseline's equality test on the window.
         if (numeric_b || numeric_c) return self.generic();
         uint kind = op == Opcode.SEQ ? 0 : (op == Opcode.SNEQ ? 1 : (op == Opcode.EQ ? 2 : 3));
-        uint n = self.add(OptOp.COMPARE_WINDOW, OptRep.NONE, NO_NODE, NO_NODE, (long)rb | ((long)rc << 20));
-        self.g.nodes[n].cc = (char)kind;
+        long imm = (long)rb | ((long)rc << 20);
+        uint other = NO_NODE;
+        char cc = self.equality_cc(kind, rb, rc, &imm, &other);
+        uint n = self.add(OptOp.COMPARE_WINDOW, OptRep.NONE, NO_NODE, NO_NODE, imm);
+        self.g.nodes[n].cc = cc;
         self.g.nodes[n].home = ra;
         self.snapshot(n);
         self.kill(ra);
@@ -2540,6 +2570,16 @@ fn bool OptBuild.equality_branch(&self) {
         if (self.is_object(rc)) self.publish_object(rc);
         return unary ? self.refuse_op(op) : self.numeric_equality();
     }
+    uint kind = op.ordinal - Opcode.JMP_SEQ.ordinal;
+    long imm = (long)rb | ((long)rc << 20);
+    uint other = NO_NODE;
+    char cc = unary ? (char)kind : self.equality_cc(kind, rb, rc, &imm, &other);
+    // Against a constant, the other slot is tested alone.
+    if (other != NO_NODE) {
+        rb = other;
+        rc = other;
+        unary = true;
+    }
     // An OBJECT operand is tested in its register; a value a read left in a slot beyond the
     // caller's frame asks for that read to be an OBJECT node in the next round.
     uint xb = self.is_object(rb) ? self.cur[rb].node : NO_NODE;
@@ -2548,8 +2588,7 @@ fn bool OptBuild.equality_branch(&self) {
         if (xb == NO_NODE && rb >= self.caller_regs) self.call_operand(rb, &xb);
         if (xc == NO_NODE && rc >= self.caller_regs) self.call_operand(rc, &xc);
     }
-    uint kind = op.ordinal - Opcode.JMP_SEQ.ordinal;
-    if (!self.terminator(OptOp.BRANCH_WINDOW, xb, unary ? NO_NODE : xc, (long)rb | ((long)rc << 20), (char)kind)) return false;
+    if (!self.terminator(OptOp.BRANCH_WINDOW, xb, unary ? NO_NODE : xc, imm, cc)) return false;
     self.snapshot((uint)self.g.nodes.len() - 1);
     return true;
 }

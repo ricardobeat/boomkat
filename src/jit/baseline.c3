@@ -1753,6 +1753,38 @@ fn void Asm.note_double(&self) {
     sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM | R2, 0, R3, 0);
 }
 
+// Record the classes of the operands in R0 and R1 (hobject::fb_class: none for a fastint, a double,
+// a string, anything else) in the instruction's feedback byte, as the interpreter's note_feedback
+// does: an equality settled here without the handler would otherwise leave the optimizing tier no
+// sign of an operand that is not a number. Uses R2 and R3.
+fn void Asm.note_classes(&self) {
+    CompiledFunction* f = self.f;
+    if (f.ic_entries == null) return;
+    void* c = self.c;
+    hobject::ICEntry* entry = &((hobject::ICEntry*)f.ic_entries)[self.next - 1];
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, 0);
+    foreach (r : (int[2]){ R0, R1 }) {
+        sljit_emit_op2(c, SLJIT_LSHR, R2, 0, r, 0, SLJIT_IMM, 48);
+        void* fastint = sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, (long)types::TAG_FASTINT);
+        void* dbl = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, (long)types::TAG_FASTINT);
+        void* str = sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, (long)types::TAG_STRING);
+        sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, (long)hobject::FB_OTHER);
+        void* done = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(dbl, sljit_emit_label(c));
+        sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, (long)hobject::FB_DBL);
+        void* done2 = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(str, sljit_emit_label(c));
+        sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, (long)hobject::FB_STR);
+        void* end = sljit_emit_label(c);
+        sljit_set_label(fastint, end);
+        sljit_set_label(done, end);
+        sljit_set_label(done2, end);
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&entry.feedback);
+    sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_MEM | R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM | R2, 0, R3, 0);
+}
+
 // The number path entered when an operand is not a fastint.
 fn void Asm.emit_alt(&self) {
     void* c = self.c;
@@ -1764,6 +1796,7 @@ fn void Asm.emit_alt(&self) {
         Jumps ne;
         self.load(R0, w.b);
         self.load(R1, w.c);
+        self.note_classes();
         self.call_test_sub(op == JMP_SEQ || op == JMP_SNEQ ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &eq, &ne);
         uint t = (uint)self.target((int)(ichar)w.a);
         bool on_eq = op == JMP_SEQ || op == JMP_EQ;
@@ -1814,6 +1847,7 @@ fn void Asm.emit_alt(&self) {
             Jumps ne;
             self.load(R0, w.b);
             self.load(R1, w.c);
+            self.note_classes();
             self.call_test_sub(op == SEQ || op == SNEQ ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &eq, &ne);
             bool negate = op == NEQ || op == SNEQ;
             eq.bind(sljit_emit_label(c));

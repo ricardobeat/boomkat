@@ -205,7 +205,8 @@ enum OptOp : char {
     // BRANCH reads it).
     COMPARE,
     // The same for the window slots imm (b | c << 20) by the equality test of BRANCH_WINDOW (cc
-    // 0 SEQ, 1 SNEQ, 2 EQ, 3 NEQ); the rare cases exit through the slow path.
+    // 0 SEQ, 1 SNEQ, 2 EQ, 3 NEQ, 4 == null, 5 != null, and the constant of WINDOW_CONST); the
+    // rare cases exit through the slow path.
     COMPARE_WINDOW,
     // `!` of the number or boolean node a, a boolean (an OBJECT node); or, when a is NO_NODE, of
     // the window slot imm (the slow path exits), stored to window slot home.
@@ -232,7 +233,8 @@ enum OptOp : char {
     BRANCH,
     BRANCH_TRUTH,
     // A branch on two window slots (imm: b | c << 20) by the baseline's equality test: cc is
-    // 0 JMP_SEQ, 1 JMP_SNEQ, 2 JMP_EQ, 3 JMP_NEQ, 4 JMP_NULL, 5 JMP_NNULL.
+    // 0 JMP_SEQ, 1 JMP_SNEQ, 2 JMP_EQ, 3 JMP_NEQ, 4 JMP_NULL, 5 JMP_NNULL. A strict test against
+    // a constant the builder stored (WINDOW_CONST in the bits above) compares slot b with it alone.
     BRANCH_WINDOW,
     // The test before a case of a polymorphic call (OptBuild.callee_test): falls to succ[1], the
     // case's body, when the OBJECT node a, or the window slot of the call's callee register when a
@@ -271,6 +273,27 @@ enum OptOp : char {
     // A field access of a sunk object, done in the graph: no code. Its dirty registers stay for the
     // exit the test hook may force there.
     SUNK,
+}
+
+// The equality nodes' cc: the test in the low bits, and in the bits from WINDOW_CONST_SHIFT the
+// constant of a strict test against undefined, null or a boolean (window_const_bits), or 0.
+const char WINDOW_KIND_MASK = 7;
+const char WINDOW_CONST_SHIFT = 3;
+
+// The boxed constant of a WINDOW_CONST id: 1 undefined, 2 null, 3 false, 4 true.
+fn long window_const_bits(char id) {
+    switch (id) {
+        case 1: return K_UNDEF;
+        case 2: return K_NULL;
+        default: return K_BOOL | (long)(id - 3);
+    }
+}
+
+// The WINDOW_CONST id of boxed constant `bits` (undefined, null or a boolean).
+fn char window_const_id(long bits) {
+    if (bits == K_UNDEF) return 1;
+    if (bits == K_NULL) return 2;
+    return (char)(3 + (bits & 1));
 }
 
 // A window slot and the node whose value belongs in it.

@@ -2674,8 +2674,7 @@ fn void OptCg.emit_compare_window(&self, uint i, OptNode* n) {
     Jumps no;
     self.a.call.len = 0;
     self.a.load(R0, (uint)(n.imm & 0xFFFFF));
-    self.a.load(R1, (uint)(n.imm >> 20));
-    self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
+    self.window_equality(n.cc, (uint)(n.imm >> 20), &yes, &no);
     self.exit_calls(i, OptExit.SLOW_PATH);
     bool negate = (n.cc & 1) != 0;
     yes.bind(sljit_emit_label(c));
@@ -2778,6 +2777,24 @@ fn void OptCg.emit_fop(&self, uint i, OptNode* n) {
     self.def_flt(i, dst);
 }
 
+// The equality test of cc (opt_ir.c3, COMPARE_WINDOW) of the value in R0 with window slot rc: a
+// strict test against a constant compares the bits, the null test (kinds 4 and 5) R0 alone, and the
+// rest the baseline's subroutine.
+fn void OptCg.window_equality(&self, char cc, uint rc, Jumps* yes, Jumps* no) {
+    char kind = cc & WINDOW_KIND_MASK;
+    char id = cc >> WINDOW_CONST_SHIFT;
+    if (kind >= 4) {
+        self.a.null_test_r0(yes, no);
+    } else if (id != 0) {
+        void* c = self.a.c;
+        yes.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, window_const_bits(id)));
+        no.add(sljit_emit_jump(c, SLJIT_JUMP));
+    } else {
+        self.a.load(R1, rc);
+        self.a.call_test_sub(kind < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, yes, no);
+    }
+}
+
 // A conditional branch: leave the taken jumps in `jumps`.
 // BRANCH_WINDOW: the baseline's equality or null test over two window slots; the rare cases
 // leave through the slow path.
@@ -2795,16 +2812,12 @@ fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
     } else {
         self.a.load(R0, rb);
     }
-    if (n.cc >= 4) {
-        self.a.null_test_r0(&yes, &no);
-    } else {
-        if (n.b != NO_NODE) {
-            int y = self.obj_reg(n.b, R1);
-            if (y != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, y, 0);
-        } else {
-            self.a.load(R1, rc);
-        }
+    if (n.b != NO_NODE) {
+        int y = self.obj_reg(n.b, R1);
+        if (y != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, y, 0);
         self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
+    } else {
+        self.window_equality(n.cc, rc, &yes, &no);
     }
     self.exit_calls(i, OptExit.SLOW_PATH);
     bool on_yes = (n.cc & 1) == 0;
