@@ -2278,7 +2278,7 @@ fn bool OptBuild.modulo(&self) {
     return true;
 }
 
-// EQ, NEQ, SEQ, SNEQ, LT, LE, GT, GE producing a boolean: stored to the window slot of A.
+// EQ, NEQ, SEQ, SNEQ, LT, LE, GT, GE producing a boolean (a VALUE node).
 fn bool OptBuild.compare_value(&self) {
     Opcode op = self.w.op;
     uint ra = self.w.a;
@@ -2289,26 +2289,21 @@ fn bool OptBuild.compare_value(&self) {
     char fb = self.feedback();
     // A folded constant that is not a number says as much as the feedback.
     bool non_number = (fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0 || self.const_non_number(rb) || self.const_non_number(rc);
-    if (equality) {
-        if (self.holds_value(rb)) self.publish_value(rb);
-        if (self.holds_value(rc)) self.publish_value(rc);
-    } else if (non_number) {
-        return self.generic();
-    }
+    if (!equality && non_number) return self.generic();
     bool numeric_b = self.cur[rb].node != NO_NODE && !self.holds_value(rb);
     bool numeric_c = self.cur[rc].node != NO_NODE && !self.holds_value(rc);
     if (equality && non_number) {
-        // Values the number path would only exit on: the baseline's equality test on the window.
+        // Values the number path would only exit on: the baseline's equality test.
         if (numeric_b || numeric_c) return self.generic();
         uint kind = op == Opcode.SEQ ? 0 : (op == Opcode.SNEQ ? 1 : (op == Opcode.EQ ? 2 : 3));
-        long imm = (long)rb | ((long)rc << 20);
-        uint other = NO_NODE;
-        char cc = self.equality_cc(kind, rb, rc, &imm, &other);
-        uint n = self.add(OptOp.COMPARE_WINDOW, OptRep.NONE, NO_NODE, NO_NODE, imm);
+        long imm;
+        uint xb;
+        uint xc;
+        char cc = self.equality_operands(kind, false, rb, rc, &imm, &xb, &xc);
+        uint n = self.add(OptOp.COMPARE_WINDOW, OptRep.VALUE, xb, xc, imm);
         self.g.nodes[n].cc = cc;
-        self.g.nodes[n].home = ra;
         self.snapshot(n);
-        self.kill(ra);
+        self.set(ra, n);
         return true;
     }
     OptRep rep = self.arith_rep(rb, rc);
@@ -2642,29 +2637,40 @@ fn bool OptBuild.equality_branch(&self) {
         if (self.holds_value(rc)) self.publish_value(rc);
         return unary ? self.refuse_op(op) : self.numeric_equality();
     }
-    uint kind = op.ordinal - Opcode.JMP_SEQ.ordinal;
-    long imm = (long)rb | ((long)rc << 20);
+    long imm;
+    uint xb;
+    uint xc;
+    char cc = self.equality_operands(op.ordinal - Opcode.JMP_SEQ.ordinal, unary, rb, rc, &imm, &xb, &xc);
+    if (!self.terminator(OptOp.BRANCH_WINDOW, xb, xc, imm, cc)) return false;
+    self.snapshot((uint)self.g.nodes.len() - 1);
+    return true;
+}
+
+// The operands of an equality test of kind `kind` (COMPARE_WINDOW's cc) of registers `rb` and
+// `rc`, or of `rb` alone for a null test (`unary`): the test's cc, the window slots in `imm` (b |
+// c << 20), and in `xb` and `xc` the VALUE nodes that hold them, which the test takes from their
+// registers. Against a constant, the other operand is tested alone.
+fn char OptBuild.equality_operands(&self, uint kind, bool unary, uint rb, uint rc, long* imm, uint* xb, uint* xc) {
+    *imm = (long)rb | ((long)rc << 20);
     uint other = NO_NODE;
-    char cc = unary ? (char)kind : self.equality_cc(kind, rb, rc, &imm, &other);
-    // Against a constant, the other slot is tested alone.
+    char cc = unary ? (char)kind : self.equality_cc(kind, rb, rc, imm, &other);
     if (other != NO_NODE) {
         rb = other;
         rc = other;
         unary = true;
     }
-    // A VALUE operand is tested in its register, which a read into the window becomes in the next
-    // round; one a read left in a slot beyond the caller's frame waits for it.
+    // A read into the window becomes a VALUE node in the next round; one a read left in a slot
+    // beyond the caller's frame waits for it.
     if (self.cur[rb].node == NO_NODE) self.ask_value(rb);
     if (self.cur[rc].node == NO_NODE) self.ask_value(rc);
-    uint xb = self.holds_value(rb) ? self.cur[rb].node : NO_NODE;
-    uint xc = self.holds_value(rc) ? self.cur[rc].node : NO_NODE;
+    *xb = self.holds_value(rb) ? self.cur[rb].node : NO_NODE;
+    *xc = self.holds_value(rc) ? self.cur[rc].node : NO_NODE;
     if (self.cur_fn != 0) {
-        if (xb == NO_NODE && rb >= self.caller_regs) self.call_operand(rb, &xb);
-        if (xc == NO_NODE && rc >= self.caller_regs) self.call_operand(rc, &xc);
+        if (*xb == NO_NODE && rb >= self.caller_regs) self.call_operand(rb, xb);
+        if (*xc == NO_NODE && rc >= self.caller_regs) self.call_operand(rc, xc);
     }
-    if (!self.terminator(OptOp.BRANCH_WINDOW, xb, unary ? NO_NODE : xc, imm, cc)) return false;
-    self.snapshot((uint)self.g.nodes.len() - 1);
-    return true;
+    if (unary) *xc = NO_NODE;
+    return cc;
 }
 
 // Loose or strict equality of two numeric nodes: the same compare as the strict branch.

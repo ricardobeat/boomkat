@@ -207,12 +207,13 @@ enum OptOp : char {
     // The boolean (a VALUE node) of numbers a, b of rep imm compared by the JMP_* row cc (as
     // BRANCH reads it).
     COMPARE,
-    // The same for the window slots imm (b | c << 20) by the equality test of BRANCH_WINDOW (cc
-    // 0 SEQ, 1 SNEQ, 2 EQ, 3 NEQ, 4 == null, 5 != null, and the constant of WINDOW_CONST); the
-    // rare cases exit through the slow path.
+    // The boolean (a VALUE node) of the equality test of BRANCH_WINDOW (cc 0 SEQ, 1 SNEQ, 2 EQ,
+    // 3 NEQ, 4 == null, 5 != null, and the constant of WINDOW_CONST) of the VALUE nodes a and b, or
+    // where either is NO_NODE of its window slot of imm (b | c << 20); the rare cases exit through
+    // the slow path.
     COMPARE_WINDOW,
-    // `!` of the number or boolean node a, a boolean (a VALUE node); or, when a is NO_NODE, of
-    // the window slot imm (the slow path exits), stored to window slot home.
+    // `!` of node a, a boolean (a VALUE node); or, when a is NO_NODE, of the window slot imm,
+    // stored to window slot home. The slow path of a value of unknown kind exits.
     LNOT,
     // A CALL (pc) of Array.prototype.push, after the CHECK_BUILTIN of its callee: the value a (a
     // node, or the window slot after the receiver when NO_NODE) appended to the array b (a VALUE
@@ -235,9 +236,10 @@ enum OptOp : char {
     JUMP,
     BRANCH,
     BRANCH_TRUTH,
-    // A branch on two window slots (imm: b | c << 20) by the baseline's equality test: cc is
-    // 0 JMP_SEQ, 1 JMP_SNEQ, 2 JMP_EQ, 3 JMP_NEQ, 4 JMP_NULL, 5 JMP_NNULL. A strict test against
-    // a constant the builder stored (WINDOW_CONST in the bits above) compares slot b with it alone.
+    // A branch by the baseline's equality test of the VALUE nodes a and b, or where either is
+    // NO_NODE of its window slot of imm (b | c << 20): cc is 0 JMP_SEQ, 1 JMP_SNEQ, 2 JMP_EQ,
+    // 3 JMP_NEQ, 4 JMP_NULL, 5 JMP_NNULL. A strict test against a constant the builder stored
+    // (WINDOW_CONST in the bits above) compares the first operand with it alone.
     BRANCH_WINDOW,
     // The test before a case of a polymorphic call (OptBuild.callee_test): falls to succ[1], the
     // case's body, when the VALUE node a, or the window slot of the call's callee register when a
@@ -633,7 +635,7 @@ fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op
 fn bool OptGraph.is_boolean(&self, OptNode* n) {
     while (n.op == OptOp.COPY) n = &self.nodes[n.a];
     if (n.rep != OptRep.VALUE) return false;
-    return n.op == OptOp.COMPARE || n.op == OptOp.LNOT || (n.op == OptOp.PHI && n.cc == 1);
+    return n.op == OptOp.COMPARE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || (n.op == OptOp.PHI && n.cc == 1);
 }
 
 // Whether a node of this rep lives in an integer register.

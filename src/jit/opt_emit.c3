@@ -2816,25 +2816,38 @@ fn void OptCg.emit_compare(&self, uint i, OptNode* n) {
     self.def_bool(i, holds, K_BOOL | 1, K_BOOL);
 }
 
-// COMPARE_WINDOW: the baseline's equality test of two window slots, stored as a boolean.
+// COMPARE_WINDOW: the baseline's equality test, as a boolean.
 fn void OptCg.emit_compare_window(&self, uint i, OptNode* n) {
-    void* c = self.a.c;
     Jumps yes;
     Jumps no;
-    self.a.call.len = 0;
-    self.a.load(R0, (uint)(n.imm & 0xFFFFF));
-    self.window_equality(n.cc, (uint)(n.imm >> 20), &yes, &no);
+    self.equality_test(n, &yes, &no);
     self.exit_calls(i, OptExit.SLOW_PATH);
-    bool negate = (n.cc & 1) != 0;
-    yes.bind(sljit_emit_label(c));
-    self.a.store(n.home, SLJIT_IMM, K_BOOL | (negate ? 0 : 1));
-    void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    no.bind(sljit_emit_label(c));
-    self.a.store(n.home, SLJIT_IMM, K_BOOL | (negate ? 1 : 0));
-    sljit_set_label(done, sljit_emit_label(c));
+    if ((n.cc & 1) != 0) {
+        self.def_bool_jumps(i, n, &no, &yes);
+    } else {
+        self.def_bool_jumps(i, n, &yes, &no);
+    }
 }
 
-// LNOT: the negated truth of a number or boolean node, or of a window slot, stored as a boolean.
+// The boolean of node `i`, true at the jumps of `t` and false at those of `f`: a VALUE node's,
+// in its register, or one stored to window slot `n.home`.
+fn void OptCg.def_bool_jumps(&self, uint i, OptNode* n, Jumps* t, Jumps* f) {
+    void* c = self.a.c;
+    int dst = n.rep == OptRep.VALUE ? self.int_dst(i, R0) : R0;
+    t.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_BOOL | 1);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    f.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_BOOL);
+    sljit_set_label(done, sljit_emit_label(c));
+    if (n.rep == OptRep.VALUE) {
+        self.def_value(i, dst);
+    } else {
+        self.a.store(n.home, dst, 0);
+    }
+}
+
+// LNOT: the negated truth of a node or of a window slot, as a boolean.
 fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     if (self.known_truth(n)) {
@@ -2862,18 +2875,7 @@ fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
     Jumps falsy;
     self.truth_test(n, &truthy, &falsy);
     self.exit_calls(i, OptExit.SLOW_PATH);
-    int dst = n.rep == OptRep.VALUE ? self.int_dst(i, R0) : R0;
-    truthy.bind(sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_BOOL);
-    void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    falsy.bind(sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_BOOL | 1);
-    sljit_set_label(done, sljit_emit_label(c));
-    if (n.rep == OptRep.VALUE) {
-        self.def_value(i, dst);
-    } else {
-        self.a.store(n.home, dst, 0);
-    }
+    self.def_bool_jumps(i, n, &falsy, &truthy);
 }
 
 // Whether the operand of LNOT or BRANCH_TRUTH `n` is a number or a boolean, whose truth the code
@@ -2968,30 +2970,30 @@ fn void OptCg.window_equality(&self, char cc, uint rc, Jumps* yes, Jumps* no) {
     }
 }
 
+// The equality test of BRANCH_WINDOW or COMPARE_WINDOW `n`: its VALUE operands (a, b) from their
+// registers, the others from their window slots (imm), as window_equality tests them.
+fn void OptCg.equality_test(&self, OptNode* n, Jumps* yes, Jumps* no) {
+    self.a.call.len = 0;
+    if (n.a != NO_NODE) {
+        self.value_to(n.a, R0);
+    } else {
+        self.a.load(R0, (uint)(n.imm & 0xFFFFF));
+    }
+    if (n.b == NO_NODE) {
+        self.window_equality(n.cc, (uint)(n.imm >> 20), yes, no);
+        return;
+    }
+    self.value_to(n.b, R1);
+    self.a.call_test_sub((n.cc & WINDOW_KIND_MASK) < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, yes, no);
+}
+
 // A conditional branch: leave the taken jumps in `jumps`.
 // BRANCH_WINDOW: the baseline's equality or null test over two window slots; the rare cases
 // leave through the slow path.
 fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
-    uint rb = (uint)(n.imm & 0xFFFFF);
-    uint rc = (uint)(n.imm >> 20);
     Jumps yes;
     Jumps no;
-    self.a.call.len = 0;
-    void* c = self.a.c;
-    // An operand held in a VALUE node (a, b) is taken from its register.
-    if (n.a != NO_NODE) {
-        int x = self.value_reg(n.a, R0);
-        if (x != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, x, 0);
-    } else {
-        self.a.load(R0, rb);
-    }
-    if (n.b != NO_NODE) {
-        int y = self.value_reg(n.b, R1);
-        if (y != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, y, 0);
-        self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
-    } else {
-        self.window_equality(n.cc, rc, &yes, &no);
-    }
+    self.equality_test(n, &yes, &no);
     self.exit_calls(i, OptExit.SLOW_PATH);
     bool on_yes = (n.cc & 1) == 0;
     Jumps* take = on_yes ? &yes : &no;
