@@ -2608,8 +2608,10 @@ fn bool OptBuild.equality_branch(&self) {
         rc = other;
         unary = true;
     }
-    // An OBJECT operand is tested in its register; a value a read left in a slot beyond the
-    // caller's frame asks for that read to be an OBJECT node in the next round.
+    // An OBJECT operand is tested in its register, which a read into the window becomes in the next
+    // round; one a read left in a slot beyond the caller's frame waits for it.
+    if (self.cur[rb].node == NO_NODE) self.ask_object(rb);
+    if (self.cur[rc].node == NO_NODE) self.ask_object(rc);
     uint xb = self.is_object(rb) ? self.cur[rb].node : NO_NODE;
     uint xc = self.is_object(rc) ? self.cur[rc].node : NO_NODE;
     if (self.cur_fn != 0) {
