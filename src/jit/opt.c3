@@ -64,6 +64,10 @@ enum OptExit : char (String label) {
     // The running closure is not the one whose captured bindings the code folded
     // (OptOp.GUARD_CAPTURE). The rebuild folds none of them.
     CAPTURE {"capture"},
+    // An entry from the baseline code into a loop met an object or binding other than the loop's
+    // code assumes there (OptCg.emit_entry_facts). The rebuild reads the caches the baseline code
+    // has updated since.
+    ENTRY {"entry"},
 }
 
 // Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a

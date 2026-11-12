@@ -313,6 +313,17 @@ struct OptBuild {
     // builds those as LOAD_CAP and LOAD_ELEM nodes.
     List {OptOverride} load_reps;
     bool load_changed;
+    // The facts each loop header assumes at its start, by position (OptBuild.head_facts), once
+    // head_set says it has been built: what its forward edges bring and its back edges were not
+    // found to lose (OptBuild.meet_head). Kept across rounds, in which they only shrink. A round
+    // without loop_facts assumes none, so that the rounds settle.
+    uint* head_shape;
+    bool* head_plain;
+    char* head_elem;
+    ulong* head_bindings;
+    ulong* head_captures;
+    bool* head_set;
+    bool loop_facts;
     // The facts at the end of each block built so far, by position (nregs + 1 each).
     uint* end_shape;
     bool* end_plain;
@@ -578,6 +589,12 @@ fn void OptBuild.free(&self) {
     mem::free(self.fact_shape);
     mem::free(self.fact_plain);
     mem::free(self.fact_elem);
+    mem::free(self.head_shape);
+    mem::free(self.head_plain);
+    mem::free(self.head_elem);
+    mem::free(self.head_bindings);
+    mem::free(self.head_captures);
+    mem::free(self.head_set);
     mem::free(self.end_shape);
     mem::free(self.end_plain);
     mem::free(self.end_elem);
@@ -936,7 +953,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
 // STORE_FIELD (an overwrite, so never a shape change), LOAD_ELEM, STORE_ELEM, numeric ops and
 // branches. Nothing then can collect an object, recycle a shape id or rebind a register, so the
 // shape cell a node compared is still the receiver's. Every GENERIC, write to the register and
-// block start with more than one way in (begin_block) drops its facts.
+// join the ways in disagree on (begin_block) drops its facts.
 fn void OptBuild.forget_facts(&self) {
     for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
     mem::clear(self.fact_elem, (usz)self.nregs + 1);
@@ -4208,21 +4225,28 @@ fn void OptBuild.begin_block(&self, uint pos) {
             back++;
         }
     }
-    // Facts cross a block start as what every way in agrees on, when each is a block already
-    // built: a back edge or an OSR entry may come from any generic.
-    if (fwd == 0 || back != 0 || self.osr_target[first_insn]) {
+    // Facts cross a block start as what every built way in agrees on. A loop header keeps those
+    // its back edges bring as well (head_facts); else a back edge may come from any GENERIC. An
+    // OSR entry proves them for the frame the baseline code hands over (OptCg.emit_entry_facts),
+    // which holds no field value in a node. A capture record a frame proved stays proved.
+    bool osr = self.osr_target[first_insn];
+    if (fwd == 0) {
         self.forget_facts();
+        self.fact_captures = 0;
     } else {
         self.meet_facts(pos);
-    }
-    // A capture record a frame proved stays proved, back edges included; an OSR entry has proved none.
-    self.fact_captures = 0;
-    if (!self.osr_target[first_insn]) {
-        bool first = true;
-        foreach (p : self.preds(pos)) {
-            if (p >= pos || self.dead[p]) continue;
-            self.fact_captures = first ? self.end_captures[p] : self.fact_captures & self.end_captures[p];
-            first = false;
+        if (osr) {
+            // Of the caller's frame alone, and `this`.
+            for (uint r = self.caller_regs; r < self.nregs; r++) {
+                self.fact_shape[r] = heap::SHAPE_NONE;
+                self.fact_elem[r] = 0;
+            }
+            self.avail_n = 0;
+        }
+        if (back != 0 && self.loop_facts) {
+            self.head_facts(pos);
+        } else if (back != 0) {
+            self.forget_facts();
         }
     }
     blk.header = back > 0;
@@ -4270,7 +4294,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
         }
         blk.entry_count = (uint)self.g.dirty.len() - blk.entry_first;
     }
-    if (self.osr_target[first_insn]) {
+    if (osr) {
         blk.osr = true;
         blk.osr_first = (uint)self.g.dirty.len();
         for (uint r = 0; r < self.nregs; r++) {
@@ -4278,6 +4302,16 @@ fn void OptBuild.begin_block(&self, uint pos) {
             if (node != NO_NODE && !self.g.nodes[node].is_const()) self.g.dirty.push({ .reg = r, .node = node });
         }
         blk.osr_count = (uint)self.g.dirty.len() - blk.osr_first;
+        blk.fact_first = (uint)self.g.entry_facts.len();
+        for (uint r = 0; r <= self.nregs; r++) {
+            if (self.fact_shape[r] == heap::SHAPE_NONE && self.fact_elem[r] == 0) continue;
+            OptEntryFact fact = { .reg = r == self.nregs ? OPT_THIS : r, .shape = self.fact_shape[r], .elem = self.fact_elem[r] };
+            fact.plain = fact.shape != heap::SHAPE_NONE && self.fact_plain[r];
+            self.g.entry_facts.push(fact);
+        }
+        blk.fact_count = (uint)self.g.entry_facts.len() - blk.fact_first;
+        blk.bindings = self.fact_bindings;
+        blk.captures = self.fact_captures;
     }
     mem::copy(&self.entries[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
     self.g.blocks.push(blk);
@@ -4369,6 +4403,7 @@ fn void OptBuild.meet_facts(&self, uint pos) {
         bool* plain = &self.end_plain[(usz)p * w];
         char* elem = &self.end_elem[(usz)p * w];
         self.fact_bindings = first ? self.end_bindings[p] : self.fact_bindings & self.end_bindings[p];
+        self.fact_captures = first ? self.end_captures[p] : self.fact_captures & self.end_captures[p];
         OptAvail[] avail = self.end_avail[(usz)p * OPT_AVAIL_MAX:self.end_avail_n[p]];
         if (first) {
             self.avail[:avail.len] = avail[..];
@@ -4395,6 +4430,63 @@ fn void OptBuild.meet_facts(&self, uint pos) {
         }
         first = false;
     }
+}
+
+// The facts the loop header at `pos` starts with, from those its forward edges agree on: the ones
+// its back edges were not found to lose in an earlier round, recorded as this round's assumption.
+// No field value is held across it.
+fn void OptBuild.head_facts(&self, uint pos) {
+    usz w = (usz)self.nregs + 1;
+    usz at = (usz)pos * w;
+    bool set = self.head_set[pos];
+    for (usz r = 0; r < w; r++) {
+        if (set) {
+            if (self.head_shape[at + r] != self.fact_shape[r]) self.fact_shape[r] = heap::SHAPE_NONE;
+            self.fact_plain[r] = self.fact_plain[r] && self.head_plain[at + r];
+            self.fact_elem[r] = min(self.fact_elem[r], self.head_elem[at + r]);
+        }
+        self.head_shape[at + r] = self.fact_shape[r];
+        self.head_plain[at + r] = self.fact_shape[r] != heap::SHAPE_NONE && self.fact_plain[r];
+        self.head_elem[at + r] = self.fact_elem[r];
+    }
+    if (set) {
+        self.fact_bindings &= self.head_bindings[pos];
+        self.fact_captures &= self.head_captures[pos];
+    }
+    self.head_bindings[pos] = self.fact_bindings;
+    self.head_captures[pos] = self.fact_captures;
+    self.head_set[pos] = true;
+    self.avail_n = 0;
+}
+
+// Drop from the assumption of the loop header at `pos` what its back edge from the block at `p`
+// does not bring. Whether it shrank.
+fn bool OptBuild.meet_head(&self, uint pos, uint p) {
+    usz w = (usz)self.nregs + 1;
+    usz at = (usz)pos * w;
+    usz end = (usz)p * w;
+    bool changed = false;
+    for (usz r = 0; r < w; r++) {
+        if (self.head_shape[at + r] != heap::SHAPE_NONE && self.head_shape[at + r] != self.end_shape[end + r]) {
+            self.head_shape[at + r] = heap::SHAPE_NONE;
+            self.head_plain[at + r] = false;
+            changed = true;
+        }
+        if (self.head_plain[at + r] && !self.end_plain[end + r]) {
+            self.head_plain[at + r] = false;
+            changed = true;
+        }
+        if (self.head_elem[at + r] > self.end_elem[end + r]) {
+            self.head_elem[at + r] = self.end_elem[end + r];
+            changed = true;
+        }
+    }
+    ulong bindings = self.head_bindings[pos] & self.end_bindings[p];
+    ulong captures = self.head_captures[pos] & self.end_captures[p];
+    changed |= bindings != self.head_bindings[pos] || captures != self.head_captures[pos];
+    self.head_bindings[pos] = bindings;
+    self.head_captures[pos] = captures;
+    return changed;
 }
 
 // The phis of a region's header, which has no forward predecessor to speculate from: one for each
@@ -4478,6 +4570,7 @@ fn bool OptBuild.repair(&self) {
         uint end_node = self.g.blocks[pos].end;
         foreach (p : self.preds(pos)) {
             if (p < pos) continue;
+            if (self.loop_facts && self.head_set[pos] && !self.dead[p]) changed |= self.meet_head(pos, p);
             for (uint r = 0; r < self.nregs; r++) {
                 uint phi = self.entries[(usz)pos * self.nregs + r].node;
                 if (phi == NO_NODE || phi < first_node || phi >= end_node || self.g.nodes[phi].op != OptOp.PHI) continue;
@@ -4575,6 +4668,12 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.fact_shape = mem::new_array(uint, (usz)n + 1);
     b.fact_plain = mem::new_array(bool, (usz)n + 1);
     b.fact_elem = mem::new_array(char, (usz)n + 1);
+    b.head_shape = mem::new_array(uint, (usz)b.nrpo * ((usz)n + 1));
+    b.head_plain = mem::new_array(bool, (usz)b.nrpo * ((usz)n + 1));
+    b.head_elem = mem::new_array(char, (usz)b.nrpo * ((usz)n + 1));
+    b.head_bindings = mem::new_array(ulong, b.nrpo);
+    b.head_captures = mem::new_array(ulong, b.nrpo);
+    b.head_set = mem::new_array(bool, b.nrpo);
     b.end_shape = mem::new_array(uint, (usz)b.nrpo * ((usz)n + 1));
     b.end_plain = mem::new_array(bool, (usz)b.nrpo * ((usz)n + 1));
     b.end_elem = mem::new_array(char, (usz)b.nrpo * ((usz)n + 1));
@@ -4590,6 +4689,7 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     foreach (&s : b.sites) if (s.depth > 1) rounds += 2;
     if (rounds > OPT_BUILD_ROUNDS_MAX) rounds = OPT_BUILD_ROUNDS_MAX;
     for (uint round = 0; round < rounds; round++) {
+        b.loop_facts = round + 2 < rounds;
         if (!b.build_round()) {
             // A refusal that a typed load requested in this round may cause is not final.
             if (b.load_changed && !b.flat_fail) {

@@ -333,6 +333,13 @@ fn void OptCg.exit_clean(&self, void* jump, uint pc, OptExit reason) {
     self.exits.push({ .jump = jump, .pc = pc, .dirty_first = 0, .dirty_count = 0, .reason = (uint)reason.ordinal, .node = NO_NODE });
 }
 
+// Every jump the helpers collected in `call` leaves for the baseline code at `pc`, with nothing to
+// store.
+fn void OptCg.exit_calls_clean(&self, uint pc, OptExit reason) {
+    for (uint k = 0; k < self.a.call.len; k++) self.exit_clean(self.a.call.at[k], pc, reason);
+    self.a.call.len = 0;
+}
+
 // Every jump the baseline helpers collected in `call` leaves through `reason`.
 fn void OptCg.exit_calls(&self, uint node, OptExit reason) {
     for (uint k = 0; k < self.a.call.len; k++) self.exit_at(self.a.call.at[k], node, reason);
@@ -614,26 +621,57 @@ fn void OptCg.emit_osr_entries(&self, void* to_base) {
         self.osr_labels[pos] = sljit_emit_label(c);
         self.emit_room_test(to_base);
         self.emit_cap_refs();
+        self.emit_entry_facts(blk);
         for (uint k = 0; k < blk.osr_count; k++) {
             OptDirty d = self.g.dirty[(sz)(blk.osr_first + k)];
             OptNode* n = &self.g.nodes[d.node];
             // A spilled value is in its slot already.
             if (n.reg < 0) continue;
-            self.a.call.len = 0;
             if (n.rep == OptRep.INT32) {
                 self.a.load(R0, d.reg);
                 self.int32_from_r0(d.reg);
-                for (uint j = 0; j < self.a.call.len; j++) self.exit_clean(self.a.call.at[j], blk.pc, OptExit.NOT_INT32);
-                self.a.call.len = 0;
+                self.exit_calls_clean(blk.pc, OptExit.NOT_INT32);
                 sljit_emit_op1(c, SLJIT_MOV, n.reg, 0, R0, 0);
             } else {
                 self.a.load_number(n.reg, d.reg);
-                for (uint j = 0; j < self.a.call.len; j++) self.exit_clean(self.a.call.at[j], blk.pc, OptExit.NOT_NUMBER);
-                self.a.call.len = 0;
+                self.exit_calls_clean(blk.pc, OptExit.NOT_NUMBER);
             }
         }
         self.gotos.push({ .jump = sljit_emit_jump(c, SLJIT_JUMP), .block = pos });
     }
+}
+
+// What the code of the loop an OSR entry enters assumes at its start (OptBuild.head_facts), proved
+// for the frame the baseline code hands over before any value is loaded: the registers' objects
+// (OptEntryFact), the folded bindings and the closure's capture records. A failure continues in the
+// baseline code.
+fn void OptCg.emit_entry_facts(&self, OptBlock* blk) {
+    Asm* a = self.a;
+    a.call.len = 0;
+    for (uint k = 0; k < blk.fact_count; k++) {
+        OptEntryFact fact = self.g.entry_facts[(sz)(blk.fact_first + k)];
+        if (fact.reg == OPT_THIS) {
+            a.load_this(R0);
+        } else {
+            a.load(R0, fact.reg);
+        }
+        a.unbox_object(R1, R0);
+        if (fact.shape != heap::SHAPE_NONE) self.guard_shape(R1, fact.shape);
+        if (fact.plain) a.guard_plain(R1);
+        if (fact.elem != 0) a.call.add(a.array_or_typed(fact.elem == ELEM_ARRAY_STORE ? a.lay.indexed_named_mask : 0));
+        self.exit_calls_clean(blk.pc, OptExit.ENTRY);
+    }
+    for (uint k = 0; k < 64; k++) {
+        if ((blk.bindings & (1UL << k)) == 0) continue;
+        self.binding_tests(1UL << k);
+        self.exit_calls_clean(blk.pc, OptExit.ENTRY);
+    }
+    for (uint k = 0; k < 64; k++) {
+        if ((blk.captures & (1UL << k)) == 0) continue;
+        self.capture_tests(k);
+        self.exit_calls_clean(blk.pc, OptExit.CAPTURE);
+    }
+    self.shade_bindings(blk.bindings, 0);
 }
 
 // An entry through the table, into a frame that is published: without the room the inlined bodies'
@@ -2294,55 +2332,90 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
 }
 
 // GUARD_BINDING (OptBinding): its holder's layout and the folded-object epoch as the node's cc asks,
-// then the binding's value and a typed array value's store in place. While the collector marks, an
-// object value is shaded, as a load of it would be: the code may store it to the window.
+// then the binding itself (binding_tests).
 fn void OptCg.emit_guard_binding(&self, uint i, OptNode* n) {
+    OptBinding* b = &self.g.bindings[(usz)n.imm];
+    ulong bits = 1UL << n.imm;
+    if ((n.cc & OPT_GUARD_LAYOUT) != 0) bits |= 1UL << (OPT_FACT_HOLDER + b.holder);
+    if ((n.cc & OPT_GUARD_EPOCH) != 0) bits |= OPT_FACT_EPOCH;
+    self.a.call.len = 0;
+    self.binding_tests(bits);
+    self.exit_calls(i, OptExit.BINDING);
+    self.shade_bindings(bits, i);
+}
+
+// The tests of the facts `bits` of OptBuild.fact_bindings, into the jumps Asm.call collects: each
+// holder's layout, the folded-object epoch, then each binding's value and a typed array value's
+// store in place.
+fn void OptCg.binding_tests(&self, ulong bits) {
     void* c = self.a.c;
     Asm* a = self.a;
     Layout* l = a.lay;
-    OptBinding* b = &self.g.bindings[(usz)n.imm];
-    if ((n.cc & OPT_GUARD_LAYOUT) != 0) {
-        OptHolder* ho = &self.g.holders[(usz)b.holder];
+    for (uint k = 0; k < OPT_HOLDERS_MAX; k++) {
+        if ((bits & (1UL << (OPT_FACT_HOLDER + k))) == 0) continue;
+        OptHolder* ho = &self.g.holders[k];
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM, (long)(usz)ho.obj + l.obj_shape);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, ho.shape), i, OptExit.BINDING);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, ho.shape));
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, l.heap_shapes);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)ho.shape * 8);
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, l.shape_gen);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, ho.gen), i, OptExit.BINDING);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, ho.gen));
     }
-    if ((n.cc & OPT_GUARD_EPOCH) != 0) {
+    if ((bits & OPT_FACT_EPOCH) != 0) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.folded_epoch - (char*)self.h));
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, self.g.folded_epoch), i, OptExit.BINDING);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, self.g.folded_epoch));
     }
-    if (b.slot != null) {
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)b.slot);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)b.value), i, OptExit.BINDING);
+    for (uint k = 0; k < OPT_BINDINGS_MAX; k++) {
+        if ((bits & (1UL << k)) == 0) continue;
+        OptBinding* b = &self.g.bindings[k];
+        if (b.slot != null) {
+            sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)b.slot);
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)b.value));
+        }
+        OptView view;
+        if (opt_const_view(b.value, false, &view)) {
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM, (long)(usz)view.buffer + l.ab_data);
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)view.base));
+        }
     }
-    OptView view;
-    if (opt_const_view(b.value, false, &view)) {
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM, (long)(usz)view.buffer + l.ab_data);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)view.base), i, OptExit.BINDING);
-    }
-    TVal v = { .bits = b.value };
-    if (!v.is_object()) return;
-    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, l.heap_gc_phase);
-    void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
-    self.shade(i);
-    sljit_set_label(quiet, sljit_emit_label(c));
 }
 
-// GUARD_CAPTURE (OptCapture): the running closure's capture record, from the records the entry
-// loaded (emit_cap_refs), word by word. Zero records, a frame running code other than the closure's
-// own, exits too.
-fn void OptCg.emit_guard_capture(&self, uint i, OptNode* n) {
+// While the collector marks, the object values of the bindings among `bits` are shaded, as a load
+// of one would be: the code may store it to the window. The registers live at node `i` are kept.
+fn void OptCg.shade_bindings(&self, ulong bits, uint i) {
     void* c = self.a.c;
-    OptCapture* cap = &self.g.captures[(usz)n.imm];
-    long at = (long)cap.index * hobject::CaptureRef::size;
+    for (uint k = 0; k < OPT_BINDINGS_MAX; k++) {
+        if ((bits & (1UL << k)) == 0) continue;
+        TVal v = { .bits = self.g.bindings[k].value };
+        if (!v.is_object()) continue;
+        sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.a.heap, self.a.lay.heap_gc_phase);
+        void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)v.bits);
+        self.shade(i);
+        sljit_set_label(quiet, sljit_emit_label(c));
+    }
+}
+
+// GUARD_CAPTURE (OptCapture): the running closure's capture record (capture_tests).
+fn void OptCg.emit_guard_capture(&self, uint i, OptNode* n) {
+    self.a.call.len = 0;
+    self.capture_tests(self.g.captures[(usz)n.imm].index);
+    self.exit_calls(i, OptExit.CAPTURE);
+}
+
+// The test of the running closure's capture record `index` against the one the code folded
+// (OptCapture), from the records the entry loaded (emit_cap_refs), word by word, into the jumps
+// Asm.call collects. Zero records, a frame running code other than the closure's own, fails it too.
+fn void OptCg.capture_tests(&self, uint index) {
+    void* c = self.a.c;
+    OptCapture* cap;
+    foreach (&x : self.g.captures) if (x.index == index) cap = x;
+    long at = (long)index * hobject::CaptureRef::size;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | reg_sp(), self.cap_slot);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0), i, OptExit.CAPTURE);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     for (uint w = 0; w < 2; w++) {
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, at + (long)w * 8);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)cap.words[w]), i, OptExit.CAPTURE);
+        self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)cap.words[w]));
     }
 }
 

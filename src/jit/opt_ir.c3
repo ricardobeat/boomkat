@@ -430,7 +430,25 @@ struct OptBlock {
     bool osr;
     uint osr_first;
     uint osr_count;
+    // What the code of an OSR entry's loop assumes at its start, which the entry proves: the
+    // objects of [fact_first, fact_first + fact_count) in OptGraph.entry_facts, and the bits of
+    // OptBuild.fact_bindings and fact_captures.
+    uint fact_first;
+    uint fact_count;
+    ulong bindings;
+    ulong captures;
 }
+
+// The register (OPT_THIS: `this`) whose object a loop's code assumes of the shape `shape` (unless
+// SHAPE_NONE), plain as well when `plain`, and an array as `elem` says (OptBuild.fact_elem).
+struct OptEntryFact {
+    uint reg;
+    uint shape;
+    bool plain;
+    char elem;
+}
+
+const uint OPT_THIS = uint::max;
 
 // The distinct receiver shapes one field site's code compares: as many as the baseline cache can
 // record in an entry (hobject::IC_POLY_MAX), since a longer chain has nothing to compare against.
@@ -544,6 +562,7 @@ struct OptGraph {
     List{OptHolder} holders;
     List{OptBinding} bindings;
     List{OptCapture} captures;
+    List{OptEntryFact} entry_facts;
     // Heap.folded_epoch when the graph was built.
     uint folded_epoch;
     // The frame whose entry or loop asked for the compile, or null; its closure's capture records,
@@ -560,6 +579,7 @@ fn void OptGraph.init(&self) {
     self.holders.init(mem);
     self.bindings.init(mem);
     self.captures.init(mem);
+    self.entry_facts.init(mem);
     self.polys.init(mem);
     self.callees.init(mem);
     self.nodes.init(mem);
@@ -576,6 +596,7 @@ fn void OptGraph.clear(&self) {
     self.holders.clear();
     self.bindings.clear();
     self.captures.clear();
+    self.entry_facts.clear();
     self.polys.clear();
     self.callees.clear();
     self.nodes.clear();
@@ -591,6 +612,7 @@ fn void OptGraph.free(&self) {
     self.holders.free();
     self.bindings.free();
     self.captures.free();
+    self.entry_facts.free();
     self.polys.free();
     self.callees.free();
     self.nodes.free();
