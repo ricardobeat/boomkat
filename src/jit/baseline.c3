@@ -1621,7 +1621,7 @@ $else
             sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.la, (long)Activation::size + call_layout().act_retval);
             sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, 0);
             sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.ds, call_layout().ds_jit_waiter);
-            sljit_emit_op_src(c, SLJIT_FAST_RETURN, R2, 0);
+            self.return_to(R2);
             sljit_set_label(other, sljit_emit_label(c));
             sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.nonzero);
         case MUL:

@@ -814,7 +814,21 @@ fn void Asm.emit_return(&self, Jumps* helper) {
     // The subroutine's only nonzero status is BASELINE_RETURNED: the frame is gone, the result is
     // in R1, and R2 is the site that stores it.
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    sljit_emit_op_src(c, SLJIT_FAST_RETURN, R2, 0);
+    self.return_to(R2);
+}
+
+// Return to the native_ret in `r`, keeping R0 and R1. The record of a register call returns
+// through Trampoline.reg_ret; its frame is popped here instead and the return goes to the call
+// itself, the return the processor predicts for its call.
+fn void Asm.return_to(&self, int r) {
+    void* c = self.c;
+    if (REG_CALLS) {
+        void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, r, 0, SLJIT_IMM, (long)(usz)trampoline().reg_ret);
+        self.mov(r, 0, SLJIT_MEM | reg_sp(), jit_frame().link_off);
+        sljit_shim_adjust_sp(c, REG_FRAME_BYTES);
+        sljit_set_label(other, sljit_emit_label(c));
+    }
+    sljit_emit_op_src(c, SLJIT_FAST_RETURN, r, 0);
 }
 
 // Whether a frame of `f` can hold a catcher or for-in state (Activation.cat, forin): only TRY and
