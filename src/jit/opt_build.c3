@@ -45,6 +45,20 @@ struct OptRegState {
     bool dirty;
 }
 
+// A field value the code holds: field `key` of the OBJECT node `recv` (the root of its copies), or
+// of window register `reg` when recv is NO_NODE (reg is NO_NODE otherwise), last read into or
+// stored from `node`.
+struct OptAvail {
+    void* key;
+    uint recv;
+    uint reg;
+    uint node;
+}
+
+const uint OPT_AVAIL_MAX = 8;
+
+fn bool OptAvail.same(self, OptAvail o) => self.key == o.key && self.recv == o.recv && self.reg == o.reg && self.node == o.node;
+
 // Why a function was not optimized.
 enum OptRefuse : char (String label) {
     NONE {"none"},
@@ -262,6 +276,10 @@ struct OptBuild {
     // no code changes in a frame.
     ulong fact_bindings;
     ulong fact_captures;
+    // The field values the code holds, kept and dropped with the facts: a later read of one takes
+    // the node instead of the object (OptBuild.held_field).
+    OptAvail[OPT_AVAIL_MAX] avail;
+    uint avail_n;
     // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
     // this block, or NO_NODE; a numeric use of the register asks for it to be a typed load.
     uint* load_def;
@@ -276,6 +294,8 @@ struct OptBuild {
     bool* end_plain;
     ulong* end_bindings;
     ulong* end_captures;
+    OptAvail* end_avail;
+    char* end_avail_n;
     // The register states at the end and at the start of each block, by position.
     OptRegState* ends;
     OptRegState* entries;
@@ -536,6 +556,8 @@ fn void OptBuild.free(&self) {
     mem::free(self.end_plain);
     mem::free(self.end_bindings);
     mem::free(self.end_captures);
+    mem::free(self.end_avail);
+    mem::free(self.end_avail_n);
     mem::free(self.ends);
     mem::free(self.entries);
     self.overrides.free();
@@ -830,6 +852,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
     self.load_def[reg] = NO_NODE;
     self.const_def[reg] = NO_NODE;
     self.fact_shape[reg] = heap::SHAPE_NONE;
+    self.drop_reg(reg, node);
 }
 
 // Facts about objects are only held across nodes that neither run code nor allocate: LOAD_FIELD,
@@ -840,6 +863,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
 fn void OptBuild.forget_facts(&self) {
     for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
     self.fact_bindings = 0;
+    self.avail_n = 0;
 }
 
 // The register a field node reads its receiver from: nregs for `this`.
@@ -1079,18 +1103,71 @@ fn void OptBuild.ask_load(&self, uint pc, uint reg, OptRep want) {
 
 // The typed load a numeric use asked of the instruction at this pc, or NO_NODE.
 fn uint OptBuild.typed_load(&self, OptOp op, uint a) {
+    OptRep rep;
+    if (!self.asked_rep(&rep)) return NO_NODE;
+    uint n = self.add(op, rep, a, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    self.set(self.w.a, n);
+    return n;
+}
+
+// Whether a use asked the load being lowered for a node, and of which rep.
+fn bool OptBuild.asked_rep(&self, OptRep* rep) {
     foreach (c : self.load_reps) {
         if (c.block != self.pckey()) continue;
         // A load that has exited with a value an int32 node cannot hold (opt_note_operands) reads
         // a double; its int32 uses convert it, or (as an index) leave the access to the baseline.
-        OptRep rep = c.rep;
-        if (rep == OptRep.INT32 && (self.feedback() & hobject::FB_DBL) != 0) rep = OptRep.FLOAT64;
-        uint n = self.add(op, rep, a, NO_NODE, (long)self.pc);
-        self.snapshot(n);
-        self.set(self.w.a, n);
-        return n;
+        *rep = c.rep;
+        if (c.rep == OptRep.INT32 && (self.feedback() & hobject::FB_DBL) != 0) *rep = OptRep.FLOAT64;
+        return true;
+    }
+    return false;
+}
+
+// The node holding the value of field `key` of the receiver, the OBJECT node `recv` (the root of
+// its copies) or window register `reg` when recv is NO_NODE, or NO_NODE.
+fn uint OptBuild.held_field(&self, void* key, uint recv, uint reg) {
+    for (uint i = 0; i < self.avail_n; i++) {
+        OptAvail e = self.avail[i];
+        if (e.key == key && e.recv == recv && (recv != NO_NODE || e.reg == reg)) return e.node;
     }
     return NO_NODE;
+}
+
+// Field `key` of the receiver (as held_field names it) holds the value of `node`.
+fn void OptBuild.note_field(&self, void* key, uint recv, uint reg, uint node) {
+    OptAvail e = { .key = key, .recv = recv, .reg = recv == NO_NODE ? reg : NO_NODE, .node = node };
+    for (uint i = 0; i < self.avail_n; i++) {
+        OptAvail* x = &self.avail[i];
+        if (x.key == e.key && x.recv == e.recv && x.reg == e.reg) {
+            x.node = node;
+            return;
+        }
+    }
+    if (self.avail_n == OPT_AVAIL_MAX) {
+        for (uint i = 1; i < OPT_AVAIL_MAX; i++) self.avail[i - 1] = self.avail[i];
+        self.avail_n--;
+    }
+    self.avail[self.avail_n++] = e;
+}
+
+// A write of field `key`, to an object any receiver may be.
+fn void OptBuild.drop_key(&self, void* key) {
+    uint kept = 0;
+    for (uint i = 0; i < self.avail_n; i++) if (self.avail[i].key != key) self.avail[kept++] = self.avail[i];
+    self.avail_n = kept;
+}
+
+// Register `reg` now holds `node`: it no longer holds the receiver of the fields read through it,
+// and its slot is no longer where the value of another node that lost its machine register lives.
+fn void OptBuild.drop_reg(&self, uint reg, uint node) {
+    uint kept = 0;
+    for (uint i = 0; i < self.avail_n; i++) {
+        OptAvail e = self.avail[i];
+        if (e.reg == reg || (e.node != node && self.g.nodes[e.node].home == reg)) continue;
+        self.avail[kept++] = e;
+    }
+    self.avail_n = kept;
 }
 
 // GETCAP: a typed load (a number, or an OBJECT) when a use asked for one; else the value read into
@@ -1645,6 +1722,18 @@ fn bool OptBuild.get_field(&self) {
         // The receiver of a nested call held in an OBJECT node.
         rnode = self.cur[recv].node;
     }
+    void* key = (void*)ic.key.borrow();
+    uint rkey = self.copied(rnode);
+    uint ra = self.w.a;
+    // Nothing since an earlier read or write of the field can have changed it: its node is the
+    // value, when it has the rep a use asked of this read.
+    uint held = self.held_field(key, rkey, recv);
+    OptRep want;
+    if (held != NO_NODE && ra < self.nregs && (!self.asked_rep(&want) || want == self.rep_of(held))) {
+        self.set(ra, self.g.nodes[held].is_const() ? held : self.add(OptOp.COPY, self.rep_of(held), held));
+        if (rkey != NO_NODE || recv != ra) self.note_field(key, rkey, recv, self.cur[ra].node);
+        return true;
+    }
     // A property of a prototype is read through the entry at run time, with no shape fact, unless
     // the entry has only ever held the one receiver (OptNode.exact). An inlined body's entry is
     // shared by every caller, and its exits do not teach it.
@@ -1657,7 +1746,6 @@ fn bool OptBuild.get_field(&self) {
     if (n == NO_NODE) {
         n = self.add(OptOp.LOAD_FIELD, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
         self.snapshot(n);
-        uint ra = self.w.a;
         self.g.nodes[n].home = ra;
         self.kill(ra);
         if (ra < self.nregs) self.load_def[ra] = self.pckey();
@@ -1669,11 +1757,12 @@ fn bool OptBuild.get_field(&self) {
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].exact = exact;
     self.g.nodes[n].b = rnode;
-    self.g.nodes[n].key = (void*)ic.key.borrow();
+    self.g.nodes[n].key = key;
     self.set_poly(n, ic);
     if (mono || exact) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
-    if (recv < self.nregs && recv == self.w.a) self.fact_shape[recv] = heap::SHAPE_NONE;
+    if (recv < self.nregs && recv == ra) self.fact_shape[recv] = heap::SHAPE_NONE;
+    if (self.g.nodes[n].rep != OptRep.NONE && (rkey != NO_NODE || recv != ra)) self.note_field(key, rkey, recv, n);
     return true;
 }
 
@@ -1843,11 +1932,15 @@ fn bool OptBuild.put_field(&self) {
     if (value == NO_NODE) self.ask_object(rv);
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, value, rnode, (long)self.pc);
     self.snapshot(n);
-    self.g.nodes[n].key = (void*)ic.key.borrow();
+    void* key = (void*)ic.key.borrow();
+    self.g.nodes[n].key = key;
     bool mono = ic.chain_len == 0;
     self.g.nodes[n].cc = (mono && self.guards_known(recv, ic.shape_id)) ? 1 : 0;
     self.set_poly(n, ic);
     if (mono) self.learn(recv, ic.shape_id);
+    // The field of any receiver may be the one written; this one now reads back the value.
+    self.drop_key(key);
+    if (self.cur[rv].node != NO_NODE) self.note_field(key, self.copied(rnode), recv, self.cur[rv].node);
     return true;
 }
 
@@ -2178,6 +2271,8 @@ fn bool OptBuild.init_slot(&self) {
     if (self.cur[rc].node != NO_NODE) value = self.cur[rc].node;
     uint n = self.add(OptOp.INIT_SLOT, OptRep.NONE, value, obj, (long)self.pc);
     self.snapshot(n);
+    // A slot named by index, of whatever key.
+    self.avail_n = 0;
     return true;
 }
 
@@ -2188,6 +2283,7 @@ fn void OptBuild.kill(&self, uint r) {
     self.load_def[r] = NO_NODE;
     self.const_def[r] = NO_NODE;
     self.fact_shape[r] = heap::SHAPE_NONE;
+    self.drop_reg(r, NO_NODE);
 }
 
 // The function a call the tier runs as a GENERIC enters through its call entry's direct label
@@ -3516,6 +3612,8 @@ fn bool OptBuild.try_inline(&self) {
     mem::copy(save_plain, self.fact_plain, (usz)n + 1);
     ulong save_bindings = self.fact_bindings;
     ulong save_captures = self.fact_captures;
+    OptAvail[OPT_AVAIL_MAX] save_avail = self.avail;
+    uint save_avail_n = self.avail_n;
     sz nodes0 = self.g.nodes.len();
     sz dirty0 = self.g.dirty.len();
     sz fns0 = self.g.fns.len();
@@ -3621,6 +3719,8 @@ fn bool OptBuild.try_inline(&self) {
         mem::copy(self.fact_plain, save_plain, (usz)n + 1);
         self.fact_bindings = save_bindings;
         self.fact_captures = save_captures;
+        self.avail = save_avail;
+        self.avail_n = save_avail_n;
         if (parent_fn == 0) self.refused = OptRefuse.NONE;
         return false;
     }
@@ -3972,6 +4072,11 @@ fn void OptBuild.begin_block(&self, uint pos) {
             self.g.nodes[phi].home = r;
             self.cur[r] = { .node = phi, .dirty = true };
         }
+        // A phi's slot holds it.
+        for (uint r = 0; r < self.nregs; r++) {
+            uint node = self.cur[r].node;
+            if (node != NO_NODE && node >= blk.first && self.g.nodes[node].op == OptOp.PHI) self.drop_reg(r, node);
+        }
     }
     if (blk.header) {
         blk.entry_first = (uint)self.g.dirty.len();
@@ -4064,6 +4169,8 @@ fn void OptBuild.save_ends(&self, uint pos) {
     mem::copy(&self.end_plain[(sz)pos * w], self.fact_plain, w);
     self.end_bindings[pos] = self.fact_bindings;
     self.end_captures[pos] = self.fact_captures;
+    mem::copy(&self.end_avail[(usz)pos * OPT_AVAIL_MAX], &self.avail, (usz)self.avail_n * OptAvail::size);
+    self.end_avail_n[pos] = (char)self.avail_n;
 }
 
 // The facts at the start of the block at `pos`: those every built block leading to it ends with.
@@ -4075,6 +4182,19 @@ fn void OptBuild.meet_facts(&self, uint pos) {
         uint* shape = &self.end_shape[(usz)p * w];
         bool* plain = &self.end_plain[(usz)p * w];
         self.fact_bindings = first ? self.end_bindings[p] : self.fact_bindings & self.end_bindings[p];
+        OptAvail[] avail = self.end_avail[(usz)p * OPT_AVAIL_MAX:self.end_avail_n[p]];
+        if (first) {
+            self.avail[:avail.len] = avail[..];
+            self.avail_n = (uint)avail.len;
+        } else {
+            uint kept = 0;
+            for (uint i = 0; i < self.avail_n; i++) {
+                bool all = false;
+                foreach (e : avail) all = all || e.same(self.avail[i]);
+                if (all) self.avail[kept++] = self.avail[i];
+            }
+            self.avail_n = kept;
+        }
         for (usz r = 0; r < w; r++) {
             if (first) {
                 self.fact_shape[r] = shape[r];
@@ -4269,6 +4389,8 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.end_plain = mem::new_array(bool, (usz)b.nrpo * ((usz)n + 1));
     b.end_bindings = mem::new_array(ulong, b.nrpo);
     b.end_captures = mem::new_array(ulong, b.nrpo);
+    b.end_avail = mem::new_array(OptAvail, (usz)b.nrpo * OPT_AVAIL_MAX);
+    b.end_avail_n = mem::new_array(char, b.nrpo);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
     // A nested site's operands become OBJECT nodes over rounds of their own, each request
