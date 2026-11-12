@@ -24,6 +24,7 @@ import std::io;
 // pointers that are never dereferenced.
 struct Layout {
     long ds_act;
+    long ds_reg_ret;
     long act_this;
     long act_hrc;
     long act_lex_env;
@@ -173,6 +174,7 @@ fn Layout* layout() {
     hobject::CaptureRef* cr = (hobject::CaptureRef*)base;
     hstring::HString* s = (hstring::HString*)base;
     l.ds_act = (char*)&d.act - base;
+    l.ds_reg_ret = (char*)&d.reg_ret - base;
     l.act_this = (char*)&act.this_binding - base;
     l.act_hrc = (char*)&act.heap_reg_count - base;
     l.act_lex_env = (char*)&act.lex_env - base;

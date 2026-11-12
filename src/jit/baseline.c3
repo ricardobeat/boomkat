@@ -228,6 +228,8 @@ struct BaselineCode {
     void* call_entry;
     // The call entry's label for a call optimized code proved (Asm.emit_direct_call), or null.
     void* direct_entry;
+    // Optimized code of a register leaf (OptGraph.reg_leaf): its entry in register mode, or null.
+    void* reg_entry;
     // The first shared subroutine, which ends the call entry (--jit-dump-feedback).
     void* subs;
     // Optimized code only: set by every entry, cleared by the eviction sweep (opt_make_room).
@@ -590,6 +592,10 @@ struct Asm {
     void* direct_label;
     // The callee optimized code proved for the call being emitted (OptBuild.direct_callee), or null.
     CompiledFunction* direct_cf;
+    // The optimized code being emitted is a register leaf: its exits and returns test for register
+    // mode (Dispatch.reg_ret). reg_label is its register entry, for Asm.finish.
+    bool reg_leaf;
+    void* reg_label;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;
@@ -818,6 +824,7 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     bc.code_bytes = sljit_shim_code_size(self.c);
     if (call_entry != null) bc.call_entry = (void*)sljit_shim_label_addr(call_entry);
     if (call_entry != null) bc.direct_entry = (void*)sljit_shim_label_addr(self.direct_label);
+    if (self.reg_label != null) bc.reg_entry = (void*)sljit_shim_label_addr(self.reg_label);
     bc.subs = (void*)sljit_shim_label_addr(subs);
     if (h.jit_stats.dump_feedback) {
         foreach (slot, label : self.sub_labels) {
@@ -1094,12 +1101,14 @@ const int CALL_FRAME_BYTES = 32;
 // constant), six saved registers, and the local area: CALL_FRAME_BYTES, the
 // optimized code's register saves around C calls and its capture records
 // (OptCg.cap_slot), then the sync routine's return address and the registers
-// it keeps (Trampoline.sync). Calls between generated frames do not leave it
+// it keeps (Trampoline.sync), then a register leaf's register saves, apart from
+// its caller's (OptCg.emit_call_reg). Calls between generated frames do not leave it
 // (baseline_call.c3), and every way out of generated code returns from it.
 struct JitFrame {
     int scratches;
     int locals;
     int sync_off;
+    int leaf_save_off;
 }
 
 const int JIT_SAVEDS = 6;
@@ -1109,7 +1118,9 @@ const int SYNC_WORDS = 6;
 fn JitFrame jit_frame() {
     OptPools p = opt_pools();
     int sync_off = CALL_FRAME_BYTES + 8 * (p.int_count + p.flt_count + 1);
-    return { .scratches = p.scratches | (p.fscratches << 8), .locals = sync_off + 8 * SYNC_WORDS, .sync_off = sync_off };
+    int leaf_save_off = sync_off + 8 * SYNC_WORDS;
+    return { .scratches = p.scratches | (p.fscratches << 8), .locals = leaf_save_off + 8 * (p.int_count + p.flt_count),
+             .sync_off = sync_off, .leaf_save_off = leaf_save_off };
 }
 
 // Declare the shared native frame for the code that follows, which has no

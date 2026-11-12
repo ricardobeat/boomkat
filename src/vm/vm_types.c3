@@ -545,6 +545,9 @@ struct Dispatch {
     bool jit_native @if($feat(SLJIT));
     // The native_ret of the frame vm::jit_ret just popped for a waiting caller.
     void* jit_waiter @if($feat(SLJIT));
+    // Where the optimized function running in register mode returns (jit::OptCg.emit_call_reg), or
+    // null: such a body has no frame of its own and runs inside its caller's.
+    void* reg_ret @if($feat(SLJIT));
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first

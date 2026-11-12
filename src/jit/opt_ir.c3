@@ -222,6 +222,11 @@ enum OptOp : char {
     BRANCH_CALLEE,
     // The bytecode instruction at pc, through the baseline emitter.
     GENERIC,
+    // The call at pc of the register leaf key (its CompiledFunction), CHECK_CALLEE before it: the
+    // window stored as a GENERIC's, the callee entered in register mode (OptCg.emit_call_reg),
+    // its result stored to the window. The caller's registers survive; it exits at the call
+    // (CALLEE) when the callee exits or has no register entry.
+    CALL_REG,
     // A NEW_OBJ (pc) of the constructor imm (its CompiledFunction*), after its CHECK_CALLEE: a plain
     // object with the prototype the instruction's cache reads from the constructor, the OBJECT node
     // the inlined body takes as `this`. Exits (ALLOC_SLOW) before any effect when the constructor is

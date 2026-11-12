@@ -85,6 +85,9 @@ const char OPT_DECLINE_MAX = 3;
 const uint OPT_FIELD_SITES = 2;
 // Integer arithmetic, bitwise and element instructions that make a function worth optimizing alone.
 const uint OPT_INT_WORK = 8;
+// Functions of at most this many words are compiled when hot even without feedback, for the
+// register leaf they may compile to.
+const uint OPT_LEAF_WORDS = 24;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
 // Discards after UNPROFILED exits that do not count as reoptimizations. Each such exit records a
@@ -355,7 +358,9 @@ fn bool opt_has_operand_feedback(CompiledFunction* f) {
 }
 
 fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
-    if (opt_has_operand_feedback(f) || opt_has_int_work(f)) return true;
+    // A small function may compile to a register leaf (OptGraph.reg_leaf), which its callers enter
+    // without a frame.
+    if (opt_has_operand_feedback(f) || opt_has_int_work(f) || f.code_count <= OPT_LEAF_WORDS) return true;
     if (f.ic_entries == null || f.opt_declined >= OPT_DECLINE_MAX) return false;
     if (opt_has_field_feedback(f)) return true;
     hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
@@ -725,7 +730,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined or is entered
     // directly.
-    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
+    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && !g.reg_leaf(f) && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
         f.opt_declined++;
         return false;
     }
@@ -1121,6 +1126,7 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
         sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, 1);
         sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R0, 0, R1, 0);
     }
+    if (self.reg_leaf) self.emit_reg_leave(REG_CALLEE_EXIT);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.i * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.pc_off, R1, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
@@ -1129,6 +1135,22 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
     self.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_exit);
     sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_IMM, (long)(usz)oc.base.exec_jump);
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
+}
+
+// A register call's status when the callee exited: the caller exits at the call, whose baseline
+// code runs it again (a register leaf has no effect to repeat).
+const long REG_CALLEE_EXIT = 1;
+
+// In register mode (Dispatch.reg_ret set), return to the caller with `status` in R0, leaving
+// register mode; R1 is kept. Otherwise fall through. Clobbers R2.
+fn void Asm.emit_reg_leave(&self, long status) {
+    void* c = self.c;
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.ds, self.lay.ds_reg_ret);
+    void* framed = sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.lay.ds_reg_ret, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, status);
+    sljit_emit_op_src(c, SLJIT_FAST_RETURN, R2, 0);
+    sljit_set_label(framed, sljit_emit_label(c));
 }
 
 // Leave `oc` for the baseline code at the instruction self.i without an exit: a region's branch out

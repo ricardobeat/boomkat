@@ -2016,6 +2016,30 @@ fn CompiledFunction* OptBuild.direct_callee(&self) {
     return cf;
 }
 
+// Whether a call of `cf` with `nargs` arguments can enter its optimized code in register mode: a
+// register leaf (OptGraph.reg_leaf) passed every formal.
+fn bool reg_callable(CompiledFunction* cf, uint nargs) {
+    if (cf.opt_code == null || nargs < cf.num_formals) return false;
+    BaselineCode* bc = (BaselineCode*)cf.jit_code;
+    return bc != null && bc.reg_entry != null;
+}
+
+// The call being lowered, of the register leaf `cf` its guard proved (direct_callee), as a CALL_REG:
+// its window stored, and what a call leaves, its window dead and its result in the window, but
+// the caller's values kept in their registers.
+fn bool OptBuild.reg_call(&self, CompiledFunction* cf) {
+    bool var_call = self.w.op == Opcode.CALL_VAR || self.w.op == Opcode.CALL_GLOBAL;
+    uint callee_reg = var_call ? self.w.a : self.w.b;
+    uint n = self.add(OptOp.CALL_REG, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.g.nodes[n].key = cf;
+    self.snapshot(n);
+    OptNode* node = &self.g.nodes[n];
+    for (uint k = 0; k < node.dirty_count; k++) self.cur[self.g.dirty[(sz)(node.dirty_first + k)].reg].dirty = false;
+    for (uint r = callee_reg; r < self.nregs; r++) self.kill(r);
+    self.kill(self.w.a);
+    return true;
+}
+
 // The instruction as the baseline emitter runs it: the registers it can read
 // stored first, the registers it can write no longer numeric nodes, and the
 // numeric registers live after it reloaded from the window.
@@ -2061,6 +2085,7 @@ fn bool OptBuild.generic(&self) {
         }
     }
     CompiledFunction* direct = self.direct_callee();
+    if (direct != null && reg_callable(direct, op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL ? self.w.b : self.w.c)) return self.reg_call(direct);
     uint n = self.add(OptOp.GENERIC, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
     self.g.nodes[n].key = direct;
     self.forget_facts();

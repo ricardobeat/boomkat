@@ -84,6 +84,9 @@ struct OptCg {
     // The native stack offset of the function's capture records (the running closure's), which
     // every entry loads once (emit_cap_refs); -1 when no read of the function's own uses it.
     long cap_slot;
+    // Where spill_live saves registers around a C call: a register leaf's saves keep clear of its
+    // caller's, which hold the caller's values across the call.
+    long save_off;
 }
 
 fn void OptCg.init(&self) {
@@ -346,6 +349,7 @@ fn void OptCg.emit_exit_stubs(&self) {
             sljit_set_label(x.jump, label);
             i++;
         }
+        if (self.a.reg_leaf) self.a.emit_reg_leave(REG_CALLEE_EXIT);
         self.store_dirty(e.dirty_first, e.dirty_count);
         self.materialize(e.node);
         self.use_fn(e.fidx);
@@ -1770,14 +1774,14 @@ fn void OptCg.spill_live(&self, uint i, bool save) {
         OptNode* nd = &self.g.nodes[j];
         if (!nd.allocated() || nd.reg < 0 || nd.last_use <= i) continue;
         if (nd.rep.is_gpr()) {
-            long off = CALL_FRAME_BYTES + 8 * (long)(nd.reg - self.pools.int_first);
+            long off = self.save_off + 8 * (long)(nd.reg - self.pools.int_first);
             if (save) {
                 sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), off, nd.reg, 0);
             } else {
                 sljit_emit_op1(c, SLJIT_MOV, nd.reg, 0, SLJIT_MEM | reg_sp(), off);
             }
         } else {
-            long off = CALL_FRAME_BYTES + 8 * (long)(self.pools.int_count + nd.reg - self.pools.flt_first);
+            long off = self.save_off + 8 * (long)(self.pools.int_count + nd.reg - self.pools.flt_first);
             if (save) {
                 sljit_emit_fop1(c, SLJIT_MOV_F64, SLJIT_MEM | reg_sp(), off, nd.reg, 0);
             } else {
@@ -2694,6 +2698,16 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     self.store_dirty(n.dirty_first, n.dirty_count);
     uint at = (uint)n.imm;
+    // A register leaf's only GENERICs are its returns: in register mode, the result in R1.
+    if (self.a.reg_leaf) {
+        self.a.decode(at);
+        if (self.a.w.op == Opcode.RET) {
+            self.a.load(R1, self.a.w.a);
+        } else {
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, K_UNDEF);
+        }
+        self.a.emit_reg_leave(0);
+    }
     self.a.direct_called = false;
     self.a.direct_cf = (CompiledFunction*)n.key;
     self.a.emit_insn(at);
@@ -2714,6 +2728,43 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
             self.reload_flt(nd.reg, d.reg);
         }
     }
+}
+
+// CALL_REG: enter the register leaf n.key with its window (the call's registers from the callee
+// register on, which the stores of the node's snapshot hold) in R1. The leaf runs in this frame,
+// on its window, clobbering every register but the pinned ones: the values live across the call
+// wait in the spill area, which a leaf never uses.
+fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
+    Asm* a = self.a;
+    void* c = a.c;
+    CallLayout* k = call_layout();
+    self.store_dirty(n.dirty_first, n.dirty_count);
+    a.decode((uint)n.imm);
+    bool var_call = a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL;
+    uint callee_reg = var_call ? a.w.a : a.w.b;
+    CompiledFunction* cf = (CompiledFunction*)n.key;
+    // The callee's window lies in the room the entry tests.
+    a.room_acts = max(a.room_acts, 1u);
+    a.room_slots = max(a.room_slots, callee_reg + 2 + cf.num_regs);
+    self.spill_live(i, true);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)(callee_reg + 2) * TVal::size);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
+    void* no_code = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, k.bc_reg_entry);
+    void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, SLJIT_MEM | a.la, k.act_bottom);
+    void* exited = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    a.store(a.w.a, R1);
+    a.track_heap_store(a.w.a);
+    self.spill_live(i, false);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(exited, sljit_emit_label(c));
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.CALLEE);
+    self.exit_at(no_code, i, OptExit.CALLEE);
+    self.exit_at(no_entry, i, OptExit.CALLEE);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 fn void OptCg.emit_node(&self, uint i, uint pos) {
@@ -2834,6 +2885,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.defer_taken(pos, &jumps[0], count);
         case GENERIC:
             self.emit_generic(i, n);
+        case CALL_REG:
+            self.emit_call_reg(i, n);
         case NEW_OBJECT:
             if (n.sunk) {
                 self.emit_sunk_object(i, n);
@@ -2864,6 +2917,35 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     }
 }
 
+// Whether the code of `f` from this graph can run in register mode (OptCg.emit_call_reg): with no
+// frame of its own, on a window in its caller's, so reading nothing but its window and the heap,
+// writing nothing but its window, calling nothing, and leaving only by a return or an exit, which
+// return to the caller (Asm.emit_reg_leave) before any effect, its arguments unchanged (an exit
+// stores nothing in register mode). No loops: a back edge polls.
+fn bool OptGraph.reg_leaf(&self, CompiledFunction* f) {
+    if (self.fns.len() != 1 || self.region.end != 0 || f.maps_formals()) return false;
+    foreach (&blk : self.blocks) if (blk.header || blk.osr) return false;
+    foreach (&nd : self.nodes) {
+        switch (nd.op) {
+            case CONST_I32: case CONST_F64: case CHECK_I32: case CHECK_NUM: case LOAD_FIELD: case LOAD_LENGTH:
+            case PHI: case COPY: case ADD_I32: case SUB_I32: case MUL_I32: case AND_I32: case OR_I32:
+            case XOR_I32: case NOT_I32: case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32:
+            case I32_TO_F64: case F64_TO_I32: case ADD_F64: case SUB_F64: case MUL_F64: case DIV_F64:
+            case NEG_F64: case COMPARE: case LNOT: case EXIT: case JUMP: case BRANCH:
+                break;
+            // A callee exit runs the call again from its window: its arguments are kept.
+            case STORE_CONST: case STORE_OBJ:
+                if ((uint)nd.imm < f.num_formals) return false;
+            case GENERIC:
+                Opcode op = f.code[(uint)nd.imm].op;
+                if (op != Opcode.RET && op != Opcode.RETUNDEF) return false;
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
 // Generate native code for the graph. Null when code generation fails.
 fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc, OptPools pools) {
     uint count = f.code_count;
@@ -2875,6 +2957,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     Asm a = asm_new(c, h, f);
     defer a.release();
     a.opt = true;
+    a.reg_leaf = g.reg_leaf(f);
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;
     foreach (&nd : g.nodes) {
@@ -2895,7 +2978,8 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
         oc.cells = h.alloc_func(h.heap_udata, fields * uint::size);
         if (oc.cells == null) return null;
     }
-    OptCg cg = { .a = &a, .h = h, .g = g, .oc = oc, .pools = pools, .cap_slot = cap_slot };
+    OptCg cg = { .a = &a, .h = h, .g = g, .oc = oc, .pools = pools, .cap_slot = cap_slot,
+                 .save_off = a.reg_leaf ? jit_frame().leaf_save_off : CALL_FRAME_BYTES };
     cg.init();
     defer cg.free();
     uint blocks = (uint)g.blocks.len();
@@ -2929,6 +3013,17 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     if (call_entry_eligible(f) && !g.blocks[0].osr) {
         a.labels[0] = cg.labels[0];
         call_entry = a.emit_call_entry(bc, touch: true);
+    }
+    // A register leaf's register entry: the caller's return address kept in the Dispatch, the
+    // window in R1, the registers past the formals undefined as a call entry leaves them.
+    if (a.reg_leaf) {
+        a.reg_label = sljit_emit_label(c);
+        sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM | a.ds, a.lay.ds_reg_ret);
+        sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, R1, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, K_UNDEF);
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, R2, 0);
+        if (f.num_formals < f.num_regs) a.clear_slots(a.regs, f.num_formals, f.num_regs, R2, R3, R4, R0);
+        cg.gotos.push({ .jump = sljit_emit_jump(c, SLJIT_JUMP), .block = 0 });
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;

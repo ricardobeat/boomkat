@@ -98,6 +98,7 @@ struct CallLayout {
     long cf_num_regs;
     long bc_call_entry;
     long bc_direct_entry;
+    long bc_reg_entry;
     long env_flags;
     long fn_mask;
     long fn_want;
@@ -159,6 +160,7 @@ fn CallLayout* call_layout() {
     l.cf_num_regs = (char*)&cf.num_regs - base;
     l.bc_call_entry = (char*)&bc.call_entry - base;
     l.bc_direct_entry = (char*)&bc.direct_entry - base;
+    l.bc_reg_entry = (char*)&bc.reg_entry - base;
     l.env_flags = (char*)&e.flags - base;
     // th_lean_target's callable_kind() == COMPILED_FN, narrowed as the
     // inline cache paths narrow objects: a callable, unbound, non-proxy
