@@ -2921,13 +2921,18 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
 // samples to nodes: "onodes fn#<index> <start> <end> <address>:<op>:<pc>:<fn> ..." in node order,
 // then "onodes-end <address>" past the last node, where the stubs begin (--jit-dump-feedback).
 fn void opt_dump_nodes(CompiledFunction* f, OptGraph* g, BaselineCode* bc, void*[] labels) {
-    io::eprintf("onodes fn#%d %x %x", f.func_index, (usz)bc.exec, (usz)bc.exec + bc.code_bytes);
+    // One write, as dump_code_map makes it.
+    DString out;
+    out.init(mem, 256);
+    defer out.free();
+    out.appendf("onodes fn#%d %x %x", f.func_index, (usz)bc.exec, (usz)bc.exec + bc.code_bytes);
     for (sz i = 0; i < g.nodes.len(); i++) {
         if (labels[i] == null) continue;
         OptNode* n = &g.nodes[i];
-        io::eprintf(" %x:%s:%d:%d", (usz)sljit_shim_label_addr(labels[i]), n.op, n.pc, n.fidx);
+        out.appendf(" %x:%s:%d:%d", (usz)sljit_shim_label_addr(labels[i]), n.op, n.pc, n.fidx);
     }
-    io::eprintfn(" end:%x", (usz)sljit_shim_label_addr(labels[g.nodes.len()]));
+    out.appendf(" end:%x", (usz)sljit_shim_label_addr(labels[g.nodes.len()]));
+    io::eprintn(out.str_view());
 }
 
 // Generate native code for the graph. Null when code generation fails.
@@ -3016,5 +3021,6 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     for (uint pos = 0; pos < blocks; pos++) {
         if (g.blocks[pos].osr) bc.entries[g.blocks[pos].pc] = (void*)sljit_shim_label_addr(cg.osr_labels[pos]);
     }
+    if (h.jit_stats.dump_feedback) dump_code_map(f, bc, true);
     return bc;
 }

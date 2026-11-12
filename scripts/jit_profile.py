@@ -69,7 +69,8 @@ for line in open(map_path, errors='replace'):
         for tok in line.split()[2:]:
             ad, op = tok.split(':')[:2]
             cur['ents'].append((int(ad, 16), op))
-maps.sort(key=lambda m: m['start'])
+# Code freed and reused by a later compile: the later lines describe it.
+maps = sorted({m['start']: m for m in maps}.values(), key=lambda m: m['start'])
 subs.sort()
 starts = [m['start'] for m in maps]
 sub_at = [s[0] for s in subs]

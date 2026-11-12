@@ -932,6 +932,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(a.labels[i]);
     }
     bc.thunk_insns = a.thunk_insns;
+    if (h.jit_stats.dump_feedback) dump_code_map(f, bc, false);
     return bc;
 }
 
@@ -2366,23 +2367,24 @@ fn void baseline_dump_feedback(Heap* h) {
     }
 }
 
-// Print where every function's native code lives, for attributing profiler samples:
-// "map fn#<index> <name> <start> <end> [opt]" then "ents fn#<index> <address of
-// each instruction word>" (--jit-dump-feedback).
-fn void baseline_dump_map(Heap* h) {
-    for (uint fi = 0; fi < h.compiled_func_count; fi++) {
-        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
-        if (cf == null || cf.jit_code == null) continue;
-        BaselineCode* bc = (BaselineCode*)cf.jit_code;
-        io::eprintfn("map fn#%d n%d %x %x %x %x%s", fi, cf.code_count, (usz)bc.exec,
-                     (usz)bc.exec + bc.code_bytes, (usz)bc.call_entry, (usz)bc.subs, cf.opt_code != null ? " opt" : "");
-        io::eprintf("ents fn#%d", fi);
-        for (usz i = 0; i < cf.code_count; i++) {
-            usz at = (usz)bc.entries[i];
-            if (at >= (usz)bc.exec && at < (usz)bc.exec + bc.code_bytes) io::eprintf(" %x:%s:%d", at, cf.code[i].op, i);
-        }
-        io::eprintfn("");
+// Print where native code of `cf` lives, for attributing profiler samples, as each compile
+// finishes (--jit-dump-feedback): "map fn#<index> n<instructions> <start> <end> <call entry>
+// <subroutines> [opt]" then "ents fn#<index> <address:op:pc of each instruction word>". Code
+// freed later may be reused by another compile, whose lines come after.
+fn void dump_code_map(CompiledFunction* cf, BaselineCode* bc, bool opt) {
+    uint fi = cf.func_index;
+    // One write: a large function's line would otherwise take a write per instruction, which
+    // shows in the profile it is for.
+    DString out;
+    out.init(mem, 256);
+    defer out.free();
+    out.appendf("map fn#%d n%d %x %x %x %x%s\nents fn#%d", fi, cf.code_count, (usz)bc.exec,
+                (usz)bc.exec + bc.code_bytes, (usz)bc.call_entry, (usz)bc.subs, opt ? " opt" : "", fi);
+    for (usz i = 0; i < cf.code_count; i++) {
+        usz at = (usz)bc.entries[i];
+        if (at >= (usz)bc.exec && at < (usz)bc.exec + bc.code_bytes) out.appendf(" %x:%s:%d", at, cf.code[i].op, i);
     }
+    io::eprintn(out.str_view());
 }
 
 // Move one thunk call of `op` from the slow count to the relayed completions.

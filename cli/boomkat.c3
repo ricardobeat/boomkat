@@ -299,7 +299,7 @@ fn int main(String[] args) {
     }
 
     $if $feat(SLJIT):
-        defer if (jit_dump_feedback) { jit::baseline_dump_feedback(hp); jit::baseline_dump_map(hp); }
+        defer if (jit_dump_feedback) { jit::baseline_dump_feedback(hp); }
         defer if (jit_stats) {
             jit::JitStats* st = &hp.jit_stats;
             io::eprintfn("jit: compiled %d (%d from hot loops), code %d bytes for %d instructions, tables %d bytes; excluded: opcode %d, too large %d; failed %d, capped %d",
