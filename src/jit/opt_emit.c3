@@ -923,34 +923,41 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.b);
     }
-    a.unbox_object(R1, rr);
     long flags;
     bool unseen;
-    int k = self.typed_kind(0, &flags, &unseen);
-    if (k >= 0) {
-        int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, 0, false);
-        self.exit_calls(i, OptExit.SLOW_PATH);
-        self.emit_typed_load(i, n, TYPED_KINDS[k], x);
-        return;
+    void* other = null;
+    if ((n.cc & ELEM_KNOWN) != 0) {
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
+    } else {
+        a.unbox_object(R1, rr);
+        int k = self.typed_kind(0, &flags, &unseen);
+        if (k >= 0) {
+            int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, 0, false);
+            self.exit_calls(i, OptExit.SLOW_PATH);
+            self.emit_typed_load(i, n, TYPED_KINDS[k], x);
+            return;
+        }
+        other = a.array_or_typed(0);
     }
-    void* other = a.array_or_typed(0);
     self.array_slot(n.a);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
-    $if features::BUFFERS:
-        void* done = sljit_emit_jump(c, SLJIT_JUMP);
-        sljit_set_label(other, sljit_emit_label(c));
-        if (unseen) {
-            self.unprofiled_exit(i);
-        } else {
-            self.box_index(n.a);
-            a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
-            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
-        }
-        sljit_set_label(done, sljit_emit_label(c));
-    $else
-        a.call.add(other);
-    $endif
+    if (other != null) {
+        $if features::BUFFERS:
+            void* done = sljit_emit_jump(c, SLJIT_JUMP);
+            sljit_set_label(other, sljit_emit_label(c));
+            if (unseen) {
+                self.unprofiled_exit(i);
+            } else {
+                self.box_index(n.a);
+                a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
+                a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+            }
+            sljit_set_label(done, sljit_emit_label(c));
+        $else
+            a.call.add(other);
+        $endif
+    }
     self.exit_calls(i, OptExit.SLOW_PATH);
     if (n.rep == OptRep.NONE) {
         self.publish(i, a.w.a);
@@ -974,7 +981,7 @@ $if features::BUFFERS:
     Asm* a = self.a;
     if (a.f.ic_entries == null) return -1;
     long recorded = (long)((hobject::ICEntry*)a.f.ic_entries)[a.next - 1].fwd_callee;
-    *unseen = recorded == 0;
+    *unseen = opt_elem_arrays_only(a.f, a.next - 1);
     recorded &= ~(long)ELEM_CLASS_SEEN;
     Layout* l = a.lay;
     long proxy = 0;
@@ -1591,19 +1598,24 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.a);
     }
-    a.unbox_object(R1, rr);
     long flags;
     bool unseen;
-    int k = self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
-    // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
-    if (!object && k >= 0 && (rep == OptRep.INT32 || TYPED_KINDS[k].is_float())) {
-        int v = self.typed_store_value(n, TYPED_KINDS[k]);
-        int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, a.lay.indexed_named_mask, true);
-        self.exit_calls(i, OptExit.SLOW_PATH);
-        self.emit_typed_store(TYPED_KINDS[k], v, x);
-        return;
+    void* other = null;
+    if ((n.cc & ELEM_KNOWN) != 0) {
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
+    } else {
+        a.unbox_object(R1, rr);
+        int k = self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
+        // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
+        if (!object && k >= 0 && (rep == OptRep.INT32 || TYPED_KINDS[k].is_float())) {
+            int v = self.typed_store_value(n, TYPED_KINDS[k]);
+            int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, a.lay.indexed_named_mask, true);
+            self.exit_calls(i, OptExit.SLOW_PATH);
+            self.emit_typed_store(TYPED_KINDS[k], v, x);
+            return;
+        }
+        other = a.array_or_typed(a.lay.indexed_named_mask);
     }
-    void* other = a.array_or_typed(a.lay.indexed_named_mask);
     self.array_slot(n.a);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     self.value_to(n.b, R2);
@@ -1615,21 +1627,23 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
     }
     self.store_counted(i, &counted);
-    $if features::BUFFERS:
-        void* done = sljit_emit_jump(c, SLJIT_JUMP);
-        sljit_set_label(other, sljit_emit_label(c));
-        if (unseen) {
-            self.unprofiled_exit(i);
-        } else {
-            self.box_index(n.a);
-            self.value_to(n.b, R0);
-            a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
-            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
-        }
-        sljit_set_label(done, sljit_emit_label(c));
-    $else
-        a.call.add(other);
-    $endif
+    if (other != null) {
+        $if features::BUFFERS:
+            void* done = sljit_emit_jump(c, SLJIT_JUMP);
+            sljit_set_label(other, sljit_emit_label(c));
+            if (unseen) {
+                self.unprofiled_exit(i);
+            } else {
+                self.box_index(n.a);
+                self.value_to(n.b, R0);
+                a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
+                a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+            }
+            sljit_set_label(done, sljit_emit_label(c));
+        $else
+            a.call.add(other);
+        $endif
+    }
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
@@ -1645,11 +1659,16 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.a);
     }
-    a.unbox_object(R1, rr);
     long flags;
     bool unseen;
-    self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
-    void* other = a.array_or_typed(a.lay.indexed_named_mask);
+    void* other = null;
+    if ((n.cc & ELEM_KNOWN) != 0) {
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
+    } else {
+        a.unbox_object(R1, rr);
+        self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
+        other = a.array_or_typed(a.lay.indexed_named_mask);
+    }
     self.array_slot(n.a);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     a.load(R2, a.w.c);
@@ -1658,21 +1677,23 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     a.guard_old_value(&counted);
     a.store_value_r2(&counted);
     self.store_counted(i, &counted);
-    $if features::BUFFERS:
-        void* typed_done = sljit_emit_jump(c, SLJIT_JUMP);
-        sljit_set_label(other, sljit_emit_label(c));
-        if (unseen) {
-            self.unprofiled_exit(i);
-        } else {
-            self.box_index(n.a);
-            a.load(R0, a.w.c);
-            a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
-            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
-        }
-        sljit_set_label(typed_done, sljit_emit_label(c));
-    $else
-        a.call.add(other);
-    $endif
+    if (other != null) {
+        $if features::BUFFERS:
+            void* typed_done = sljit_emit_jump(c, SLJIT_JUMP);
+            sljit_set_label(other, sljit_emit_label(c));
+            if (unseen) {
+                self.unprofiled_exit(i);
+            } else {
+                self.box_index(n.a);
+                a.load(R0, a.w.c);
+                a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
+                a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+            }
+            sljit_set_label(typed_done, sljit_emit_label(c));
+        $else
+            a.call.add(other);
+        $endif
+    }
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 

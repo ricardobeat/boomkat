@@ -1,6 +1,8 @@
 // Element reads and writes of optimized code by an int32 index: arrays whose dense part follows
 // named properties, literals whose elements sit in the header, growth that moves the storage,
-// and indexes that leave (negative, out of range, holes, typed arrays).
+// and indexes that leave (negative, out of range, holes, typed arrays). An access proves its
+// receiver an array for the ones after it: the register is reassigned, joins an object, or
+// is written after only a read proved it.
 function sum(a, n) {
   var t = 0;
   for (var i = 0; i < n; i++) t += a[i] | 0;
@@ -38,4 +40,31 @@ out.push(pickAll(plain, [0, 31, 32, -1, 5]));
 out.push(pickAll(holes, [0, 1, 2, 3, 4, 5]));
 out.push(pickAll(typed, [0, 3, 4, -1]));
 out.push(pickAll(named, [0, 32, 33]));
+
+function swap(a, b, n) {
+  var t = 0;
+  for (var i = 0; i < n; i++) {
+    t += a[i & 3];
+    var x = a;
+    if (i % 5 === 4) x = b;
+    t += x[1] | 0;
+    a = i % 7 === 6 ? b : a;
+    t += a[2] | 0;
+    a[3] = t & 15;
+  }
+  return t;
+}
+var arr = [1, 2, 3, 4], ta = new Int32Array([5, 6, 7, 8]), ob = { 1: 9, 2: 10, 3: 11 };
+for (var q = 0; q < 2000; q++) swap([1, 2, 3, 4], [4, 3, 2, 1], 20);
+out.push(swap([1, 2, 3, 4], ta, 30), swap([1, 2, 3, 4], ob, 30), swap([1, 2, 3, 4], "abcd", 30));
+function readThenWrite(a, n) {
+  var t = 0;
+  for (var i = 0; i < n; i++) { t += a[i & 1]; a[2] = t; }
+  return t;
+}
+var frozen = Object.freeze([1, 2, 3]);
+var named = [1, 2, 3];
+Object.defineProperty(named, 2, { get: function () { return 7; }, set: function (v) {} });
+for (var q = 0; q < 2000; q++) readThenWrite([1, 2, 3], 10);
+out.push(readThenWrite([1, 2, 3], 10), readThenWrite(frozen, 10), readThenWrite(named, 10), frozen.join(), named.join());
 print(out.join(" "));

@@ -288,6 +288,10 @@ struct OptBuild {
     // it is not a proxy, which is all a load needs).
     uint* fact_shape;
     bool* fact_plain;
+    // Per register: what the element accesses since the facts were last dropped proved of the
+    // object it holds (OptBuild.elem_fact): ELEM_ARRAY, or ELEM_ARRAY_STORE (an array without
+    // indexed named properties); 0 for nothing. An array never changes class.
+    char* fact_elem;
     // What GUARD_BINDING nodes have proven since the last node that runs code (the bits after
     // OPT_BINDINGS_MAX), and the capture records GUARD_CAPTURE nodes have proven, by index, which
     // no code changes in a frame.
@@ -312,6 +316,7 @@ struct OptBuild {
     // The facts at the end of each block built so far, by position (nregs + 1 each).
     uint* end_shape;
     bool* end_plain;
+    char* end_elem;
     ulong* end_bindings;
     ulong* end_captures;
     OptAvail* end_avail;
@@ -572,8 +577,10 @@ fn void OptBuild.free(&self) {
     mem::free(self.const_def);
     mem::free(self.fact_shape);
     mem::free(self.fact_plain);
+    mem::free(self.fact_elem);
     mem::free(self.end_shape);
     mem::free(self.end_plain);
+    mem::free(self.end_elem);
     mem::free(self.end_bindings);
     mem::free(self.end_captures);
     mem::free(self.end_avail);
@@ -921,6 +928,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
     self.load_def[reg] = NO_NODE;
     self.const_def[reg] = NO_NODE;
     self.fact_shape[reg] = heap::SHAPE_NONE;
+    self.fact_elem[reg] = 0;
     self.drop_reg(reg, node);
 }
 
@@ -931,6 +939,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
 // block start with more than one way in (begin_block) drops its facts.
 fn void OptBuild.forget_facts(&self) {
     for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
+    mem::clear(self.fact_elem, (usz)self.nregs + 1);
     self.fact_bindings = 0;
     self.avail_n = 0;
 }
@@ -956,6 +965,7 @@ fn void OptBuild.same_facts(&self, uint dst, uint src) {
     if (dst >= self.nregs) return;
     self.fact_shape[dst] = self.fact_shape[src];
     self.fact_plain[dst] = self.fact_plain[src];
+    self.fact_elem[dst] = self.fact_elem[src];
 }
 
 fn void OptBuild.learn(&self, uint reg, uint shape) {
@@ -2097,6 +2107,18 @@ fn bool OptBuild.elem_receiver(&self, uint r, uint* node) {
     return self.in_window(r);
 }
 
+// The element access of the object in register `r` being lowered, by node `n`: it knows the object
+// an array (cc ELEM_KNOWN) when an earlier access proved what this one needs (`store`: an array
+// without indexed named properties), and proves that for the accesses after it when it leaves for
+// any other object (opt_elem_arrays_only). Called before the node's result is set, which drops the
+// fact when it overwrites `r`.
+fn void OptBuild.elem_fact(&self, uint r, uint n, bool store) {
+    if (r >= self.nregs) return;
+    char need = store ? ELEM_ARRAY_STORE : ELEM_ARRAY;
+    if (self.fact_elem[r] >= need) self.g.nodes[n].cc |= ELEM_KNOWN;
+    if (opt_elem_arrays_only(self.cur_f(), self.next_pc - 1)) self.fact_elem[r] = max(self.fact_elem[r], need);
+}
+
 // GETPROP of an element at an integer index, from an object in the window.
 fn bool OptBuild.get_elem(&self) {
     uint rnode;
@@ -2117,13 +2139,15 @@ fn bool OptBuild.get_elem(&self) {
         return true;
     }
     if (!self.elem_receiver(self.w.b, &rnode) || !self.index_ok(self.w.c)) return self.generic();
-    bool asked = false;
-    foreach (c : self.load_reps) asked |= c.block == self.pckey();
-    if (asked) {
+    OptRep rep;
+    if (self.asked_rep(&rep)) {
         uint idx = self.operand(self.w.c, OptRep.INT32);
         if (idx == NO_NODE) return self.generic();
-        uint n = self.typed_load(OptOp.LOAD_ELEM, idx);
+        uint n = self.add(OptOp.LOAD_ELEM, rep, idx, NO_NODE, (long)self.pc);
         self.g.nodes[n].c = rnode;
+        self.elem_fact(self.w.b, n, false);
+        self.snapshot(n);
+        self.set(self.w.a, n);
         return true;
     }
     // The element read into the window; in an inlined body, a slot beyond the caller's frame would
@@ -2133,6 +2157,7 @@ fn bool OptBuild.get_elem(&self) {
     if (ra >= self.nregs || idx == NO_NODE) return self.generic();
     uint n = self.add(OptOp.LOAD_ELEM, OptRep.NONE, idx, NO_NODE, (long)self.pc);
     self.g.nodes[n].c = rnode;
+    self.elem_fact(self.w.b, n, false);
     self.snapshot(n);
     self.kill(ra);
     self.load_def[ra] = self.pckey();
@@ -2174,6 +2199,7 @@ fn bool OptBuild.put_elem(&self) {
     if (idx == NO_NODE) return self.generic();
     uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, self.cur[rv].node, (long)self.pc);
     self.g.nodes[n].c = rnode;
+    self.elem_fact(self.w.a, n, true);
     self.snapshot(n);
     return true;
 }
@@ -2400,6 +2426,7 @@ fn void OptBuild.kill(&self, uint r) {
     self.load_def[r] = NO_NODE;
     self.const_def[r] = NO_NODE;
     self.fact_shape[r] = heap::SHAPE_NONE;
+    self.fact_elem[r] = 0;
     self.drop_reg(r, NO_NODE);
 }
 
@@ -3741,11 +3768,13 @@ fn bool OptBuild.try_inline(&self) {
     uint* save_def = mem::new_array(uint, n);
     uint* save_shape = mem::new_array(uint, (usz)n + 1);
     bool* save_plain = mem::new_array(bool, (usz)n + 1);
-    defer { mem::free(save_cur); mem::free(save_def); mem::free(save_shape); mem::free(save_plain); }
+    char* save_elem = mem::new_array(char, (usz)n + 1);
+    defer { mem::free(save_cur); mem::free(save_def); mem::free(save_shape); mem::free(save_plain); mem::free(save_elem); }
     mem::copy(save_cur, self.cur, (usz)n * OptRegState::size);
     mem::copy(save_def, self.load_def, (usz)n * uint::size);
     mem::copy(save_shape, self.fact_shape, ((usz)n + 1) * uint::size);
     mem::copy(save_plain, self.fact_plain, (usz)n + 1);
+    mem::copy(save_elem, self.fact_elem, (usz)n + 1);
     ulong save_bindings = self.fact_bindings;
     ulong save_captures = self.fact_captures;
     OptAvail[OPT_AVAIL_MAX] save_avail = self.avail;
@@ -3856,6 +3885,7 @@ fn bool OptBuild.try_inline(&self) {
         mem::copy(self.load_def, save_def, (usz)n * uint::size);
         mem::copy(self.fact_shape, save_shape, ((usz)n + 1) * uint::size);
         mem::copy(self.fact_plain, save_plain, (usz)n + 1);
+        mem::copy(self.fact_elem, save_elem, (usz)n + 1);
         self.fact_bindings = save_bindings;
         self.fact_captures = save_captures;
         self.avail = save_avail;
@@ -4322,6 +4352,7 @@ fn void OptBuild.save_ends(&self, uint pos) {
     mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
     mem::copy(&self.end_shape[(sz)pos * w], self.fact_shape, w * uint::size);
     mem::copy(&self.end_plain[(sz)pos * w], self.fact_plain, w);
+    mem::copy(&self.end_elem[(sz)pos * w], self.fact_elem, w);
     self.end_bindings[pos] = self.fact_bindings;
     self.end_captures[pos] = self.fact_captures;
     mem::copy(&self.end_avail[(usz)pos * OPT_AVAIL_MAX], &self.avail, (usz)self.avail_n * OptAvail::size);
@@ -4336,6 +4367,7 @@ fn void OptBuild.meet_facts(&self, uint pos) {
         if (p >= pos || self.dead[p]) continue;
         uint* shape = &self.end_shape[(usz)p * w];
         bool* plain = &self.end_plain[(usz)p * w];
+        char* elem = &self.end_elem[(usz)p * w];
         self.fact_bindings = first ? self.end_bindings[p] : self.fact_bindings & self.end_bindings[p];
         OptAvail[] avail = self.end_avail[(usz)p * OPT_AVAIL_MAX:self.end_avail_n[p]];
         if (first) {
@@ -4354,9 +4386,11 @@ fn void OptBuild.meet_facts(&self, uint pos) {
             if (first) {
                 self.fact_shape[r] = shape[r];
                 self.fact_plain[r] = plain[r];
+                self.fact_elem[r] = elem[r];
             } else {
                 if (self.fact_shape[r] != shape[r]) self.fact_shape[r] = heap::SHAPE_NONE;
                 self.fact_plain[r] = self.fact_plain[r] && plain[r];
+                self.fact_elem[r] = min(self.fact_elem[r], elem[r]);
             }
         }
         first = false;
@@ -4540,8 +4574,10 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.dead = mem::new_array(bool, b.nrpo);
     b.fact_shape = mem::new_array(uint, (usz)n + 1);
     b.fact_plain = mem::new_array(bool, (usz)n + 1);
+    b.fact_elem = mem::new_array(char, (usz)n + 1);
     b.end_shape = mem::new_array(uint, (usz)b.nrpo * ((usz)n + 1));
     b.end_plain = mem::new_array(bool, (usz)b.nrpo * ((usz)n + 1));
+    b.end_elem = mem::new_array(char, (usz)b.nrpo * ((usz)n + 1));
     b.end_bindings = mem::new_array(ulong, b.nrpo);
     b.end_captures = mem::new_array(ulong, b.nrpo);
     b.end_avail = mem::new_array(OptAvail, (usz)b.nrpo * OPT_AVAIL_MAX);

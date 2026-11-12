@@ -24,6 +24,7 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::types;
 import boomkat::builtins;
+import boomkat::features;
 import std::io;
 import std::collections::list;
 import std::time::clock;
@@ -68,6 +69,16 @@ enum OptExit : char (String label) {
 // Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a
 // class word of 0 still reads as recorded. No layout mask covers bit 0.
 const uint ELEM_CLASS_SEEN = 1;
+
+// Whether optimized code of the element access whose cache entry is word `at` of `f` leaves for
+// any object but an array: one its baseline code has recorded no other class for (OptExit.UNPROFILED).
+fn bool opt_elem_arrays_only(CompiledFunction* f, uint at) {
+$if features::BUFFERS:
+    return f.ic_entries != null && (long)((hobject::ICEntry*)f.ic_entries)[at].fwd_callee == 0;
+$else
+    return true;
+$endif
+}
 
 const char OPT_NONE = 0;
 const char OPT_ACTIVE = 1;

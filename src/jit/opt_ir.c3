@@ -281,6 +281,14 @@ enum OptOp : char {
 const char WINDOW_KIND_MASK = 7;
 const char WINDOW_CONST_SHIFT = 3;
 
+// LOAD_ELEM and STORE_ELEM cc: an earlier access proved the receiver an array (OptBuild.elem_fact),
+// so no class is tested.
+const char ELEM_KNOWN = 1;
+// What element accesses proved of a register's object (OptBuild.fact_elem): an array, and an
+// array without indexed named properties, which a store needs.
+const char ELEM_ARRAY = 1;
+const char ELEM_ARRAY_STORE = 2;
+
 // The boxed constant of a WINDOW_CONST id: 1 undefined, 2 null, 3 false, 4 true.
 fn long window_const_bits(char id) {
     switch (id) {
