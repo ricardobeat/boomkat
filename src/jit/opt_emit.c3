@@ -838,6 +838,24 @@ fn void OptCg.box_index(&self, uint n) {
     sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, k_int_op(), k_int_w());
 }
 
+// The address in R0 of the element at INT32 node `idx` of the array in R1, as the array slot
+// subroutine finds it for a boxed index (Asm.emit_array_slot_body); an index out of range leaves
+// through the slow path. Uses R2 and R3.
+fn void OptCg.array_slot(&self, uint idx) {
+    void* c = self.a.c;
+    Layout* l = self.a.lay;
+    int x = self.int_reg(idx, R3);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_array_size);
+    // Unsigned, so a negative index fails too.
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, x, 0, R2, 0));
+    // The dense part follows the property values.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_prop_capacity);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, x, 0);
+    sljit_emit_op2(c, SLJIT_SHL, R2, 0, R2, 0, SLJIT_IMM, 3);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_props);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R2, 0);
+}
+
 // The boxed value of number node `n`, or the constant of STORE_CONST `n`, in `dst`.
 fn void OptCg.box_node(&self, uint n, int dst) {
     void* c = self.a.c;
@@ -915,9 +933,8 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         self.emit_typed_load(i, n, TYPED_KINDS[k], x);
         return;
     }
-    self.box_index(n.a);
     void* other = a.array_or_typed(0);
-    a.array_slot();
+    self.array_slot(n.a);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
     $if features::BUFFERS:
@@ -926,6 +943,7 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         if (unseen) {
             self.unprofiled_exit(i);
         } else {
+            self.box_index(n.a);
             a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
             a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
         }
@@ -1585,9 +1603,8 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         self.emit_typed_store(TYPED_KINDS[k], v, x);
         return;
     }
-    self.box_index(n.a);
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
-    a.array_slot();
+    self.array_slot(n.a);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     self.value_to(n.b, R2);
     Jumps counted;
@@ -1604,6 +1621,7 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         if (unseen) {
             self.unprofiled_exit(i);
         } else {
+            self.box_index(n.a);
             self.value_to(n.b, R0);
             a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
             a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
@@ -1631,9 +1649,8 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     long flags;
     bool unseen;
     self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
-    self.box_index(n.a);
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
-    a.array_slot();
+    self.array_slot(n.a);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     a.load(R2, a.w.c);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, K_UNDEF));
@@ -1647,6 +1664,7 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
         if (unseen) {
             self.unprofiled_exit(i);
         } else {
+            self.box_index(n.a);
             a.load(R0, a.w.c);
             a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
             a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
