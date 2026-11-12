@@ -160,7 +160,8 @@ enum OptOp : char {
     // The window slot imm (a callee RET's register) copied to the window slot home (the call's
     // result register) as a published store; exits (SLOW_PATH) where publish does. cc 1 copies
     // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG),
-    // cc 3 the graph register imm itself (a forwarded argument, OptBuild.forward_window).
+    // cc 3 the graph register imm itself (a forwarded argument, OptBuild.forward_window), cc 4 the
+    // function's own receiver (OptCg.load_own_this).
     // Of rep OBJECT the value stays in a register (finish_object), for a home beyond the
     // caller's frame.
     COPY_WINDOW,

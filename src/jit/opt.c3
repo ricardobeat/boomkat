@@ -827,7 +827,9 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
             }
         }
         io::eprintf(" calls reg %d direct %d generic %d", calls[0], calls[1], calls[2]);
-        String blocker = g.reg_blocker(f);
+        // Window moves are lowered for register mode once nothing else blocks it: name the rest.
+        String blocker = g.reg_blocker(f, moves: true);
+        if (blocker.len == 0) blocker = g.reg_blocker(f);
         if (code.reg_entry != null) {
             io::eprintf(" leaf");
         } else if (blocker.len == 0) {

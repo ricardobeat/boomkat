@@ -1594,9 +1594,9 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
 // object of the cache's shape, an old value that needs no count, and a value that needs no
 // barrier. Everything else leaves for the baseline code before anything is written.
 // The function's own `this` into `reg`: its record's, or in register mode the receiver its caller
-// stored below the window, which the object guard that follows exits for unless it is an object
-// (a receiver that needs coercing). Clobbers R2.
-fn void OptCg.load_own_this(&self, int reg) {
+// stored below the window. A receiver a sloppy function would coerce, which is not an object, takes
+// node `i`'s exit; without a node the object guard that follows takes it. Clobbers R2.
+fn void OptCg.load_own_this(&self, int reg, uint i = NO_NODE) {
     Asm* a = self.a;
     if (!a.reg_leaf) {
         a.load_this(reg);
@@ -1604,6 +1604,11 @@ fn void OptCg.load_own_this(&self, int reg) {
     }
     void* framed = a.emit_framed_test();
     sljit_emit_op1(a.c, SLJIT_MOV, reg, 0, SLJIT_MEM | a.regs, -(long)TVal::size);
+    if (i != NO_NODE && !a.f.is_strict()) {
+        sljit_emit_op2(a.c, SLJIT_XOR, R2, 0, reg, 0, SLJIT_IMM, K_OBJ);
+        self.exit_at(sljit_emit_cmp(a.c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+        self.exit_at(sljit_emit_cmp(a.c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
+    }
     void* done = sljit_emit_jump(a.c, SLJIT_JUMP);
     sljit_set_label(framed, sljit_emit_label(a.c));
     a.load_this(reg);
@@ -2165,6 +2170,8 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
     uint base = self.g.fns[n.fidx].reg_base;
     if (n.cc == 3) {
         a.load(R0, (uint)n.imm);
+    } else if (n.cc == 4) {
+        self.load_own_this(R0, i);
     } else {
         a.decode((uint)n.imm);
         a.load(R0, n.cc == 1 ? base - 1 : (n.cc == 2 ? a.w.b : a.w.a) + base);

@@ -3588,7 +3588,10 @@ fn bool OptBuild.lower_op(&self) {
             if (self.cur_fn == 0) return self.generic();
             return self.get_scoped();
         case LDTHIS:
-            if (self.cur_fn == 0) return self.generic();
+            if (self.cur_fn == 0) {
+                if (opt_site_banned(self.f, self.f, self.next_pc - 1)) return self.generic();
+                return self.window_copy(self.w.a, 4);
+            }
             return self.load_this();
         case GETPROP:
             return self.get_elem();
