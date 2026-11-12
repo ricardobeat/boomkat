@@ -467,6 +467,22 @@ fn HObject* jit_construct_object(Vm* vm, HObject* ctor, hobject::ICEntry* ic, ui
     return obj;
 }
 
+// The object of an inlined NEW_OBJ whose site (jit::OptSinkSite) the optimized code has validated:
+// empty, with room for site.want properties and the prototype the site recorded, returned boxed;
+// 0 for a failed allocation. The allocation does not collect (Heap.request_gc).
+fn ulong jit_opt_site_object(Dispatch* ds, jit::OptSinkSite* site) {
+    HObject* obj = alloc_constructor_receiver(ds.vm.heap, site.want) ?? null;
+    if (obj == null) return 0;
+    ds.vm.heap.set_prototype(obj, (HObject*)site.proto);
+    TVal value;
+    value.set_object(obj);
+$if types::USE_NANBOX:
+    return value.bits;
+$else
+    return 0;
+$endif
+}
+
 // Validate the site of a sunk allocation (jit::OptSinkSite) for `ctor`, whose NEW_OBJ optimized
 // code does not allocate: what jit_opt_new_object would allocate with, every key the constructor
 // adds absent from the prototype chain or a writable data property there (so each add makes a plain

@@ -57,6 +57,19 @@ struct OptAvail {
 
 const uint OPT_AVAIL_MAX = 8;
 
+// An object an inlined NEW_OBJECT allocated whose shape the code knows: the shape its adds have
+// left it in, how many properties it has and its inline capacity. While nothing that can run code
+// or reach another block has been built since (OptBuild.add), an add of a key that a shared
+// transition takes from that shape is a store into its next slot (OptBuild.add_field).
+struct OptFresh {
+    uint node;
+    uint shape;
+    uint count;
+    uint capacity;
+}
+
+const uint OPT_FRESH_MAX = 4;
+
 fn bool OptAvail.same(self, OptAvail o) => self.key == o.key && self.recv == o.recv && self.reg == o.reg && self.node == o.node;
 
 // Why a function was not optimized.
@@ -280,6 +293,9 @@ struct OptBuild {
     // the node instead of the object (OptBuild.held_field).
     OptAvail[OPT_AVAIL_MAX] avail;
     uint avail_n;
+    // The objects being built whose shape the code knows.
+    OptFresh[OPT_FRESH_MAX] fresh;
+    uint fresh_n;
     // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
     // this block, or NO_NODE; a numeric use of the register asks for it to be a typed load.
     uint* load_def;
@@ -810,9 +826,58 @@ fn bool OptBuild.find_loops(&self) {
 fn OptRep OptBuild.rep_of(&self, uint node) @inline => self.g.nodes[node].rep;
 
 fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_NODE, long imm = 0) {
-    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .c = NO_NODE, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1, .home = NO_NODE };
+    if (!keeps_fresh(op)) self.fresh_n = 0;
+    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .c = NO_NODE, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1, .home = NO_NODE, .shape = heap::SHAPE_NONE };
     self.g.nodes.push(n);
     return (uint)self.g.nodes.len() - 1;
+}
+
+// Whether a node of kind `op` leaves an object being built as the code knows it: it runs no code,
+// does not collect, changes no object's shape (an ADD_FIELD is accounted for where it is built)
+// and does not end the block.
+fn bool keeps_fresh(OptOp op) {
+    switch (op) {
+        case CONST_I32: case CONST_F64: case CONST_OBJ: case CHECK_I32: case CHECK_NUM: case LOAD_CAP:
+        case LOAD_FIELD: case LOAD_LENGTH: case STORE_FIELD: case STORE_OBJ: case COPY:
+        case ADD_I32: case SUB_I32: case MUL_I32: case AND_I32: case OR_I32: case XOR_I32: case NOT_I32:
+        case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32: case I32_TO_F64: case F64_TO_I32:
+        case ADD_F64: case SUB_F64: case MUL_F64: case DIV_F64: case NEG_F64: case MATH:
+        case CHECK_CALLEE: case LOAD_VAR: case LOAD_GLOBAL: case GUARD_BINDING: case GUARD_CAPTURE:
+        case COPY_WINDOW: case STORE_CONST: case TYPEOF: case COMPARE: case LNOT: case NEW_OBJECT:
+        case CHECK_BUILTIN: case MOVE_WINDOW: case ADD_FIELD:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Node `node` is a NEW_OBJECT for a constructor `cf`: its object starts out empty, with room for
+// what the constructor adds.
+fn void OptBuild.note_fresh(&self, uint node, CompiledFunction* cf) {
+    uint want = opt_constructor_want(cf);
+    if (want > hobject::SHAPED_INLINE_MAX_PROPS || self.fresh_n == OPT_FRESH_MAX) return;
+    self.fresh[self.fresh_n++] = { .node = node, .shape = 0, .count = 0, .capacity = vm::constructor_inline_capacity(want) };
+}
+
+// The ADD_FIELD node `n` adds `key` to the object of OBJECT node `recv`. When that is an object
+// being built, the add is the shared transition from the shape it has, if there is one and the
+// object has room: the node records the shape it leaves (cc 1), and so does the object.
+fn void OptBuild.add_known(&self, uint n, uint recv, void* key) {
+    for (uint k = 0; k < self.fresh_n; k++) {
+        OptFresh* fr = &self.fresh[k];
+        if (fr.node != recv) continue;
+        uint next = fr.count < fr.capacity ? self.h.lookup_transition(fr.shape, key, (char)hobject::PROP_FLAGS_WEC) : heap::SHAPE_NONE;
+        hobject::Shape* sh = next != heap::SHAPE_NONE ? self.h.get_shape(next) : null;
+        if (sh == null || sh.parent == hobject::PRIVATE_SHAPE_PARENT || sh.offset + sh.own_count != fr.count + 1) {
+            self.fresh[k] = self.fresh[--self.fresh_n];
+            return;
+        }
+        self.g.nodes[n].cc = 1;
+        self.g.nodes[n].shape = next;
+        fr.shape = next;
+        fr.count++;
+        return;
+    }
 }
 
 // Record the dirty registers live into the current instruction on node `node`.
@@ -1958,6 +2023,7 @@ fn bool OptBuild.add_field(&self) {
     uint n = self.add(OptOp.ADD_FIELD, OptRep.NONE, value, self.cur[recv].node, (long)self.pc);
     self.snapshot(n);
     self.g.nodes[n].key = (void*)ic.key.borrow();
+    self.add_known(n, self.cur[recv].node, (void*)ic.key.borrow());
     // The object's shape changed, under whatever register a fact names it by.
     self.forget_facts();
     return true;
@@ -3326,6 +3392,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
         uint object = self.add(OptOp.NEW_OBJECT, OptRep.OBJECT, callee_node, NO_NODE, (long)(usz)s.cf);
         self.snapshot(object);
         self.set(callee_reg + 1, object);
+        self.note_fresh(object, s.cf);
     }
     uint parent_keep = parent_fn == 0 ? 0 : self.keep_across(&self.sites[self.cur_site], self.insn, callee_reg);
     self.g.fns.push({ .f = s.cf, .reg_base = s.base, .resume_pc = resume, .remap_pc = uint::max, .remap_reg = result,
@@ -3614,6 +3681,8 @@ fn bool OptBuild.try_inline(&self) {
     ulong save_captures = self.fact_captures;
     OptAvail[OPT_AVAIL_MAX] save_avail = self.avail;
     uint save_avail_n = self.avail_n;
+    OptFresh[OPT_FRESH_MAX] save_fresh = self.fresh;
+    uint save_fresh_n = self.fresh_n;
     sz nodes0 = self.g.nodes.len();
     sz dirty0 = self.g.dirty.len();
     sz fns0 = self.g.fns.len();
@@ -3663,6 +3732,7 @@ fn bool OptBuild.try_inline(&self) {
         object = self.add(OptOp.NEW_OBJECT, OptRep.OBJECT, callee_node, NO_NODE, (long)(usz)s.cf);
         self.snapshot(object);
         self.set(callee_reg + 1, object);
+        self.note_fresh(object, s.cf);
     }
 
     uint remap_pc = s.remap == uint::max ? uint::max : s.cfg.nodes[s.remap].view.pc;
@@ -3721,6 +3791,8 @@ fn bool OptBuild.try_inline(&self) {
         self.fact_captures = save_captures;
         self.avail = save_avail;
         self.avail_n = save_avail_n;
+        self.fresh = save_fresh;
+        self.fresh_n = save_fresh_n;
         if (parent_fn == 0) self.refused = OptRefuse.NONE;
         return false;
     }
@@ -4008,6 +4080,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
     uint first_insn = self.b_first[b];
     self.context(first_insn);
     OptBlock blk = { .first = (uint)self.g.nodes.len(), .pc = self.pc };
+    self.fresh_n = 0;
     for (uint r = 0; r < self.nregs; r++) {
         self.cur[r] = { .node = NO_NODE, .dirty = false };
         self.load_def[r] = NO_NODE;

@@ -262,7 +262,10 @@ enum OptOp : char {
     // A PUTTHISC (imm its pc) of an inlined constructor that adds its key to the OBJECT node b through
     // the instruction's absent-property cache, as the baseline's put-absent path; a is the number or
     // OBJECT node stored, or NO_NODE for a value in the window. Exits before any effect when the add
-    // is not one the cache describes. It defines nothing.
+    // is not one the cache describes. It defines nothing. With cc 1 the object is one the code is
+    // building (OptFresh) and the add is known: the value goes into the next slot and the object
+    // takes the shape `shape`, with only a window value that is neither inert nor an object taking
+    // the cache. The NEW_OBJECT validated every such key against the prototype chain.
     ADD_FIELD,
     // A field access of a sunk object, done in the graph: no code. Its dirty registers stay for the
     // exit the test hook may force there.
@@ -332,6 +335,8 @@ struct OptNode {
     uint last_use;
     // The field key of a LOAD_FIELD, STORE_FIELD or ADD_FIELD (an interned string).
     void* key;
+    // A known ADD_FIELD (cc 1): the shared shape it leaves the object in.
+    uint shape;
     // A NEW_OBJECT, or a COPY of one, whose object is not allocated (c names its sink).
     bool sunk;
     // A field value of a sunk object, which an exit stores into it: kept in a register.

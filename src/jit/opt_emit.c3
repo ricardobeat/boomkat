@@ -1832,29 +1832,30 @@ fn void OptCg.spill_live(&self, uint i, bool save) {
     }
 }
 
+// The properties a constructor `cf` leaves on its objects, which a NEW_OBJ allocates room for: what
+// its frames have left on them (CallFlags.constructor_capacity), or the adds its body holds if more.
+fn uint opt_constructor_want(CompiledFunction* cf) {
+    uint want = cf.call_flags.constructor_capacity;
+    uint adds = 0;
+    for (uint k = 0; k < cf.code_count; k++) if (cf.code[k].op == Opcode.PUTTHISC) adds++;
+    return adds > want ? adds : want;
+}
+
 // The object of an inlined NEW_OBJ, built by vm::jit_opt_new_object with the registers in use saved
 // around the call; a constructor or cache it refuses leaves for the baseline code at the NEW_OBJ.
+// One whose adds the code knows (ADD_FIELD cc 1) is built under a validated site (emit_site_new).
 fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
     CompiledFunction* cf = (CompiledFunction*)(usz)n.imm;
-    a.decode(n.pc);
-    OptFn* caller = &self.g.fns[n.fidx];
-    uint callee_reg = a.w.b + caller.reg_base;
-    long ic = (long)(usz)&((hobject::ICEntry*)caller.f.ic_entries)[a.next - 1];
-    // The properties the body can add, or what the constructor's frames have left on their objects.
-    uint want = cf.call_flags.constructor_capacity;
-    uint adds = 0;
-    for (uint k = 0; k < cf.code_count; k++) if (cf.code[k].op == Opcode.PUTTHISC) adds++;
-    if (adds > want) want = adds;
-    if (n.a != NO_NODE) {
-        int r = self.obj_reg(n.a, R1);
-        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
-    } else {
-        a.load(R1, callee_reg);
+    OptSinkSite* site = self.known_adds_site(i, n, cf);
+    if (site != null) {
+        self.emit_site_new(i, site);
+        return;
     }
-    // The guard before proved it an object.
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
+    uint want = opt_constructor_want(cf);
+    self.load_constructor(n);
+    long ic = (long)(usz)&((hobject::ICEntry*)self.g.fns[n.fidx].f.ic_entries)[a.next - 1];
     // The common case builds the object inline, from the cache the helper would read. R0 to R4 hold
     // no values of the optimized code, so nothing is saved around it.
     Jumps slow;
@@ -1897,13 +1898,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
         done = sljit_emit_jump(c, SLJIT_JUMP);
         slow.bind(sljit_emit_label(c));
         // The slow path reloads the constructor.
-        if (n.a != NO_NODE) {
-            int r = self.obj_reg(n.a, R1);
-            if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
-        } else {
-            a.load(R1, callee_reg);
-        }
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
+        self.load_constructor(n);
     }
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
@@ -1917,40 +1912,57 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     self.count_alloc(&self.h.opt.alloc_runs);
 }
 
-// The NEW_OBJECT of a sunk allocation: no object, only the check that the state its site validated
-// (OptSinkSite) still holds, else vm::jit_opt_sink_check validates the site again with the registers
-// in use saved around the call; what that refuses leaves for the baseline code at the NEW_OBJ.
-fn void OptCg.emit_sunk_object(&self, uint i, OptNode* n) {
-    void* c = self.a.c;
+// A run-time site (OptSinkSite) for the inlined NEW_OBJ at node `n`, of constructor `cf`, kept with
+// the code: the NEW_OBJ's cache and the room the object is built with. The caller adds the keys.
+fn OptSinkSite* OptCg.new_site(&self, OptNode* n, CompiledFunction* cf) {
     Asm* a = self.a;
-    CompiledFunction* cf = (CompiledFunction*)(usz)n.imm;
     a.decode(n.pc);
-    OptFn* caller = &self.g.fns[n.fidx];
-    uint callee_reg = a.w.b + caller.reg_base;
-    OptSink* sk = &self.g.sinks[(sz)n.c];
     OptSinkSite* site = self.h.alloc_func(self.h.heap_udata, OptSinkSite::size);
     mem::clear(site, OptSinkSite::size);
     site.next = self.oc.sink_sites;
     self.oc.sink_sites = site;
-    site.new_ic = &((hobject::ICEntry*)caller.f.ic_entries)[a.next - 1];
-    uint want = cf.call_flags.constructor_capacity;
-    uint adds = 0;
-    for (uint k = 0; k < cf.code_count; k++) if (cf.code[k].op == Opcode.PUTTHISC) adds++;
-    site.want = adds > want ? adds : want;
-    site.add_count = sk.add_count;
-    site.read_count = sk.read_count;
-    for (uint k = 0; k < sk.add_count; k++) site.keys[k] = sk.keys[k];
-    for (uint k = 0; k < sk.read_count; k++) site.read_keys[k] = sk.reads[k];
-    sk.site = site;
+    site.new_ic = &((hobject::ICEntry*)self.g.fns[n.fidx].f.ic_entries)[a.next - 1];
+    site.want = opt_constructor_want(cf);
+    return site;
+}
+
+// The site of NEW_OBJECT node `i` when the code knows the adds of its object (ADD_FIELD cc 1), with
+// their keys, which the site validates against the prototype chain; else null.
+fn OptSinkSite* OptCg.known_adds_site(&self, uint i, OptNode* n, CompiledFunction* cf) {
+    void*[OPT_SINK_FIELDS] keys;
+    uint count = 0;
+    for (uint j = i + 1; j < self.g.nodes.len(); j++) {
+        OptNode* m = &self.g.nodes[j];
+        if (m.op != OptOp.ADD_FIELD || m.cc != 1 || m.b != i) continue;
+        if (count == OPT_SINK_FIELDS) return null;
+        keys[count++] = m.key;
+    }
+    if (count == 0) return null;
+    OptSinkSite* site = self.new_site(n, cf);
+    site.add_count = count;
+    for (uint k = 0; k < count; k++) site.keys[k] = keys[k];
+    return site;
+}
+
+// The untagged constructor of the NEW_OBJECT node `n` in R1; the guard before proved it an object.
+fn void OptCg.load_constructor(&self, OptNode* n) {
+    void* c = self.a.c;
+    self.a.decode(n.pc);
     if (n.a != NO_NODE) {
         int r = self.obj_reg(n.a, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     } else {
-        a.load(R1, callee_reg);
+        self.a.load(R1, self.a.w.b + self.g.fns[n.fidx].reg_base);
     }
-    // The guard before proved it an object.
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
+}
+
+// Leave the code at node `i` (ALLOC_SLOW, for the baseline code at the NEW_OBJ) unless `site` holds
+// for the constructor in R1: the state it recorded at its last validation, or else a validation
+// again by vm::jit_opt_sink_check, with the registers in use saved around the call.
+fn void OptCg.emit_site_check(&self, uint i, OptSinkSite* site) {
+    void* c = self.a.c;
+    Asm* a = self.a;
     void*[5] slow;
     slow[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM, (long)(usz)&site.ctor);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, a.lay.obj_shape);
@@ -1975,6 +1987,51 @@ fn void OptCg.emit_sunk_object(&self, uint i, OptNode* n) {
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
     sljit_set_label(done, sljit_emit_label(c));
+}
+
+// The object of NEW_OBJECT node `i` whose adds the code knows, once `site` holds for the
+// constructor: empty, with room for site.want properties and the prototype the site recorded, built
+// inline, else by vm::jit_opt_site_object with the registers in use saved around the call.
+fn void OptCg.emit_site_new(&self, uint i, OptSinkSite* site) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    self.load_constructor(&self.g.nodes[i]);
+    self.emit_site_check(i, site);
+    void* done = null;
+    if (inline_alloc_ok()) {
+        Jumps slow;
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM, (long)(usz)&site.proto);
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF, R2, 0);
+        InlineAlloc plan = a.plain_object_plan(vm::constructor_inline_capacity(site.want));
+        a.emit_inline_alloc(&plan, &slow);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+        done = sljit_emit_jump(c, SLJIT_JUMP);
+        slow.bind(sljit_emit_label(c));
+    }
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)site);
+    self.a.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_site_object);
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
+    if (done != null) sljit_set_label(done, sljit_emit_label(c));
+    self.def_obj(i, R0);
+    self.count_alloc(&self.h.opt.alloc_runs);
+}
+
+// The NEW_OBJECT of a sunk allocation: no object, only the check that the state its site validated
+// (OptSinkSite) still holds, else vm::jit_opt_sink_check validates the site again with the registers
+// in use saved around the call; what that refuses leaves for the baseline code at the NEW_OBJ.
+fn void OptCg.emit_sunk_object(&self, uint i, OptNode* n) {
+    OptSink* sk = &self.g.sinks[(sz)n.c];
+    OptSinkSite* site = self.new_site(n, (CompiledFunction*)(usz)n.imm);
+    site.add_count = sk.add_count;
+    site.read_count = sk.read_count;
+    for (uint k = 0; k < sk.add_count; k++) site.keys[k] = sk.keys[k];
+    for (uint k = 0; k < sk.read_count; k++) site.read_keys[k] = sk.reads[k];
+    sk.site = site;
+    self.load_constructor(n);
+    self.emit_site_check(i, site);
     self.count_alloc(&self.h.opt.sink_runs);
 }
 
@@ -2036,6 +2093,8 @@ fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     self.decode(n);
     a.call.len = 0;
+    void* known = null;
+    if (n.cc == 1 && !self.emit_known_add(n, &known)) return;
     CompiledFunction* f = self.g.fns[n.fidx].f;
     long ic = (long)(usz)&((hobject::ICEntry*)f.ic_entries)[a.next - 1];
     long key = (long)(usz)f.constants[a.w.c].get_heapptr();
@@ -2073,6 +2132,44 @@ fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_set_label(added, sljit_emit_label(c));
     self.exit_calls(i, OptExit.SHAPE);
+    if (known != null) sljit_set_label(known, sljit_emit_label(c));
+}
+
+// A known ADD_FIELD (cc 1): the object is one this code is building, the NEW_OBJECT validated the
+// key against the prototype chain, and its shape is the one the previous add left, so the value
+// goes into the next slot and the object takes n.shape, pinned so that its id stays its own. The
+// object is young and nothing has scanned it since it was allocated (shaded while marking), so the
+// store needs no barrier. A window value that is neither inert nor an object needs its count and
+// takes the cache's path, which the caller emits next: true then, with `done` the jump past it.
+fn bool OptCg.emit_known_add(&self, OptNode* n, void** done) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    hobject::Shape* sh = self.h.get_shape(n.shape);
+    sh.pinned = true;
+    uint slot = sh.offset + sh.own_count - 1;
+    void* other = null;
+    if (n.a == NO_NODE) {
+        a.load(R2, a.w.a);
+        void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
+        sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, k_obj_op(), k_obj_w());
+        other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
+        sljit_set_label(inert, sljit_emit_label(c));
+    } else if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
+        int vr = self.obj_reg(n.a, R2);
+        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
+    } else {
+        self.box_node(n.a, R2);
+    }
+    int rr = self.obj_reg(n.b, R1);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
+    a.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, (long)slot * TVal::size, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_shape, SLJIT_IMM, (long)n.shape);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_prop_count, SLJIT_IMM, (long)slot + 1);
+    if (other == null) return false;
+    *done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(other, sljit_emit_label(c));
+    return true;
 }
 
 // The callee of a CALL_VAR or CALL_GLOBAL, read as GETVAR or GETGLOBAL read it and stored in the
