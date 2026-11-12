@@ -2069,7 +2069,7 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
 }
 
 // Re-checks whether `key`, already known to be an own String-keyed
-// property of `obj` (as produced by collect_own_enum_string_keys with
+// property of `obj` (as produced by collect_own_string_keys with
 // require_enumerable = false), is *currently* enumerable.  Object.entries/
 // values must call this immediately before [[Get]]ing each key, since an
 // earlier key's getter may have changed a later key's enumerability
@@ -2078,10 +2078,11 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
 // Dense array indices, String-exotic character indices, and TypedArray
 // indices are always enumerable by spec and can't be redefined non-
 // enumerable without leaving the property table, so only named
-// properties need a fresh flags lookup.
+// properties need a fresh flags lookup. The one non-index key outside the
+// table is an ARRAY exotic's "length", which is never enumerable.
 fn bool key_is_currently_enumerable(HObject* obj, hstring::HString* key, Heap* h) {
     int idx = obj.find_prop_idx(key, h);
-    if (idx < 0) return true;
+    if (idx < 0) return key.is_arridx();
     return obj.get_prop_flags((uint)idx, h).enumerable;
 }
 
