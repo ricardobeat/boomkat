@@ -1804,14 +1804,15 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     for (uint j = 0; j < misses; j++) self.exit_at(miss[j], i, OptExit.CALLEE);
 }
 
-// The machine registers that hold a value across node `i` (a node defined before it whose last use
-// is after it occupies its register there) stored to the frame's save area, or loaded back from it,
-// around a call of C from inside the node. Uses no other register.
+// The machine registers that hold a value at node `i` (a node defined before it whose last use is
+// `i` or later occupies its register there) stored to the frame's save area, or loaded back from it,
+// around a call of C from inside the node. The node's own operands count: an exit after the call
+// publishes them. Uses no other register.
 fn void OptCg.spill_live(&self, uint i, bool save) {
     void* c = self.a.c;
     for (uint j = 0; j < i; j++) {
         OptNode* nd = &self.g.nodes[j];
-        if (!nd.allocated() || nd.reg < 0 || nd.last_use <= i) continue;
+        if (!nd.allocated() || nd.reg < 0 || nd.last_use < i) continue;
         if (nd.rep.is_gpr()) {
             long off = CALL_FRAME_BYTES + 8 * (long)(nd.reg - self.pools.int_first);
             if (save) {
