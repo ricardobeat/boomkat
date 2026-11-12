@@ -57,9 +57,12 @@ enum OptExit : char (String label) {
     // A register call's callee declined it for want of native stack, records or value stack: deep
     // recursion, which the baseline continues. Not a failed speculation.
     DEEP {"deep"},
-    // A global binding the code folded no longer holds its value, or the global object's layout
-    // moved (OptOp.GUARD_GLOBAL). The rebuild reads the binding instead.
-    GLOBAL {"global"},
+    // A binding the code folded no longer holds its value, or its holder's layout moved
+    // (OptOp.GUARD_BINDING). The rebuild reads the binding instead.
+    BINDING {"binding"},
+    // The running closure is not the one whose captured bindings the code folded
+    // (OptOp.GUARD_CAPTURE). The rebuild folds none of them.
+    CAPTURE {"capture"},
 }
 
 // Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a
@@ -117,7 +120,7 @@ const uint OPT_PRESSURE_ROUNDS = 6;
 struct OptBan {
     CompiledFunction* cf;
     uint pc;
-    // Only the folding of the GETGLOBAL there (OptExit.GLOBAL): the site still reads the binding.
+    // Only the folding of the binding read there (OptExit.BINDING, CAPTURE): the site still reads it.
     bool fold;
 }
 
@@ -254,7 +257,7 @@ struct OptPolicy {
     bool dump;
     // Print each exit, discard and refusal with its function (--opt-log).
     bool log;
-    // The slots of global bindings whose folded value a guard found changed (OptExit.GLOBAL): no
+    // The slots of bindings whose folded value a guard found changed (OptExit.BINDING): no
     // build folds them again, so a binding the program writes costs one body's exits, not every
     // reader's. The oldest give way first.
     void*[OPT_UNFOLD_MAX] unfolded;
@@ -302,13 +305,13 @@ struct OptPolicy {
 // Entries count in rounds of OPT_ENTRY_THRESHOLD, the count at which the baseline call entry
 // calls this (jit_entry_service): each round folds into f.opt_rounds and starts the count
 // over, so that a function waiting out a longer cool-off (opt_rounds_due) keeps its direct calls.
-fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1, uint osr_pc = uint::max, TVal* regs = null) @noinline {
+fn void opt_note_entry(Heap* h, CompiledFunction* f, Activation* act, uint credit = 1, uint osr_pc = uint::max, TVal* regs = null) @noinline {
     if (f.opt_state == OPT_REGION && f.opt_code == null) {
         // Calls count toward the loop's round as well; only a back edge can compile it.
         if (osr_pc != uint::max) f.opt_entries += credit;
         if (!opt_round_due(h, f) || osr_pc == uint::max) return;
         opt_reset_count(f);
-        opt_try_compile(h, f, osr_pc, regs);
+        opt_try_compile(h, f, act, osr_pc, regs);
         return;
     }
     if (f.opt_state != OPT_NONE || f.opt_code != null) {
@@ -320,7 +323,7 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1, uint osr_p
     f.opt_entries += credit;
     if (!opt_round_due(h, f)) return;
     // Without the feedback to specialize on, the next attempt waits for another round of entries.
-    if (!opt_try_compile(h, f) && f.opt_state == OPT_NONE) opt_reset_count(f);
+    if (!opt_try_compile(h, f, act) && f.opt_state == OPT_NONE) opt_reset_count(f);
 }
 
 // Fold f's completed rounds of entries into f.opt_rounds and say whether the rounds due are in. A
@@ -345,7 +348,7 @@ fn void opt_reset_count(CompiledFunction* f) @inline {
 // loop entry and otherwise hands back to the baseline code.
 fn void* opt_osr(Dispatch* ds, CompiledFunction* f) @noinline {
     Heap* h = ds.heap;
-    opt_note_entry(h, f, OPT_LOOP_CREDIT, (uint)(ds.curr_pc - ds.code_base), ds.regs_base);
+    opt_note_entry(h, f, ds.act, OPT_LOOP_CREDIT, (uint)(ds.curr_pc - ds.code_base), ds.regs_base);
     if (f.opt_code == null || f.opt_state != OPT_ACTIVE) return null;
     return baseline_jump_entry(f);
 }
@@ -685,7 +688,7 @@ fn bool opt_refuse_build(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op,
 
 // Optimize `f`: the whole function, or for one in OPT_REGION the loop holding the header `osr_pc`
 // that a frame with window `regs` branched back to.
-fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, TVal* regs = null) @noinline {
+fn bool opt_try_compile(Heap* h, CompiledFunction* f, Activation* act, uint osr_pc = uint::max, TVal* regs = null) @noinline {
     OptPolicy* p = &h.opt;
     JitStats* st = &h.jit_stats;
     bool region = f.opt_state == OPT_REGION;
@@ -705,6 +708,8 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
     OptGraph g;
     g.init();
     defer g.free();
+    g.frame = act;
+    g.folded_epoch = h.folded_epoch;
     if (region) {
         if (!opt_find_region(f, osr_pc, f.opt_region_fails, &g.region)) return opt_refuse_build(h, f, OptRefuse.CFG, Opcode.NOP, true);
         g.region.regs = regs;
@@ -864,7 +869,12 @@ fn void opt_discard(Heap* h, CompiledFunction* f) {
         opt_log_fn(f);
         io::eprintf(" exits %d:", oc.exits);
         foreach (&x : oc.hits) {
-            if (x.count != 0) io::eprintf(" fn#%d+%d %s x%d", x.cf.func_index, x.pc, x.cf.code[x.pc].op, x.count);
+            if (x.count == 0) continue;
+            if (x.pc == OPT_BAN_ALL) {
+                io::eprintf(" fn#%d captures x%d", x.cf.func_index, x.count);
+            } else {
+                io::eprintf(" fn#%d+%d %s x%d", x.cf.func_index, x.pc, x.cf.code[x.pc].op, x.count);
+            }
         }
         io::eprintfn("");
     }
@@ -987,7 +997,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         return 0;
     }
     opt_note_exit_op(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base));
-    if (reason == OptExit.GLOBAL.ordinal) opt_note_unfold(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base));
+    if (reason == OptExit.BINDING.ordinal) opt_note_unfold(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base), ds.act);
     if (h.opt.log) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
         io::eprintf("opt exit ");
@@ -1057,7 +1067,7 @@ fn uint opt_exit_limit(Heap* h) @inline => h.opt.exit_max != 0 ? h.opt.exit_max 
 // body, whose typed loads it does not re-derive (`inlined`).
 fn bool opt_exit_bannable(long reason, bool inlined = false) {
     switch ((OptExit)reason) {
-        case SHAPE: case RECEIVER: case SLOW_PATH: case CALLEE: case BOUNDS: case HOLE: case GLOBAL:
+        case SHAPE: case RECEIVER: case SLOW_PATH: case CALLEE: case BOUNDS: case HOLE: case BINDING: case CAPTURE:
             return true;
         case NOT_NUMBER: case NOT_INT32:
             return inlined;
@@ -1066,11 +1076,18 @@ fn bool opt_exit_bannable(long reason, bool inlined = false) {
     }
 }
 
-// The guard of the folded GETGLOBAL at word `pc` of `cf` failed: remember its binding as changing.
-fn void opt_note_unfold(OptPolicy* p, CompiledFunction* cf, uint pc) {
+// The guard of the folded GETGLOBAL or GETCAP at word `pc` of `cf`, run by the frame `act`, failed:
+// remember its binding as changing.
+fn void opt_note_unfold(OptPolicy* p, CompiledFunction* cf, uint pc, Activation* act) {
     if (cf.code[pc].op == Opcode.WIDE) pc++;
-    if (cf.var_ic_entries == null) return;
-    void* slot = ((hobject::VarICEntry*)cf.var_ic_entries)[pc].slot_ptr;
+    void* slot = null;
+    if (cf.code[pc].op == Opcode.GETCAP) {
+        // A captured binding of the frame's closure; a value snapshot never changes.
+        CaptureRef* ref = act != null ? vm::capture_ref(act, cf.code[pc].get_bc()) : null;
+        if (ref != null && !ref.is_value) slot = vm::capture_read_slot(ref);
+    } else if (cf.var_ic_entries != null) {
+        slot = ((hobject::VarICEntry*)cf.var_ic_entries)[pc].slot_ptr;
+    }
     if (slot == null || opt_unfolded(p, slot)) return;
     p.unfolded[p.unfolded_next++ % OPT_UNFOLD_MAX] = slot;
 }
@@ -1092,6 +1109,8 @@ fn bool opt_exit_transient(Heap* h, long reason) @inline {
 // times. Only a failed guard of one instruction is counted, since only that changes the next build.
 fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reason, bool inlined = false) {
     if (!opt_exit_bannable(reason, inlined)) return false;
+    // Another closure runs the code: none of its captured bindings is folded again.
+    if (reason == OptExit.CAPTURE.ordinal) pc = OPT_BAN_ALL;
     OptSiteHit* hit = null;
     foreach (&x : oc.hits) {
         if (x.cf == cf && x.pc == pc && x.count != 0) hit = x;
@@ -1102,7 +1121,7 @@ fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reas
         hit.pc = pc;
         hit.count = 0;
         hit.call = reason == OptExit.CALLEE.ordinal;
-        hit.fold = reason == OptExit.GLOBAL.ordinal;
+        hit.fold = reason == OptExit.BINDING.ordinal || reason == OptExit.CAPTURE.ordinal;
     }
     return ++hit.count >= OPT_SITE_EXITS;
 }
@@ -1151,7 +1170,7 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         return vm::jit_inline_materialize(ds, site);
     }
     opt_note_exit_op(&h.opt, callee, site.pc);
-    if (reason == OptExit.GLOBAL.ordinal) opt_note_unfold(&h.opt, callee, site.pc);
+    if (reason == OptExit.BINDING.ordinal) opt_note_unfold(&h.opt, callee, site.pc, null);
     if (h.opt.log) {
         io::eprintf("opt exit ");
         opt_log_fn(callee);

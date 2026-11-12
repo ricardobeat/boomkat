@@ -2527,7 +2527,7 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
             // An interpreted loop that got hot continues in native code:
             // Vm.run restarts and enters the frame at the branch target.
             $if $feat(SLJIT):
-                hot = h.jit_enabled && !ds.jit_native && jit::baseline_loop_hot(h, ds.vm.current_func);
+                hot = h.jit_enabled && !ds.jit_native && jit::baseline_loop_hot(h, ds.vm.current_func, ds.act);
             $endif
         }
         if (h.capi_interrupt_fn != null || h.capi_runtime != null) {
@@ -2942,7 +2942,7 @@ fn TVal? Vm.run(Vm* vm) {
 
     $if $feat(SLJIT):
         if (vm.heap.jit_enabled && vm.threaded_handoff == ThreadedHandoff.NONE) {
-            void* native = jit::baseline_code(vm.heap, vm.current_func);
+            void* native = jit::baseline_code(vm.heap, vm.current_func, ds.act);
             $if $feat(OP_PROFILE): opprof_runentry[native != null ? 1 : 0]++; if (native == null) opprof_relay_site(vm.current_func, ds.curr_pc); $endif
             if (native != null) {
                 switch (jit::baseline_run(native, &ds)) {

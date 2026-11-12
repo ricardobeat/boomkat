@@ -2116,39 +2116,57 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
-// GUARD_GLOBAL (OptGlobal): the global object's layout and the folded-object epoch as the node's cc asks,
+// GUARD_BINDING (OptBinding): its holder's layout and the folded-object epoch as the node's cc asks,
 // then the binding's value and a typed array value's store in place. While the collector marks, an
 // object value is shaded, as a load of it would be: the code may store it to the window.
-fn void OptCg.emit_guard_global(&self, uint i, OptNode* n) {
+fn void OptCg.emit_guard_binding(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
     Layout* l = a.lay;
-    OptGlobal* gl = &self.g.globals[(usz)n.imm];
+    OptBinding* b = &self.g.bindings[(usz)n.imm];
     if ((n.cc & OPT_GUARD_LAYOUT) != 0) {
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM, (long)(usz)gl.global + l.obj_shape);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, gl.shape), i, OptExit.GLOBAL);
+        OptHolder* ho = &self.g.holders[(usz)b.holder];
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM, (long)(usz)ho.obj + l.obj_shape);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, ho.shape), i, OptExit.BINDING);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, l.heap_shapes);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)gl.shape * 8);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)ho.shape * 8);
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, l.shape_gen);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, gl.gen), i, OptExit.GLOBAL);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, ho.gen), i, OptExit.BINDING);
     }
     if ((n.cc & OPT_GUARD_EPOCH) != 0) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.folded_epoch - (char*)self.h));
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, gl.epoch), i, OptExit.GLOBAL);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, self.g.folded_epoch), i, OptExit.BINDING);
     }
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)gl.slot);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)gl.value), i, OptExit.GLOBAL);
+    if (b.slot != null) {
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)b.slot);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)b.value), i, OptExit.BINDING);
+    }
     OptView view;
-    if (opt_const_view(gl.value, false, &view)) {
+    if (opt_const_view(b.value, false, &view)) {
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM, (long)(usz)view.buffer + l.ab_data);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)view.base), i, OptExit.GLOBAL);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)view.base), i, OptExit.BINDING);
     }
-    TVal v = { .bits = gl.value };
+    TVal v = { .bits = b.value };
     if (!v.is_object()) return;
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, l.heap_gc_phase);
     void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
     self.shade(i);
     sljit_set_label(quiet, sljit_emit_label(c));
+}
+
+// GUARD_CAPTURE (OptCapture): the running closure's capture record, from the records the entry
+// loaded (emit_cap_refs), word by word. Zero records, a frame running code other than the closure's
+// own, exits too.
+fn void OptCg.emit_guard_capture(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    OptCapture* cap = &self.g.captures[(usz)n.imm];
+    long at = (long)cap.index * hobject::CaptureRef::size;
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | reg_sp(), self.cap_slot);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0), i, OptExit.CAPTURE);
+    for (uint w = 0; w < 2; w++) {
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, at + (long)w * 8);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)cap.words[w]), i, OptExit.CAPTURE);
+    }
 }
 
 // A TYPEOF of an inlined body: the interned name for the operand's tag, into the node's home slot.
@@ -2850,7 +2868,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.GUARD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.GUARD_BINDING || n.op == OptOp.GUARD_CAPTURE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH) {
         if (self.force_here(n)) {
             self.forced_done = true;
             // The hook falls through once its count is spent: an allocation for the exit must not run then.
@@ -2900,8 +2918,10 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_load_var(i, n);
         case LOAD_GLOBAL:
             self.emit_load_global(i, n);
-        case GUARD_GLOBAL:
-            self.emit_guard_global(i, n);
+        case GUARD_BINDING:
+            self.emit_guard_binding(i, n);
+        case GUARD_CAPTURE:
+            self.emit_guard_capture(i, n);
         case COPY_WINDOW:
             self.emit_copy_window(i, n);
         case STORE_CONST:
@@ -3039,7 +3059,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;
     foreach (&nd : g.nodes) {
-        if (nd.op == OptOp.LOAD_CAP && nd.fidx == 0 && f.capture_count != 0) cap_slot = CALL_FRAME_BYTES + 8 * (long)(pools.int_count + pools.flt_count);
+        if ((nd.op == OptOp.LOAD_CAP || nd.op == OptOp.GUARD_CAPTURE) && nd.fidx == 0 && f.capture_count != 0) cap_slot = CALL_FRAME_BYTES + 8 * (long)(pools.int_count + pools.flt_count);
     }
     void* dispatch = a.emit_dispatch(bc, count);
     a.emit_nonzero_exit(dispatch);

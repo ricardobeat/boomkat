@@ -214,7 +214,7 @@ fn void* jit_enter_published(Dispatch* ds, uint nargs, bool needs_arguments) @pr
     ds.jit_floor = vm.activation_count - 1;
     ds.jit_depth++;
     ds.heap.jit_stats.calls_native++;
-    if (@unlikely(ds.heap.opt.enabled)) jit::opt_note_entry(ds.heap, target);
+    if (@unlikely(ds.heap.opt.enabled)) jit::opt_note_entry(ds.heap, target, la);
     return jit::baseline_entry(target);
 }
 
@@ -934,7 +934,7 @@ fn long jit_try_enter_pushed(Dispatch* ds, Instruction* next, uint count_before)
     Activation* act = &vm.activations[vm.activation_count - 1];
     CompiledFunction* f = (CompiledFunction*)act.func;
     if (f == null || act.curr_pc != f.code || f.ic_entries == null || f.var_ic_entries == null) return JIT_NO_RAW;
-    void* entry = jit::baseline_code(vm.heap, f);
+    void* entry = jit::baseline_code(vm.heap, f, act);
     if (entry == null) return JIT_NO_RAW;
     uint old_floor = ds.jit_floor;
     ds.needs_restart = false;

@@ -398,7 +398,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
 // optimizing the function at its threshold, and the call-time safepoint while a collection waits.
 fn void jit_entry_service(Dispatch* ds) {
     CompiledFunction* f = (CompiledFunction*)ds.act.func;
-    if (f.opt_entries >= OPT_ENTRY_THRESHOLD) opt_note_entry(ds.heap, f, 0);
+    if (f.opt_entries >= OPT_ENTRY_THRESHOLD) opt_note_entry(ds.heap, f, ds.act, 0);
     ds.heap.safepoint_gc_on_call();
 }
 

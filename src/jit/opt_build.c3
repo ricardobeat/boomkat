@@ -257,9 +257,11 @@ struct OptBuild {
     // it is not a proxy, which is all a load needs).
     uint* fact_shape;
     bool* fact_plain;
-    // The OptGraph.globals entries a GUARD_GLOBAL has proven since the last node that runs code
-    // (bit k for entry k), and the guard's layout and epoch tests (OPT_FACT_LAYOUT, OPT_FACT_EPOCH).
-    ulong fact_globals;
+    // What GUARD_BINDING nodes have proven since the last node that runs code (the bits after
+    // OPT_BINDINGS_MAX), and the capture records GUARD_CAPTURE nodes have proven, by index, which
+    // no code changes in a frame.
+    ulong fact_bindings;
+    ulong fact_captures;
     // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
     // this block, or NO_NODE; a numeric use of the register asks for it to be a typed load.
     uint* load_def;
@@ -272,7 +274,8 @@ struct OptBuild {
     // The facts at the end of each block built so far, by position (nregs + 1 each).
     uint* end_shape;
     bool* end_plain;
-    ulong* end_globals;
+    ulong* end_bindings;
+    ulong* end_captures;
     // The register states at the end and at the start of each block, by position.
     OptRegState* ends;
     OptRegState* entries;
@@ -531,7 +534,8 @@ fn void OptBuild.free(&self) {
     mem::free(self.fact_plain);
     mem::free(self.end_shape);
     mem::free(self.end_plain);
-    mem::free(self.end_globals);
+    mem::free(self.end_bindings);
+    mem::free(self.end_captures);
     mem::free(self.ends);
     mem::free(self.entries);
     self.overrides.free();
@@ -835,7 +839,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
 // block start with more than one way in (begin_block) drops its facts.
 fn void OptBuild.forget_facts(&self) {
     for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
-    self.fact_globals = 0;
+    self.fact_bindings = 0;
 }
 
 // The register a field node reads its receiver from: nregs for `this`.
@@ -1097,6 +1101,7 @@ fn bool OptBuild.get_cap(&self) {
     // call's guard checked.
     uint closure = self.cur_fn == 0 ? NO_NODE : self.cur[self.sites[self.cur_site].base - 2].node;
     if (closure != NO_NODE && self.rep_of(closure) != OptRep.OBJECT) return self.generic();
+    if (self.w.a < self.nregs && self.fold_capture()) return true;
     uint t = self.typed_load(OptOp.LOAD_CAP, NO_NODE);
     if (t != NO_NODE) {
         self.g.nodes[t].b = closure;
@@ -1166,51 +1171,133 @@ fn bool OptBuild.get_variable(&self, bool scoped) {
     return true;
 }
 
-// The fact bits of fact_globals beside the OptGraph.globals entries.
-const ulong OPT_FACT_LAYOUT = 1UL << 63;
+// The fact bits of fact_bindings: OptGraph.bindings entries from bit 0, the layouts of the
+// OptGraph.holders from OPT_FACT_HOLDER, and the folded-object epoch.
+const uint OPT_BINDINGS_MAX = 56;
+const uint OPT_HOLDERS_MAX = 4;
+const uint OPT_FACT_HOLDER = 56;
 const ulong OPT_FACT_EPOCH = 1UL << 62;
-const uint OPT_GLOBALS_MAX = 62;
 
-// GETGLOBAL of a binding the code can fold (OptGlobal): its value as a constant node, after a
-// GUARD_GLOBAL unless one has proven it since the last node that runs code. Folded are numbers and
-// typed arrays, whose elements the code then addresses directly; other objects, often rebound,
-// gain nothing yet. Any other value is read as before, and so is a site that has failed its guard.
+// GETGLOBAL of a binding the code can fold: a `var` or function declaration of a script, which is a
+// non-configurable data property of the global object.
 fn bool OptBuild.fold_global(&self) {
     CompiledFunction* f = self.cur_f();
     uint pc = self.next_pc - 1;
     if (f.var_ic_entries == null || opt_site_banned(self.f, f, pc, true)) return false;
     hobject::VarICEntry* vic = &((hobject::VarICEntry*)f.var_ic_entries)[pc];
-    Heap* h = self.h;
     // The cache names the binding while its epoch is the heap's; the global environment is the
     // one with no parent, and its bindings are the global object.
-    if (vic.slot_ptr == null || vic.recycle_epoch != h.shape_recycle_epoch || vic.env == null || opt_unfolded(&h.opt, vic.slot_ptr)) return false;
+    if (vic.slot_ptr == null || vic.recycle_epoch != self.h.shape_recycle_epoch || vic.env == null) return false;
     if (((env::EnvRecord*)vic.env).parent != null || vic.prop_flags.is_accessor || vic.prop_flags.configurable) return false;
-    HObject* global = (HObject*)vic.bindings;
-    hobject::Shape* shape = h.get_shape(global.shape_id);
-    if (shape == null) return false;
-    TVal v = vic.slot_ptr.get();
-    OptView view;
-    bool object = v.is_object();
-    if (!v.is_numeric() && !(object && opt_const_view(v.get_raw_bits(), false, &view))) return false;
-    // The entry for this binding, shared by every read of it.
-    // One global object per graph: the layout fact speaks for it.
-    if (self.g.globals.len() != 0 && self.g.globals[0].global != global) return false;
-    ulong bits = v.get_raw_bits();
-    uint k = (uint)self.g.globals.len();
-    foreach (j, &gl : self.g.globals) if (gl.slot == vic.slot_ptr) k = (uint)j;
-    if (k == self.g.globals.len()) {
-        if (k >= OPT_GLOBALS_MAX) return false;
-        self.g.globals.push({ .global = global, .shape = global.shape_id, .gen = shape.generation, .epoch = h.folded_epoch, .slot = vic.slot_ptr, .value = bits });
+    uint k = self.binding_entry((HObject*)vic.bindings, vic.slot_ptr);
+    if (k == NO_NODE) return false;
+    self.fold_binding(k);
+    return true;
+}
+
+// GETCAP of the function being optimized, of a binding the code can fold through the capture
+// record of the closure that was running it (OptBuild.refs): a declared binding of the scope or cell
+// that holds it, or a value snapshot. A GUARD_CAPTURE proves the record once in a frame.
+fn bool OptBuild.fold_capture(&self) {
+    uint index = self.w.get_bc();
+    if (self.cur_fn != 0 || index >= self.f.capture_count || index >= 64 || opt_site_banned(self.f, self.f, self.next_pc - 1, true)) return false;
+    CaptureRef* refs = self.frame_refs();
+    if (refs == null) return false;
+    CaptureRef* ref = &refs[index];
+    HObject* holder = null;
+    hobject::PropValue* slot = null;
+    if (!ref.is_value) {
+        holder = ref.owner;
+        if (holder == null || ref.guard_shadow || ref.prop_idx >= holder.prop_count) return false;
+        hobject::PropFlags flags = holder.get_prop_flags(ref.prop_idx, self.h);
+        if (flags.is_accessor || (!ref.is_cell && flags.configurable)) return false;
+        slot = &holder.prop_values()[ref.prop_idx];
     }
-    ulong need = (1UL << k) | OPT_FACT_LAYOUT | (object ? OPT_FACT_EPOCH : 0);
-    if ((self.fact_globals & need) != need) {
+    uint k = self.binding_entry(holder, ref.is_value ? (hobject::PropValue*)&ref.value : slot);
+    if (k == NO_NODE) return false;
+    if ((self.fact_captures & (1UL << index)) == 0) {
+        uint c = (uint)self.g.captures.len();
+        foreach (j, &cap : self.g.captures) if (cap.index == index) c = (uint)j;
+        if (c == self.g.captures.len()) {
+            OptCapture cap = { .index = index };
+            mem::copy(&cap.words, ref, CaptureRef::size);
+            self.g.captures.push(cap);
+        }
+        uint g = self.add(OptOp.GUARD_CAPTURE, OptRep.NONE, NO_NODE, NO_NODE, (long)c);
+        self.snapshot(g);
+        self.fact_captures |= 1UL << index;
+    }
+    self.fold_binding(k);
+    return true;
+}
+
+// The capture records of the closure running the frame that asked for the compile, when it runs
+// the function being optimized. Its code reads them, as the GETCAP being lowered does, so even a
+// frame generated code pushed has its function written (vm::ACT_FLAG_LAZY).
+fn CaptureRef* OptBuild.frame_refs(&self) {
+    OptGraph* g = self.g;
+    if (!g.refs_read) {
+        g.refs_read = true;
+        uint count;
+        if (g.frame != null && g.frame.func == (void*)self.f) g.refs = vm::capture_refs_of(g.frame, &count);
+        if (g.refs != null && count != self.f.capture_count) g.refs = null;
+    }
+    return g.refs;
+}
+
+// Whether the binding value `v` is one the code folds: a number, or a typed array whose elements the
+// code then addresses directly. Other objects, often rebound, gain nothing yet.
+fn bool OptBuild.fold_value(&self, TVal v) {
+    if (v.is_numeric()) return true;
+    OptView view;
+    return v.is_object() && opt_const_view(v.get_raw_bits(), false, &view);
+}
+
+// The OptGraph.bindings entry for the binding at `slot` of `holder` (none for a value snapshot),
+// added with its holder's when the value is one to fold; NO_NODE when it is not, or when the
+// binding's guard failed somewhere (opt_unfolded).
+fn uint OptBuild.binding_entry(&self, HObject* holder, hobject::PropValue* slot) {
+    Heap* h = self.h;
+    TVal v = slot.get();
+    if (!self.fold_value(v) || (holder != null && opt_unfolded(&h.opt, slot))) return NO_NODE;
+    uint ho = OPT_NO_HOLDER;
+    if (holder != null) {
+        hobject::Shape* shape = h.get_shape(holder.shape_id);
+        if (shape == null) return NO_NODE;
+        ho = (uint)self.g.holders.len();
+        foreach (j, &x : self.g.holders) if (x.obj == holder) ho = (uint)j;
+        if (ho == self.g.holders.len()) {
+            if (ho >= OPT_HOLDERS_MAX) return NO_NODE;
+            self.g.holders.push({ .obj = holder, .shape = holder.shape_id, .gen = shape.generation });
+        }
+    }
+    ulong bits = v.get_raw_bits();
+    uint k = (uint)self.g.bindings.len();
+    foreach (j, &b : self.g.bindings) if (b.holder == ho && b.value == bits && (holder == null || b.slot == slot)) k = (uint)j;
+    if (k == self.g.bindings.len()) {
+        if (k >= OPT_BINDINGS_MAX) return NO_NODE;
+        self.g.bindings.push({ .holder = ho, .slot = holder != null ? slot : null, .value = bits });
+    }
+    return k;
+}
+
+// The value of binding `k` as a constant node, after a GUARD_BINDING unless one has proven it since
+// the last node that runs code.
+fn void OptBuild.fold_binding(&self, uint k) {
+    OptBinding* b = &self.g.bindings[k];
+    uint ho = b.holder;
+    TVal v = { .bits = b.value };
+    bool object = v.is_object();
+    bool holder = ho != OPT_NO_HOLDER;
+    ulong need = (1UL << k) | (holder ? 1UL << (OPT_FACT_HOLDER + ho) : 0) | (object ? OPT_FACT_EPOCH : 0);
+    if ((self.fact_bindings & need) != need) {
         char cc = 0;
-        if ((self.fact_globals & OPT_FACT_LAYOUT) == 0) cc |= OPT_GUARD_LAYOUT;
-        if (object && (self.fact_globals & OPT_FACT_EPOCH) == 0) cc |= OPT_GUARD_EPOCH;
-        uint g = self.add(OptOp.GUARD_GLOBAL, OptRep.NONE, NO_NODE, NO_NODE, (long)k);
+        if (holder && (self.fact_bindings & (1UL << (OPT_FACT_HOLDER + ho))) == 0) cc |= OPT_GUARD_LAYOUT;
+        if (object && (self.fact_bindings & OPT_FACT_EPOCH) == 0) cc |= OPT_GUARD_EPOCH;
+        uint g = self.add(OptOp.GUARD_BINDING, OptRep.NONE, NO_NODE, NO_NODE, (long)k);
         self.g.nodes[g].cc = cc;
         self.snapshot(g);
-        self.fact_globals |= need;
+        self.fact_bindings |= need;
     }
     uint n;
     if (v.is_fastint() && v.get_fastint() >= int::min && v.get_fastint() <= int::max) {
@@ -1220,14 +1307,13 @@ fn bool OptBuild.fold_global(&self) {
     } else {
         // Its death would let its address name another object: folded, it moves the epoch first.
         ((HObject*)v.get_heapptr()).gc.folded = true;
-        n = self.add(OptOp.CONST_OBJ, OptRep.OBJECT, NO_NODE, NO_NODE, (long)bits);
+        n = self.add(OptOp.CONST_OBJ, OptRep.OBJECT, NO_NODE, NO_NODE, (long)b.value);
     }
     self.set(self.w.a, n);
-    return true;
 }
 
 // A typed array whose elements an access can address directly when it is a constant: a
-// fixed-length view of a fixed-length buffer whose store is in place. The GUARD_GLOBAL that proves
+// fixed-length view of a fixed-length buffer whose store is in place. The GUARD_BINDING that proves
 // the value also proves the store in place (a detach clears it, and nothing else moves it). An
 // element store also needs a buffer that is not immutable and a kind that does not clamp.
 struct OptView {
@@ -3428,7 +3514,8 @@ fn bool OptBuild.try_inline(&self) {
     mem::copy(save_def, self.load_def, (usz)n * uint::size);
     mem::copy(save_shape, self.fact_shape, ((usz)n + 1) * uint::size);
     mem::copy(save_plain, self.fact_plain, (usz)n + 1);
-    ulong save_globals = self.fact_globals;
+    ulong save_bindings = self.fact_bindings;
+    ulong save_captures = self.fact_captures;
     sz nodes0 = self.g.nodes.len();
     sz dirty0 = self.g.dirty.len();
     sz fns0 = self.g.fns.len();
@@ -3532,7 +3619,8 @@ fn bool OptBuild.try_inline(&self) {
         mem::copy(self.load_def, save_def, (usz)n * uint::size);
         mem::copy(self.fact_shape, save_shape, ((usz)n + 1) * uint::size);
         mem::copy(self.fact_plain, save_plain, (usz)n + 1);
-        self.fact_globals = save_globals;
+        self.fact_bindings = save_bindings;
+        self.fact_captures = save_captures;
         if (parent_fn == 0) self.refused = OptRefuse.NONE;
         return false;
     }
@@ -3842,6 +3930,16 @@ fn void OptBuild.begin_block(&self, uint pos) {
     } else {
         self.meet_facts(pos);
     }
+    // A capture record a frame proved stays proved, back edges included; an OSR entry has proved none.
+    self.fact_captures = 0;
+    if (!self.osr_target[first_insn]) {
+        bool first = true;
+        foreach (p : self.preds(pos)) {
+            if (p >= pos || self.dead[p]) continue;
+            self.fact_captures = first ? self.end_captures[p] : self.fact_captures & self.end_captures[p];
+            first = false;
+        }
+    }
     blk.header = back > 0;
     blk.loop_end = self.loop_end[pos];
     if (pos == 0 && self.g.region.end != 0) {
@@ -3964,7 +4062,8 @@ fn void OptBuild.save_ends(&self, uint pos) {
     mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
     mem::copy(&self.end_shape[(sz)pos * w], self.fact_shape, w * uint::size);
     mem::copy(&self.end_plain[(sz)pos * w], self.fact_plain, w);
-    self.end_globals[pos] = self.fact_globals;
+    self.end_bindings[pos] = self.fact_bindings;
+    self.end_captures[pos] = self.fact_captures;
 }
 
 // The facts at the start of the block at `pos`: those every built block leading to it ends with.
@@ -3975,7 +4074,7 @@ fn void OptBuild.meet_facts(&self, uint pos) {
         if (p >= pos || self.dead[p]) continue;
         uint* shape = &self.end_shape[(usz)p * w];
         bool* plain = &self.end_plain[(usz)p * w];
-        self.fact_globals = first ? self.end_globals[p] : self.fact_globals & self.end_globals[p];
+        self.fact_bindings = first ? self.end_bindings[p] : self.fact_bindings & self.end_bindings[p];
         for (usz r = 0; r < w; r++) {
             if (first) {
                 self.fact_shape[r] = shape[r];
@@ -4168,7 +4267,8 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.fact_plain = mem::new_array(bool, (usz)n + 1);
     b.end_shape = mem::new_array(uint, (usz)b.nrpo * ((usz)n + 1));
     b.end_plain = mem::new_array(bool, (usz)b.nrpo * ((usz)n + 1));
-    b.end_globals = mem::new_array(ulong, b.nrpo);
+    b.end_bindings = mem::new_array(ulong, b.nrpo);
+    b.end_captures = mem::new_array(ulong, b.nrpo);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
     // A nested site's operands become OBJECT nodes over rounds of their own, each request

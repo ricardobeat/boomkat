@@ -62,6 +62,7 @@ module boomkat::jit @feat(SLJIT);
 import boomkat::bytecode;
 import boomkat::hobject;
 import boomkat::types;
+import boomkat::vm;
 import std::collections::list;
 import std::io;
 
@@ -81,9 +82,9 @@ enum OptOp : char {
     // imm is the value: an int32, or the bits of a double.
     CONST_I32,
     CONST_F64,
-    // The boxed object imm a GETGLOBAL read from a binding the code folded (OptBuild.fold_global): an
-    // OBJECT node with no register and no home, as the numeric constants are. A GUARD_GLOBAL before
-    // it in its stretch of code proves the binding holds it.
+    // The boxed object imm a GETGLOBAL or GETCAP read from a binding the code folded
+    // (OptBuild.fold_binding): an OBJECT node with no register and no home, as the numeric constants
+    // are. A GUARD_BINDING before it in its stretch of code proves the binding holds it.
     CONST_OBJ,
     // Window slot imm, checked to hold an int32 (exit NOT_INT32) or a number
     // (exit NOT_NUMBER), as an INT32 or FLOAT64.
@@ -161,12 +162,17 @@ enum OptOp : char {
     // A GETGLOBAL of an inlined body (imm its pc) read as a number of the node's rep; exits when
     // its cache does not hold or the value is not that kind of number.
     LOAD_GLOBAL,
-    // Exits (GLOBAL) before the GETGLOBAL at pc unless the binding OptGraph.globals[imm] still holds
-    // the value the code folded, the backing store of a typed array value included: with cc bit
-    // OPT_GUARD_LAYOUT first the global object's layout, with OPT_GUARD_EPOCH the folded-object
-    // epoch (OptGlobal). While the collector marks, an object value is shaded, as a load of it would be.
+    // Exits (BINDING) before the GETGLOBAL or GETCAP at pc unless the binding OptGraph.bindings[imm]
+    // still holds the value the code folded, the backing store of a typed array value included: with
+    // cc bit OPT_GUARD_LAYOUT first its holder's layout, with OPT_GUARD_EPOCH the folded-object epoch
+    // (OptBinding). While the collector marks, an object value is shaded, as a load of it would be.
     // It defines nothing.
-    GUARD_GLOBAL,
+    GUARD_BINDING,
+    // Exits (CAPTURE) before the GETCAP at pc unless the running closure's capture record is
+    // OptGraph.captures[imm]: the binding of a holder the code folds from, or a snapshot of the
+    // value it folds. Nothing changes a record a frame has proven, so one guard serves the frame.
+    // It defines nothing.
+    GUARD_CAPTURE,
     // The window slot imm (a callee RET's register) copied to the window slot home (the call's
     // result register) as a published store; exits (SLOW_PATH) where publish does. cc 1 copies
     // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG),
@@ -401,22 +407,37 @@ struct OptPoly {
     uint[OPT_POLY_MAX] idx;
 }
 
-// A global binding whose value the code folds (OptBuild.fold_global): a `var` or function
-// declaration of a script, a non-configurable data property of the global object, which nothing can
-// delete, make an accessor or shadow with a lexical declaration. Its slot is `slot` while the global
-// object's shape is `shape` and that shape's storage `gen`: a property added in place keeps both, and
-// anything that moves or reorders the values changes one. An object value is marked folded, so that
-// its death moves Heap.folded_epoch from `epoch` before its address can name another object.
-struct OptGlobal {
-    HObject* global;
+// An object that holds bindings the code folds: the global object, or the scope or cell a captured
+// binding lives in. Its values stay where they are while its shape is `shape` and that shape's
+// storage `gen`: a property added in place keeps both, and anything that moves or reorders the values
+// changes one.
+struct OptHolder {
+    HObject* obj;
     uint shape;
     uint gen;
-    uint epoch;
+}
+
+// A binding whose value the code folds (OptBuild.fold_binding): a `var` or function declaration,
+// which nothing can delete, make an accessor or shadow, at `slot` of holder `holder`; or a
+// captured value snapshot (OPT_NO_HOLDER, no slot), which nothing writes. An object value is marked
+// folded, so that its death moves Heap.folded_epoch from OptGraph.folded_epoch before its address
+// can name another object.
+struct OptBinding {
+    uint holder;
     hobject::PropValue* slot;
     ulong value;
 }
 
-// GUARD_GLOBAL's cc bits.
+const uint OPT_NO_HOLDER = uint::max;
+
+// The capture record `index` of the closure the code folds captured bindings of: its two words, the
+// owner or value snapshot, then the index and kinds (hobject::CaptureRef).
+struct OptCapture {
+    uint index;
+    ulong[2] words;
+}
+
+// GUARD_BINDING's cc bits.
 const char OPT_GUARD_LAYOUT = 1;
 const char OPT_GUARD_EPOCH = 2;
 
@@ -474,14 +495,25 @@ struct OptGraph {
     List{OptSink} sinks;
     List{OptMat} mats;
     List{uint} mat_vals;
-    List{OptGlobal} globals;
+    List{OptHolder} holders;
+    List{OptBinding} bindings;
+    List{OptCapture} captures;
+    // Heap.folded_epoch when the graph was built.
+    uint folded_epoch;
+    // The frame whose entry or loop asked for the compile, or null; its closure's capture records,
+    // once a GETCAP is lowered (OptBuild.frame_refs).
+    Activation* frame;
+    CaptureRef* refs;
+    bool refs_read;
 }
 
 fn void OptGraph.init(&self) {
     self.sinks.init(mem);
     self.mats.init(mem);
     self.mat_vals.init(mem);
-    self.globals.init(mem);
+    self.holders.init(mem);
+    self.bindings.init(mem);
+    self.captures.init(mem);
     self.polys.init(mem);
     self.nodes.init(mem);
     self.blocks.init(mem);
@@ -494,7 +526,9 @@ fn void OptGraph.clear(&self) {
     self.sinks.clear();
     self.mats.clear();
     self.mat_vals.clear();
-    self.globals.clear();
+    self.holders.clear();
+    self.bindings.clear();
+    self.captures.clear();
     self.polys.clear();
     self.nodes.clear();
     self.blocks.clear();
@@ -506,7 +540,9 @@ fn void OptGraph.free(&self) {
     self.sinks.free();
     self.mats.free();
     self.mat_vals.free();
-    self.globals.free();
+    self.holders.free();
+    self.bindings.free();
+    self.captures.free();
     self.polys.free();
     self.nodes.free();
     self.blocks.free();

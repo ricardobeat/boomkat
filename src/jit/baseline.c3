@@ -256,9 +256,9 @@ alias Thunk = fn long(Dispatch* ds, ulong next_pc);
 // Native code for `f`, compiling it when the policy says so, or null when the
 // frame runs in the interpreter.
 // Top-level code runs once, so it compiles only from a hot loop.
-fn void* baseline_code(Heap* h, CompiledFunction* f) @inline {
+fn void* baseline_code(Heap* h, CompiledFunction* f, Activation* act) @inline {
     if (f.jit_code != null) {
-        if (@unlikely(h.opt.enabled)) opt_note_entry(h, f);
+        if (@unlikely(h.opt.enabled)) opt_note_entry(h, f, act);
         return ((BaselineCode*)f.jit_code).exec;
     }
     if (f.jit_refused || is_top_level(f)) return null;
@@ -266,7 +266,7 @@ fn void* baseline_code(Heap* h, CompiledFunction* f) @inline {
     // once (zlib), so they compile after more entries rather than never.
     uint threshold = f.jit_eval_derived ? BASELINE_EVAL_ENTRY_THRESHOLD : BASELINE_ENTRY_THRESHOLD;
     if (!h.jit_stress && ++f.jit_entries < threshold) return null;
-    return baseline_try_compile(h, f);
+    return baseline_try_compile(h, f, true, act);
 }
 
 fn bool is_top_level(CompiledFunction* f) @inline => f.flags.is_global || f.flags.is_module || f.flags.is_eval;
@@ -276,16 +276,16 @@ fn bool is_top_level(CompiledFunction* f) @inline => f.flags.is_global || f.flag
 // so. Each expiry credits BASELINE_LOOP_CREDIT entries, and one expiry can
 // never be enough on its own: a cold call must keep its loop hot for several
 // expiries before the compile is worth it.
-fn bool baseline_loop_hot(Heap* h, CompiledFunction* f) @noinline {
+fn bool baseline_loop_hot(Heap* h, CompiledFunction* f, Activation* act) @noinline {
     if (f.jit_code != null) {
-        if (h.opt.enabled) opt_note_entry(h, f, OPT_LOOP_CREDIT);
+        if (h.opt.enabled) opt_note_entry(h, f, act, OPT_LOOP_CREDIT);
         return true;
     }
     if (f.jit_refused) return false;
     f.jit_entries += BASELINE_LOOP_CREDIT;
     uint need = f.jit_eval_derived ? BASELINE_EVAL_ENTRY_THRESHOLD : BASELINE_ENTRY_THRESHOLD;
     if (!h.jit_stress && f.jit_entries < need) return false;
-    if (baseline_try_compile(h, f) == null) return false;
+    if (baseline_try_compile(h, f, true, act) == null) return false;
     h.jit_stats.loop_entries++;
     return true;
 }
@@ -402,7 +402,7 @@ fn bool baseline_compilable(CompiledFunction* f) {
     return true;
 }
 
-fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true) @noinline {
+fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true, Activation* act = null) @noinline {
     JitStats* st = &h.jit_stats;
     // The eval body is one-shot: every eval call compiles a fresh one, so
     // native code for it can never be reused. Nested eval-derived functions
@@ -464,7 +464,7 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
     st.compiled++;
     bc.compile_seq = ++st.compile_seq;
     f.jit_code = bc;
-    if (optimize && h.opt.always) opt_try_compile(h, f);
+    if (optimize && h.opt.always) opt_try_compile(h, f, act);
     return ((BaselineCode*)f.jit_code).exec;
 }
 
