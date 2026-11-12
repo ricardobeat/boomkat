@@ -1980,6 +1980,7 @@ fn CompiledFunction* OptBuild.direct_callee(&self) {
     bool method = op == Opcode.CALL;
     uint nargs = var_call ? self.w.b : self.w.c;
     if (cf == null || cf.realm != self.f.realm || !call_entry_eligible(cf) || !entry_takes(cf, nargs, !method)) return null;
+    opt_compile_callee(self.h, cf);
     uint callee_reg = var_call ? self.w.a : self.w.b;
     uint callee_node = NO_NODE;
     uint recv_node = NO_NODE;
@@ -2016,8 +2017,8 @@ fn CompiledFunction* OptBuild.direct_callee(&self) {
     return cf;
 }
 
-// Whether a call of `cf` with `nargs` arguments can enter its optimized code in register mode: a
-// register leaf (OptGraph.reg_leaf) passed every formal.
+// Whether a call of `cf` with `nargs` arguments can enter its optimized code in register mode
+// (OptGraph.reg_blocker) with every formal passed.
 fn bool reg_callable(CompiledFunction* cf, uint nargs) {
     if (cf.opt_code == null || nargs < cf.num_formals) return false;
     BaselineCode* bc = (BaselineCode*)cf.jit_code;
@@ -3467,8 +3468,9 @@ fn bool OptBuild.lower_op(&self) {
             if (rb >= self.nregs) return self.generic();
             // A property read's result still in the window may be wanted as an object node.
             if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_object(rb);
-            // A window value moved within an inlined body, typically an argument of a nested call.
-            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && self.cur_fn != 0) {
+            // A window value moved, typically an argument of a call, unless the copy exited
+            // repeatedly (a value its publish refuses).
+            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && !opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) {
                 if (!self.window_copy(ra, 2)) return false;
                 self.same_facts(ra, rb);
                 return true;

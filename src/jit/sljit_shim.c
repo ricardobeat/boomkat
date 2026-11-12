@@ -44,6 +44,29 @@ int sljit_shim_round_f64(struct sljit_compiler *compiler, int freg, int down)
 #endif
 }
 
+/* Move the stack pointer by `delta` bytes (a multiple of 16 below 4096 in magnitude): the native
+ * frame of a register-mode call, which SLJIT's model of one frame per function cannot express.
+ * Other targets return -1 and have no register-mode calls. */
+int sljit_shim_adjust_sp(struct sljit_compiler *compiler, int delta)
+{
+    unsigned magnitude = (unsigned)(delta < 0 ? -delta : delta);
+    if ((magnitude & 15) != 0 || magnitude >= 4096) return -1;
+#if (defined SLJIT_CONFIG_X86_64 && SLJIT_CONFIG_X86_64)
+    /* SUB/ADD RSP, imm32 */
+    unsigned char op[7] = { 0x48, 0x81, delta < 0 ? 0xec : 0xc4, 0, 0, 0, 0 };
+    op[3] = (unsigned char)magnitude;
+    op[4] = (unsigned char)(magnitude >> 8);
+    return sljit_emit_op_custom(compiler, op, sizeof(op));
+#elif (defined SLJIT_CONFIG_ARM_64 && SLJIT_CONFIG_ARM_64)
+    /* SUB/ADD SP, SP, #imm12 */
+    sljit_u32 op = (delta < 0 ? 0xd1000000u : 0x91000000u) | (magnitude << 10) | (31u << 5) | 31u;
+    return sljit_emit_op_custom(compiler, &op, sizeof(op));
+#else
+    (void)compiler;
+    return -1;
+#endif
+}
+
 int sljit_shim_info(int key)
 {
     switch (key) {

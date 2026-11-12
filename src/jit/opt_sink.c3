@@ -178,8 +178,8 @@ fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v, bool trace) {
             if (!operand && !dirty) continue;
             if (!st.def || st.conflict || self.sink_in_list(s, n.reload_first, n.reload_count)) { ok = false; break; }
             if (dirty) {
-                // The window store of a GENERIC or a counted element store publishes it as it is.
-                if (n.op == OptOp.GENERIC || (n.op == OptOp.STORE_ELEM && n.b == NO_NODE)) { ok = false; break; }
+                // The window store of a call or a counted element store publishes it as it is.
+                if (n.op == OptOp.GENERIC || n.op == OptOp.CALL_REG || (n.op == OptOp.STORE_ELEM && n.b == NO_NODE)) { ok = false; break; }
                 self.mats.push({ .node = j, .sink = sid, .count = st.count, .vals_first = (uint)self.mat_vals.len() });
                 for (uint f = 0; f < st.count; f++) self.mat_vals.push(st.vals[f]);
             }

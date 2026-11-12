@@ -368,6 +368,9 @@ struct Catcher {
 
 enum ThreadedHandoff : char { NONE, THROW, CALL }
 
+// The most register-mode calls generated code nests below one entry from C (jit::jit_enter).
+const uint JIT_REG_DEPTH = 256;
+
 struct Vm {
     Heap* heap;
 
@@ -402,6 +405,10 @@ struct Vm {
     // never makes a tail call pays nothing. See TailCaller.
     TailCaller* tail_callers;
     uint tail_caller_cap;
+    // The calls of the register-mode frames an exit has unwound so far, innermost first
+    // (jit::opt_reg_unwind).
+    Instruction*[JIT_REG_DEPTH] reg_calls @if($feat(SLJIT));
+    uint reg_call_count @if($feat(SLJIT));
 
     // Current execution state (stable pointers reloaded on restart)
     Instruction* curr_pc; /// Current PC, kept in sync with the dispatch loop's local
@@ -545,9 +552,13 @@ struct Dispatch {
     bool jit_native @if($feat(SLJIT));
     // The native_ret of the frame vm::jit_ret just popped for a waiting caller.
     void* jit_waiter @if($feat(SLJIT));
-    // Where the optimized function running in register mode returns (jit::OptCg.emit_call_reg), or
-    // null: such a body has no frame of its own and runs inside its caller's.
-    void* reg_ret @if($feat(SLJIT));
+    // The lowest stack pointer a register-mode call may take (JIT_REG_DEPTH frames below the
+    // entry from C, jit::jit_enter), and the exit a register-mode body took, which its callers
+    // unwind to the frame that publishes them (jit::opt_reg_unwind).
+    uptr reg_floor @if($feat(SLJIT));
+    void* reg_exit_oc @if($feat(SLJIT));
+    void* reg_exit_site @if($feat(SLJIT));
+    long reg_exit_at @if($feat(SLJIT));
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first

@@ -1101,15 +1101,19 @@ const int CALL_FRAME_BYTES = 32;
 // constant), six saved registers, and the local area: CALL_FRAME_BYTES, the
 // optimized code's register saves around C calls and its capture records
 // (OptCg.cap_slot), then the sync routine's return address and the registers
-// it keeps (Trampoline.sync), then a register leaf's register saves, apart from
-// its caller's (OptCg.emit_call_reg). Calls between generated frames do not leave it
+// it keeps (Trampoline.sync). Calls between generated frames do not leave it
 // (baseline_call.c3), and every way out of generated code returns from it.
+// A register-mode call (OptCg.emit_call_reg) runs on a native frame of its own
+// below it: REG_FRAME_BYTES with the same local area and the return address
+// after it (JitFrame.link_off), at most vm::JIT_REG_DEPTH of them (jit_enter).
 struct JitFrame {
     int scratches;
     int locals;
     int sync_off;
-    int leaf_save_off;
+    int link_off;
 }
+
+const int REG_FRAME_BYTES = 512;
 
 const int JIT_SAVEDS = 6;
 // Words at JitFrame.sync_off: the return address and R0 to R4.
@@ -1118,9 +1122,9 @@ const int SYNC_WORDS = 6;
 fn JitFrame jit_frame() {
     OptPools p = opt_pools();
     int sync_off = CALL_FRAME_BYTES + 8 * (p.int_count + p.flt_count + 1);
-    int leaf_save_off = sync_off + 8 * SYNC_WORDS;
-    return { .scratches = p.scratches | (p.fscratches << 8), .locals = leaf_save_off + 8 * (p.int_count + p.flt_count),
-             .sync_off = sync_off, .leaf_save_off = leaf_save_off };
+    int locals = sync_off + 8 * SYNC_WORDS;
+    assert(locals + 8 <= REG_FRAME_BYTES);
+    return { .scratches = p.scratches | (p.fscratches << 8), .locals = locals, .sync_off = sync_off, .link_off = locals };
 }
 
 // Declare the shared native frame for the code that follows, which has no
@@ -1206,9 +1210,14 @@ fn void init_trampoline() @noinline @private {
     trampoline_data.code = code;
 }
 
-// Run generated code from C at `target` (BaselineCode.exec) for the frame ds.act names.
+// Run generated code from C at `target` (BaselineCode.exec) for the frame ds.act names. Its
+// register-mode calls take at most vm::JIT_REG_DEPTH native frames below this one.
 fn long jit_enter(Dispatch* ds, void* target, void* native_ret) @inline {
-    return ((EnterFn)trampoline().code)(ds, target, native_ret);
+    uptr floor = ds.reg_floor;
+    ds.reg_floor = (uptr)&floor - vm::JIT_REG_DEPTH * REG_FRAME_BYTES;
+    long status = ((EnterFn)trampoline().code)(ds, target, native_ret);
+    ds.reg_floor = floor;
+    return status;
 }
 
 // A call the threaded handlers take as a lean call: vm::jit_call publishes

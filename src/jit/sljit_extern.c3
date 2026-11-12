@@ -29,6 +29,8 @@ extern fn void* sljit_generate_code(void* compiler, int options, void* exec_allo
 extern fn void sljit_free_code(void* code, void* exec_allocator_data);
 extern fn int sljit_shim_sqrt_f64(void* compiler, int freg);
 extern fn int sljit_shim_round_f64(void* compiler, int freg, int down);
+extern fn int sljit_shim_adjust_sp(void* compiler, int delta);
+extern fn int sljit_get_local_base(void* compiler, int dst, long dstw, long offset);
 extern fn int sljit_shim_info(int key);
 extern fn usz sljit_shim_code_size(void* compiler);
 extern fn usz sljit_shim_label_addr(void* label);
