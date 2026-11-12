@@ -946,7 +946,7 @@ fn void Asm.emit_length(&self, uint ra, uint rb) {
     void* store = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_string, sljit_emit_label(c));
     self.unbox_object(R1, R0);
-    self.guard_not_proxy(R1, R2);
+    // The class test excludes a proxy, which has a class of its own.
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));

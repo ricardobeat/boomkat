@@ -877,7 +877,7 @@ fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
         a.load(R0, a.w.b);
     }
     a.unbox_object(R1, rr);
-    a.guard_not_proxy(R1, R2);
+    // The class test excludes a proxy, which has a class of its own.
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask);
     a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
@@ -1450,8 +1450,9 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     } else {
         a.unbox_object(R1, rr);
-        a.guard_not_proxy(R1, R2);
+        // An own field's shape holds the property, which no proxy's does (it has no own properties).
         if (chain) {
+            a.guard_not_proxy(R1, R2);
             hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
             void* settled = self.settled_chain_slot(ic, i);
             self.select_chain_slot(ic);

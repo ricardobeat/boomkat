@@ -2163,6 +2163,9 @@ fn bool dense_index_ok(uint cur_size, uint idx) {
 // appended, growing the table if needed. Adding a property leaves the shape
 // transition to the caller, through Heap.transition_shape.
 fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
+    // Generated code takes a matched field shape to exclude a proxy, which keeps its target and
+    // handler outside its properties and so never leaves the empty shape.
+    assert(!self.is_proxy(), "a property added to a proxy");
     // Property lookup compares keys by pointer, so a stored key must be the
     // canonical interned string; callers hand in un-interned concatenation
     // results. Symbols pass through: their unique counter hash keeps them
@@ -2245,6 +2248,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // must be interned and genuinely absent; passing a present key appends a
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
+    assert(!self.is_proxy(), "a property added to a proxy");
     if (self.gc.prototype_observed) h.bump_prototype_epoch(self);
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     // An Array's length is never enumerable or configurable (§10.4.2). Builtins
