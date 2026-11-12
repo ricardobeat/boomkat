@@ -51,9 +51,12 @@ enum OptExit : char (String label) {
     // An inherited read built for the one receiver shape its entry had ever held met another. The
     // exit adds it to the entry's set, which the rebuild reads through instead.
     RECEIVER {"receiver"},
-    // A register-mode callee declined the call (REG_DECLINE): it has no register entry now or no
-    // room. The baseline makes the call; the site is no worse a choice for it.
+    // A register-mode callee has no register entry now: the baseline makes the call, and a rebuild
+    // calls it as it is. The site is no worse a choice for that.
     DECLINED {"declined"},
+    // A register-mode callee declined the call (REG_DECLINE) for want of stack or room: deep
+    // recursion, which the baseline continues. Not a failed speculation.
+    DEEP {"deep"},
 }
 
 // Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a
@@ -1086,7 +1089,7 @@ fn bool opt_exit_bannable(long reason, bool inlined = false) {
 // marks, when the baseline's fast paths leave to their helpers each value still to mark, each
 // allocation and each return. It is not counted against the body or its site.
 fn bool opt_exit_transient(Heap* h, long reason) @inline {
-    return reason == OptExit.SLOW_PATH.ordinal && h.gc_phase == heap::GcPhase.MARK;
+    return (reason == OptExit.SLOW_PATH.ordinal && h.gc_phase == heap::GcPhase.MARK) || reason == OptExit.DEEP.ordinal;
 }
 
 // Count an exit of `oc` at word `pc` of `cf`; true at the OPT_SITE_EXITS-th exit at one site, which
@@ -1195,7 +1198,7 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
 // its caller's frame and a native frame of its own, returns its status in R0. Zero is a return,
 // its value in R1.
 const bool REG_CALLS = env::AARCH64 || env::X86_64;
-// The callee did nothing: its caller runs the call itself (no room, no register entry).
+// The callee did nothing for want of stack or room: its caller exits at the call (OptExit.DEEP).
 const long REG_DECLINE = 1;
 // The callee exited with its values in its window: its caller publishes its frame (opt_reg_unwind).
 const long REG_EXIT = 2;
@@ -1255,7 +1258,7 @@ fn void* opt_reg_unwind(Dispatch* ds, TVal* regs, Instruction* call) {
     ds.curr_pc = f.code + (ds.reg_exit_at >> 8);
     ds.act.curr_pc = ds.curr_pc;
     opt_exit(ds, oc, reason);
-    return baseline_jump_entry(f);
+    return oc.base.exec_jump;
 }
 
 // Leave `oc` for the baseline code at the instruction self.i without an exit: a region's branch out

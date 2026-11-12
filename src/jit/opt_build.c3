@@ -241,6 +241,10 @@ struct OptBuild {
     uint builtin_calls;
     // Calls entering their callee's direct label (direct_callee).
     uint direct_calls;
+    // Calls of the function itself lowered as CALL_REG, on the guess that its own code runs in
+    // register mode (opt_build_graph checks it), and whether that guess is allowed.
+    uint self_reg_calls;
+    bool self_reg;
     // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE), and the
     // call it was looking at, for --opt-log: the caller, its call word and the callee once known.
     OptInlineReject rej;
@@ -2086,7 +2090,12 @@ fn bool OptBuild.generic(&self) {
         }
     }
     CompiledFunction* direct = self.direct_callee();
-    if (direct != null && reg_callable(direct, op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL ? self.w.b : self.w.c)) return self.reg_call(direct);
+    uint nargs = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL ? self.w.b : self.w.c;
+    if (direct != null && direct == self.f && self.self_reg && self.cur_fn == 0 && nargs >= direct.num_formals) {
+        self.self_reg_calls++;
+        return self.reg_call(direct);
+    }
+    if (direct != null && reg_callable(direct, nargs)) return self.reg_call(direct);
     uint n = self.add(OptOp.GENERIC, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
     self.g.nodes[n].key = direct;
     self.forget_facts();
@@ -3992,16 +4001,25 @@ fn bool OptBuild.compute_edges(&self) {
 fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, List{OptJoin}* windowed = null) {
     uint[16] exclude;
     uint excluded = 0;
+    bool self_reg = true;
     while (true) {
-        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded, windowed);
+        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded, windowed, self_reg);
+        // A function calling itself in register mode must be able to run in it.
+        if (why == OptRefuse.NONE && b.self_reg_calls != 0 && g.reg_blocker(f).len != 0) {
+            self_reg = false;
+            b.free();
+            g.clear();
+            continue;
+        }
         if (why == OptRefuse.NONE || !b.flat_fail || excluded == exclude.len) return why;
         exclude[excluded++] = b.flat_fail_pc;
         b.free();
     }
 }
 
-fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count, List{OptJoin}* windowed) {
+fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count, List{OptJoin}* windowed, bool self_reg) {
     *b = {};
+    b.self_reg = self_reg;
     b.windowed = windowed;
     b.exclude = exclude;
     b.exclude_count = exclude_count;

@@ -2745,7 +2745,8 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     bool var_call = a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL;
     long window = (long)((var_call ? a.w.a : a.w.b) + 2) * TVal::size;
     CompiledFunction* cf = (CompiledFunction*)n.key;
-    a.room_acts = max(a.room_acts, 1u);
+    // The records an exit publishes for the deepest chain of calls this one can start.
+    a.room_acts = max(a.room_acts, vm::JIT_REG_DEPTH + 1);
     a.room_slots = max(a.room_slots, (uint)(window / TVal::size) + cf.num_regs + REG_ROOM_EXTRA);
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
@@ -2773,7 +2774,7 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     a.emit_reg_return(REG_EXIT);
     sljit_set_label(declined, sljit_emit_label(c));
     self.spill_live(i, false);
-    self.exit_at(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.DECLINED);
+    self.exit_at(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.DEEP);
     self.exit_at(no_code, i, OptExit.DECLINED);
     self.exit_at(no_entry, i, OptExit.DECLINED);
     sljit_set_label(done, sljit_emit_label(c));
@@ -2945,10 +2946,13 @@ fn String OptGraph.reg_blocker(&self, CompiledFunction* f) {
             case STORE_FIELD: case PHI: case STORE_OBJ: case COPY: case ADD_I32: case SUB_I32: case MUL_I32:
             case AND_I32: case OR_I32: case XOR_I32: case NOT_I32: case SHL_I32: case SAR_I32: case SHR_I32:
             case MOD_I32: case I32_TO_F64: case F64_TO_I32: case ADD_F64: case SUB_F64: case MUL_F64:
-            case DIV_F64: case NEG_F64: case CHECK_CALLEE: case LOAD_VAR: case LOAD_GLOBAL: case COPY_WINDOW:
+            case DIV_F64: case NEG_F64: case CHECK_CALLEE: case LOAD_GLOBAL: case COPY_WINDOW:
             case STORE_CONST: case COMPARE: case COMPARE_WINDOW: case LNOT: case EXIT: case JUMP: case BRANCH:
             case BRANCH_TRUTH: case BRANCH_WINDOW: case CALL_REG:
                 break;
+            // The function's own scoped read takes the running record's scope (Asm.var_slot).
+            case LOAD_VAR:
+                if (nd.fidx == 0 && nd.cc != 0) return "scope";
             case GENERIC:
                 Opcode op = f.code[(uint)nd.imm].op;
                 if (op != Opcode.RET && op != Opcode.RETUNDEF) return Opcode::names[op.ordinal];
@@ -3029,11 +3033,15 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     // A register leaf's register entry: the caller's return address kept in the Dispatch, the
     // window in R1, the registers past the formals undefined as a call entry leaves them.
     // The register entry (OptCg.emit_call_reg), the window in R1: a native frame below the
-    // caller's, within the floor jit_enter set, and room for what the callers did not test. A body
-    // that read the running record's scope (Asm.reads_env) would read its caller's: it has none.
-    if (a.reg_leaf && !a.reads_env) {
+    // caller's, within the floor jit_enter set, and room for what the callers did not test. It
+    // reads no record (reg_blocker), whose scope would be its caller's.
+    if (a.reg_leaf) {
+        assert(!a.reads_env);
         a.reg_label = sljit_emit_label(c);
+        // The window is the register's from here on, whatever the call's outcome: the caller
+        // takes its own back from it.
         sljit_emit_op_dst(c, SLJIT_FAST_ENTER, R0, 0);
+        sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, R1, 0);
         sljit_shim_adjust_sp(c, -REG_FRAME_BYTES);
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), jit_frame().link_off, R0, 0);
         Jumps decline;
@@ -3044,7 +3052,6 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
             sljit_emit_op2(c, SLJIT_ADD, R2, 0, R1, 0, SLJIT_IMM, (long)a.room_slots * TVal::size);
             decline.add(sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_MEM | R0, call_layout().vm_valstack_end));
         }
-        sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, R1, 0);
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, K_UNDEF);
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, R2, 0);
         if (f.num_formals < f.num_regs) a.clear_slots(a.regs, f.num_formals, f.num_regs, R2, R3, R4, R0);

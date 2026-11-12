@@ -368,8 +368,9 @@ struct Catcher {
 
 enum ThreadedHandoff : char { NONE, THROW, CALL }
 
-// The most register-mode calls generated code nests below one entry from C (jit::jit_enter).
-const uint JIT_REG_DEPTH = 256;
+// The most register-mode calls generated code nests below one entry from C (jit::jit_enter). A frame
+// that makes them reserves a record for each, which an exit inside them publishes.
+const uint JIT_REG_DEPTH = MAX_CALLS / 16;
 
 struct Vm {
     Heap* heap;
