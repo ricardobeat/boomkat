@@ -4119,7 +4119,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
             }
 
-            vm.valstack_top = (TVal*)((usz)new_regs2 + (usz)new_nregs2 * (usz)TVal::size);
+            publish_frame_top(vm, new_regs2, new_nregs2, nargs);
             vm.valstack_bottom = new_act.bottom;
             if (target.uses_arguments()) {
                 bind_register_arguments(vm, new_act, target, hobj, old_args2, nargs);
