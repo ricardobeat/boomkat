@@ -2100,22 +2100,17 @@ fn bool OptBuild.get_elem(&self) {
         self.g.nodes[n].c = rnode;
         return true;
     }
-    if (self.cur_fn != 0) {
-        // An inlined body reads the element into the window; a slot beyond the caller's frame
-        // would be out of the collector's sight.
-        uint ra = self.w.a;
-        uint idx = self.operand(self.w.c, OptRep.INT32);
-        if (ra >= self.nregs || idx == NO_NODE) return self.generic();
-        uint n = self.add(OptOp.LOAD_ELEM, OptRep.NONE, idx, NO_NODE, (long)self.pc);
-        self.g.nodes[n].c = rnode;
-        self.snapshot(n);
-        self.kill(ra);
-        self.load_def[ra] = self.pckey();
-        if (ra >= self.caller_regs) self.soft_object(ra);
-        return true;
-    }
-    if (!self.generic()) return false;
-    if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pckey();
+    // The element read into the window; in an inlined body, a slot beyond the caller's frame would
+    // be out of the collector's sight.
+    uint ra = self.w.a;
+    uint idx = self.operand(self.w.c, OptRep.INT32);
+    if (ra >= self.nregs || idx == NO_NODE) return self.generic();
+    uint n = self.add(OptOp.LOAD_ELEM, OptRep.NONE, idx, NO_NODE, (long)self.pc);
+    self.g.nodes[n].c = rnode;
+    self.snapshot(n);
+    self.kill(ra);
+    self.load_def[ra] = self.pckey();
+    if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_object(ra);
     return true;
 }
 
