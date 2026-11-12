@@ -223,7 +223,24 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM | reg_sp(), SUB_RET_OFF);
     self.mov(bottom, 0, R1, 0);
     self.mov(packed, 0, R3, 0);
-    void* proven = sljit_emit_jump(c, SLJIT_JUMP);
+    Jumps proven;
+    proven.add(sljit_emit_jump(c, SLJIT_JUMP));
+    // A register call (OptCg.emit_call_reg) fast-calls the register label with the direct label's
+    // arguments: the same path on a native frame of its own, whose return address its record
+    // returns through (Trampoline.reg_ret pops the frame), as does a decline. The frame must lie
+    // above the floor jit_enter set.
+    if (REG_CALLS) {
+        self.reg_label = sljit_emit_label(c);
+        sljit_emit_op_dst(c, SLJIT_FAST_ENTER, R0, 0);
+        sljit_shim_adjust_sp(c, -REG_FRAME_BYTES);
+        self.mov(m | reg_sp(), jit_frame().link_off, R0, 0);
+        self.mov(m | reg_sp(), SUB_RET_OFF, SLJIT_IMM, (long)(usz)trampoline().reg_ret);
+        self.mov(bottom, 0, R1, 0);
+        self.mov(packed, 0, R3, 0);
+        sljit_get_local_base(c, R0, 0, 0);
+        decline.add(sljit_emit_cmp(c, SLJIT_LESS, R0, 0, m | ds, l.ds_reg_floor));
+        proven.add(sljit_emit_jump(c, SLJIT_JUMP));
+    }
     void* entry = sljit_emit_label(c);
     self.mov(bottom, 0, R1, 0);
     self.mov(packed, 0, R3, 0);
@@ -253,7 +270,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, forbidden);
         decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     }
-    sljit_set_label(proven, sljit_emit_label(c));
+    proven.bind(sljit_emit_label(c));
     if (count_opt) {
         self.mov(R4, 0, SLJIT_IMM, (long)(usz)&f.opt_entries);
         self.mov(R0, 0, m | R4, 0, SLJIT_MOV_U32);

@@ -51,10 +51,10 @@ enum OptExit : char (String label) {
     // An inherited read built for the one receiver shape its entry had ever held met another. The
     // exit adds it to the entry's set, which the rebuild reads through instead.
     RECEIVER {"receiver"},
-    // A register-mode callee has no register entry now: the baseline makes the call, and a rebuild
-    // calls it as it is. The site is no worse a choice for that.
+    // A register call's callee has no code with a call entry now: the baseline makes the call, and
+    // a rebuild calls it as it is. The site is no worse a choice for that.
     DECLINED {"declined"},
-    // A register-mode callee declined the call (REG_DECLINE) for want of stack or room: deep
+    // A register call's callee declined it for want of native stack, records or value stack: deep
     // recursion, which the baseline continues. Not a failed speculation.
     DEEP {"deep"},
 }
@@ -91,8 +91,6 @@ const char OPT_DECLINE_MAX = 3;
 const uint OPT_FIELD_SITES = 2;
 // Integer arithmetic, bitwise and element instructions that make a function worth optimizing alone.
 const uint OPT_INT_WORK = 8;
-// Builds nested by compiling callees first, the outermost included.
-const uint OPT_NEST_MAX = 3;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
 // Discards after UNPROFILED exits that do not count as reoptimizations. Each such exit records a
@@ -226,13 +224,6 @@ struct OptPolicy {
     // Bisection aid (--opt-inline-max=N): inline only the first N sites tried, over all compiles.
     uint inline_max;
     uint inline_seen;
-    // The functions being built, outermost first: a build compiles the callees it proves first
-    // (opt_compile_callee).
-    CompiledFunction*[OPT_NEST_MAX] building;
-    uint build_depth;
-    // Exits of register-mode bodies, and the frames their unwinding published (opt_reg_unwind).
-    ulong reg_exits;
-    ulong reg_frames;
     // Callees inlined, and exits taken from inside an inlined body, over all compiles.
     uint inlined;
     uint inline_exits;
@@ -679,24 +670,12 @@ fn bool opt_refuse_build(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op,
 
 // Optimize `f`: the whole function, or for one in OPT_REGION the loop holding the header `osr_pc`
 // that a frame with window `regs` branched back to.
-// Compile a callee a build proved before the build's own function, unless it has optimized code, is
-// being built or was declined: a caller compiled first would call it directly for good, not in
-// register mode.
-fn void opt_compile_callee(Heap* h, CompiledFunction* cf) {
-    OptPolicy* p = &h.opt;
-    if (cf.opt_code != null || cf.opt_declined != 0) return;
-    foreach (b : p.building[:p.build_depth]) if (b == cf) return;
-    opt_try_compile(h, cf, callee: true);
-}
-
-// Build optimized code for `f`. A `callee` a build proved is compiled without feedback of its own:
-// its caller's code is worth more calling it in register mode.
-fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, TVal* regs = null, bool callee = false) @noinline {
+fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, TVal* regs = null) @noinline {
     OptPolicy* p = &h.opt;
     JitStats* st = &h.jit_stats;
     bool region = f.opt_state == OPT_REGION;
     if (f.jit_code == null || f.opt_code != null || (f.opt_state != OPT_NONE && !region)) return false;
-    if (!p.always && !callee && !opt_has_feedback(h, f)) return false;
+    if (!p.always && !opt_has_feedback(h, f)) return false;
     // Forcing exits from inlined bodies needs bodies that have a callee to inline.
     if (p.force_inline && !opt_has_call_feedback(f)) return false;
     if (p.live_bytes >= opt_code_limit(h) && !opt_make_room(h)) {
@@ -707,9 +686,6 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
     }
     if (!opt_function_eligible(f)) return opt_refuse(h, f, OptRefuse.FUNCTION, Opcode.NOP);
     if (!region && p.region_always && !p.no_region && opt_has_loop(f)) return opt_refuse_build(h, f, OptRefuse.CFG, Opcode.NOP, false);
-    if (p.build_depth >= OPT_NEST_MAX) return false;
-    p.building[p.build_depth++] = f;
-    defer p.build_depth--;
     long t0 = st.timing ? (long)clock::now() : 0;
     OptGraph g;
     g.init();
@@ -755,13 +731,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined or is entered
     // directly.
-    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && g.reg_blocker(f).len != 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
-        f.opt_declined++;
-        return false;
-    }
-    // A callee compiled for its caller's sake is worth it only in register mode, unless its own
-    // feedback asks for it.
-    if (why == OptRefuse.NONE && callee && !p.always && g.reg_blocker(f).len != 0 && !opt_has_feedback(h, f)) {
+    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
         f.opt_declined++;
         return false;
     }
@@ -826,18 +796,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
                 }
             }
         }
-        io::eprintf(" calls reg %d direct %d generic %d", calls[0], calls[1], calls[2]);
-        // Window moves are lowered for register mode once nothing else blocks it: name the rest.
-        String blocker = g.reg_blocker(f, moves: true);
-        if (blocker.len == 0) blocker = g.reg_blocker(f);
-        if (code.reg_entry != null) {
-            io::eprintf(" leaf");
-        } else if (blocker.len == 0) {
-            io::eprintf(" not-leaf scope");
-        } else {
-            io::eprintf(" not-leaf %s", blocker);
-        }
-        io::eprintfn("");
+        io::eprintfn(" calls reg %d direct %d generic %d", calls[0], calls[1], calls[2]);
     }
     return true;
 }
@@ -1189,7 +1148,6 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
         sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, 1);
         sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R0, 0, R1, 0);
     }
-    if (self.reg_leaf) self.emit_reg_exit(oc, reason, self.i, null);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.i * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.pc_off, R1, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
@@ -1200,72 +1158,8 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
 }
 
-// Register mode (OptCg.emit_call_reg): optimized code entered without a record, on a window in
-// its caller's frame and a native frame of its own, returns its status in R0. Zero is a return,
-// its value in R1.
+// Register calls (OptCg.emit_call_reg) need a stack pointer the shim can move.
 const bool REG_CALLS = env::AARCH64 || env::X86_64;
-// The callee did nothing for want of stack or room: its caller exits at the call (OptExit.DEEP).
-const long REG_DECLINE = 1;
-// The callee exited with its values in its window: its caller publishes its frame (opt_reg_unwind).
-const long REG_EXIT = 2;
-
-// A jump taken when the code runs on its own record rather than in register mode: a frame's
-// registers start at its record's bottom, and a register-mode body's lie above its caller's.
-fn void* Asm.emit_framed_test(&self) {
-    sljit_emit_op1(self.c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.la, call_layout().act_bottom);
-    return sljit_emit_cmp(self.c, SLJIT_EQUAL, R2, 0, self.regs, 0);
-}
-
-// Return from register mode with `status`, popping the native frame. Keeps R1, clobbers R2.
-fn void Asm.emit_reg_return(&self, long status) {
-    void* c = self.c;
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | reg_sp(), jit_frame().link_off);
-    sljit_shim_adjust_sp(c, REG_FRAME_BYTES);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, status);
-    sljit_emit_op_src(c, SLJIT_FAST_RETURN, R2, 0);
-}
-
-// In register mode, return with `status`; else fall through.
-fn void Asm.emit_reg_leave(&self, long status) {
-    void* framed = self.emit_framed_test();
-    self.emit_reg_return(status);
-    sljit_set_label(framed, sljit_emit_label(self.c));
-}
-
-// In register mode, take the exit through `reason` at word `pc` (or through the inlined body's
-// `site`) as REG_EXIT: the body's values are in its window, and the caller that publishes it
-// counts the exit; else fall through.
-fn void Asm.emit_reg_exit(&self, OptCode* oc, uint reason, uint pc, OptInlineExit* site) {
-    void* c = self.c;
-    void* framed = self.emit_framed_test();
-    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.lay.ds_reg_exit_oc, SLJIT_IMM, (long)(usz)oc);
-    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.lay.ds_reg_exit_site, SLJIT_IMM, (long)(usz)site);
-    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.lay.ds_reg_exit_at, SLJIT_IMM, (long)pc << 8 | reason);
-    self.emit_reg_return(REG_EXIT);
-    sljit_set_label(framed, sljit_emit_label(c));
-}
-
-// A register-mode callee of the frame on `regs` took an exit (REG_EXIT) inside its call at
-// `call`, and every register-mode frame between them has unwound to here, its values stored. A
-// caller in register mode unwinds further (null). The frame on its own record publishes the
-// frames of the calls in between and of the callee, counts the callee's exit, and returns the
-// baseline code to continue the callee in.
-fn void* opt_reg_unwind(Dispatch* ds, TVal* regs, Instruction* call) {
-    Vm* vm = ds.vm;
-    vm.reg_calls[vm.reg_call_count++] = call;
-    if (regs != ds.act.bottom) return null;
-    CompiledFunction* f = vm::jit_publish_reg_calls(ds, vm.reg_calls[:vm.reg_call_count]);
-    ds.heap.opt.reg_exits++;
-    ds.heap.opt.reg_frames += vm.reg_call_count;
-    vm.reg_call_count = 0;
-    OptCode* oc = ds.reg_exit_oc;
-    long reason = ds.reg_exit_at & 0xFF;
-    if (ds.reg_exit_site != null) return opt_inline_exit(ds, oc, reason, ds.reg_exit_site);
-    ds.curr_pc = f.code + (ds.reg_exit_at >> 8);
-    ds.act.curr_pc = ds.curr_pc;
-    opt_exit(ds, oc, reason);
-    return oc.base.exec_jump;
-}
 
 // Leave `oc` for the baseline code at the instruction self.i without an exit: a region's branch out
 // of its loop, which is the code's normal way out and teaches the next build nothing.
@@ -1287,7 +1181,6 @@ fn void opt_note_exit_op(OptPolicy* p, CompiledFunction* cf, uint pc) {
 fn void opt_print_stats(Heap* h) {
     OptPolicy* p = &h.opt;
     io::eprintfn("opt inline: %d callees inlined, %d exits from inlined bodies", p.inlined, p.inline_exits);
-    io::eprintfn("opt register calls: %d exits published %d frames", p.reg_exits, p.reg_frames);
     io::eprintfn("opt sink: %d allocations sunk, %d site validations, %d objects allocated by exits", p.sunk, p.sink_checks, p.sink_materialized);
     if (h.jit_stats.count_ops) io::eprintfn("opt sink: %d inlined news allocated, %d sunk", p.alloc_runs, p.sink_runs);
     foreach (r : OptInlineReject::values) {

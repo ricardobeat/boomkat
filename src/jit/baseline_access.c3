@@ -25,9 +25,7 @@ import std::io;
 struct Layout {
     long ds_act;
     long ds_reg_floor;
-    long ds_reg_exit_oc;
-    long ds_reg_exit_site;
-    long ds_reg_exit_at;
+    long ds_enter_sp;
     long act_this;
     long act_hrc;
     long act_lex_env;
@@ -178,9 +176,7 @@ fn Layout* layout() {
     hstring::HString* s = (hstring::HString*)base;
     l.ds_act = (char*)&d.act - base;
     l.ds_reg_floor = (char*)&d.reg_floor - base;
-    l.ds_reg_exit_oc = (char*)&d.reg_exit_oc - base;
-    l.ds_reg_exit_site = (char*)&d.reg_exit_site - base;
-    l.ds_reg_exit_at = (char*)&d.reg_exit_at - base;
+    l.ds_enter_sp = (char*)&d.enter_sp - base;
     l.act_this = (char*)&act.this_binding - base;
     l.act_hrc = (char*)&act.heap_reg_count - base;
     l.act_lex_env = (char*)&act.lex_env - base;

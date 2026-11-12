@@ -241,12 +241,6 @@ struct OptBuild {
     uint builtin_calls;
     // Calls entering their callee's direct label (direct_callee).
     uint direct_calls;
-    // Calls of the function itself lowered as CALL_REG, on the guess that its own code runs in
-    // register mode (opt_build_graph checks it), and whether that guess is allowed.
-    uint self_reg_calls;
-    bool self_reg;
-    // The function's own window moves are COPY_WINDOW nodes rather than GENERICs.
-    bool window_moves;
     // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE), and the
     // call it was looking at, for --opt-log: the caller, its call word and the callee once known.
     OptInlineReject rej;
@@ -1982,7 +1976,6 @@ fn CompiledFunction* OptBuild.direct_callee(&self) {
     bool method = op == Opcode.CALL;
     uint nargs = var_call ? self.w.b : self.w.c;
     if (cf == null || cf.realm != self.f.realm || !call_entry_eligible(cf) || !entry_takes(cf, nargs, !method)) return null;
-    opt_compile_callee(self.h, cf);
     uint callee_reg = var_call ? self.w.a : self.w.b;
     uint callee_node = NO_NODE;
     uint recv_node = NO_NODE;
@@ -2019,22 +2012,16 @@ fn CompiledFunction* OptBuild.direct_callee(&self) {
     return cf;
 }
 
-// Whether a call of `cf` with `nargs` arguments can enter its optimized code in register mode
-// (OptGraph.reg_blocker) with every formal passed.
-fn bool reg_callable(CompiledFunction* cf, uint nargs) {
-    if (cf.opt_code == null || nargs < cf.num_formals) return false;
-    BaselineCode* bc = (BaselineCode*)cf.jit_code;
-    return bc != null && bc.reg_entry != null;
-}
-
-// The call being lowered, of the register leaf `cf` its guard proved (direct_callee), as a CALL_REG:
-// its window stored, and what a call leaves, its window dead and its result in the window, but
-// the caller's values kept in their registers.
+// The call being lowered, of the callee `cf` its guard proved (direct_callee), as a CALL_REG into
+// the register label of the callee's code as it stands: its window stored, and what a call
+// leaves, its window dead, its result in the window and nothing known of the heap, but the
+// caller's values kept in their registers.
 fn bool OptBuild.reg_call(&self, CompiledFunction* cf) {
     bool var_call = self.w.op == Opcode.CALL_VAR || self.w.op == Opcode.CALL_GLOBAL;
     uint callee_reg = var_call ? self.w.a : self.w.b;
     uint n = self.add(OptOp.CALL_REG, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
     self.g.nodes[n].key = cf;
+    self.forget_facts();
     self.snapshot(n);
     OptNode* node = &self.g.nodes[n];
     for (uint k = 0; k < node.dirty_count; k++) self.cur[self.g.dirty[(sz)(node.dirty_first + k)].reg].dirty = false;
@@ -2088,12 +2075,7 @@ fn bool OptBuild.generic(&self) {
         }
     }
     CompiledFunction* direct = self.direct_callee();
-    uint nargs = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL ? self.w.b : self.w.c;
-    if (direct != null && direct == self.f && self.self_reg && self.cur_fn == 0 && nargs >= direct.num_formals) {
-        self.self_reg_calls++;
-        return self.reg_call(direct);
-    }
-    if (direct != null && reg_callable(direct, nargs)) return self.reg_call(direct);
+    if (direct != null && REG_CALLS) return self.reg_call(direct);
     uint n = self.add(OptOp.GENERIC, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
     self.g.nodes[n].key = direct;
     self.forget_facts();
@@ -3475,11 +3457,8 @@ fn bool OptBuild.lower_op(&self) {
             if (rb >= self.nregs) return self.generic();
             // A property read's result still in the window may be wanted as an object node.
             if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_object(rb);
-            // A window value moved, typically an argument of a call, unless the copy exited
-            // repeatedly (a value its publish refuses). The function's own moves are GENERICs
-            // unless only they keep it from register mode (opt_build_graph).
-            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && (self.cur_fn != 0 || self.window_moves)
-                && !opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) {
+            // A window value moved within an inlined body, typically an argument of a nested call.
+            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && self.cur_fn != 0) {
                 if (!self.window_copy(ra, 2)) return false;
                 self.same_facts(ra, rb);
                 return true;
@@ -4004,37 +3983,16 @@ fn bool OptBuild.compute_edges(&self) {
 fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, List{OptJoin}* windowed = null) {
     uint[16] exclude;
     uint excluded = 0;
-    bool self_reg = true;
-    bool window_moves = false;
     while (true) {
-        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded, windowed, self_reg, window_moves);
-        if (why == OptRefuse.NONE) {
-            // Window moves lowered as COPY_WINDOW cost an exit stub each: worth it only when they
-            // are all that keeps the function from register mode.
-            bool retry = !window_moves && g.reg_blocker(f).len != 0 && g.reg_blocker(f, moves: true).len == 0;
-            if (retry) {
-                window_moves = true;
-            } else if (b.self_reg_calls != 0 && g.reg_blocker(f).len != 0) {
-                // A function calling itself in register mode must be able to run in it.
-                self_reg = false;
-                retry = true;
-            }
-            if (retry) {
-                b.free();
-                g.clear();
-                continue;
-            }
-        }
+        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded, windowed);
         if (why == OptRefuse.NONE || !b.flat_fail || excluded == exclude.len) return why;
         exclude[excluded++] = b.flat_fail_pc;
         b.free();
     }
 }
 
-fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count, List{OptJoin}* windowed, bool self_reg, bool window_moves) {
+fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count, List{OptJoin}* windowed) {
     *b = {};
-    b.self_reg = self_reg;
-    b.window_moves = window_moves;
     b.windowed = windowed;
     b.exclude = exclude;
     b.exclude_count = exclude_count;

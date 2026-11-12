@@ -228,7 +228,7 @@ struct BaselineCode {
     void* call_entry;
     // The call entry's label for a call optimized code proved (Asm.emit_direct_call), or null.
     void* direct_entry;
-    // Optimized code of a register leaf (OptGraph.reg_leaf): its entry in register mode, or null.
+    // The call entry's label for a register call (OptCg.emit_call_reg), or null.
     void* reg_entry;
     // The first shared subroutine, which ends the call entry (--jit-dump-feedback).
     void* subs;
@@ -592,9 +592,7 @@ struct Asm {
     void* direct_label;
     // The callee optimized code proved for the call being emitted (OptBuild.direct_callee), or null.
     CompiledFunction* direct_cf;
-    // The optimized code being emitted is a register leaf: its exits and returns test for register
-    // mode (Dispatch.reg_ret). reg_label is its register entry, for Asm.finish.
-    bool reg_leaf;
+    // The call entry's register label (emit_call_entry), for Asm.finish.
     void* reg_label;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
@@ -746,13 +744,21 @@ fn void Asm.emit_nonzero_exit(&self, void* dispatch) {
     sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     sljit_set_label(status, sljit_emit_label(c));
     // A restart into a frame with native code continues there when Vm.run
-    // would enter it directly (vm::jit_switch).
+    // would enter it directly (vm::jit_switch), and the native frame is the
+    // entry's: below a register call's, the frame switched to would run on a
+    // native frame not its own.
     void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
+    void* deep = null;
+    if (REG_CALLS) {
+        sljit_shim_move_sp(c, R1, 0);
+        deep = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | self.ds, self.lay.ds_enter_sp);
+    }
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     self.c_call(SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_switch);
     void* stay = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     sljit_set_label(stay, sljit_emit_label(c));
+    if (deep != null) sljit_set_label(deep, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
     sljit_set_label(leave, sljit_emit_label(c));
     self.emit_leave(R0, 0);
@@ -1103,9 +1109,11 @@ const int CALL_FRAME_BYTES = 32;
 // (OptCg.cap_slot), then the sync routine's return address and the registers
 // it keeps (Trampoline.sync). Calls between generated frames do not leave it
 // (baseline_call.c3), and every way out of generated code returns from it.
-// A register-mode call (OptCg.emit_call_reg) runs on a native frame of its own
-// below it: REG_FRAME_BYTES with the same local area and the return address
-// after it (JitFrame.link_off), at most vm::JIT_REG_DEPTH of them (jit_enter).
+// A register call (OptCg.emit_call_reg) runs its callee on a native frame of its
+// own below its caller's: REG_FRAME_BYTES with the same local area and the
+// return address after it (JitFrame.link_off), at most vm::JIT_REG_DEPTH of
+// them below the entry from C (jit_enter). Its record returns through
+// Trampoline.reg_ret, which pops it.
 struct JitFrame {
     int scratches;
     int locals;
@@ -1151,10 +1159,19 @@ fn void Asm.c_call(&self, int arg_types, int src, long srcw) {
     sljit_emit_op1(self.c, SLJIT_MOV, self.la, 0, SLJIT_MEM | self.ds, self.lay.ds_act);
 }
 
-// Leave generated code with `src`/`srcw` as the status, the frame state synced.
+// Leave generated code with `src`/`srcw` as the status, the frame state synced: from the native
+// frame of the entry from C, whatever register calls' frames lie below it.
 fn void Asm.emit_leave(&self, int src, long srcw) {
+    void* c = self.c;
     self.emit_sync();
-    sljit_emit_return(self.c, SLJIT_MOV, src, srcw);
+    if (!REG_CALLS) {
+        sljit_emit_return(c, SLJIT_MOV, src, srcw);
+        return;
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, src, srcw);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, self.lay.ds_enter_sp);
+    sljit_shim_move_sp(c, R1, 1);
+    sljit_emit_return(c, SLJIT_MOV, R0, 0);
 }
 
 // The entry from C into generated code: it saves the registers C expects
@@ -1163,10 +1180,13 @@ fn void Asm.emit_leave(&self, int src, long srcw) {
 // frame; `ret` is where a frame whose C caller waits for it returns
 // (vm::jit_run_entered), which returns its status to that caller. `sync` is
 // the routine generated code fast-calls to run vm::jit_sync, keeping R0 to R4.
+// `reg_ret` is where the record of a register call returns (its native_ret):
+// it pops the call's native frame and returns to the call, keeping R0 and R1.
 struct Trampoline {
     void* code;
     void* ret;
     void* sync;
+    void* reg_ret;
 }
 
 Trampoline trampoline_data @private;
@@ -1182,14 +1202,25 @@ fn void init_trampoline() @noinline @private {
     void* c = sljit_create_compiler(null);
     assert(c != null, "no compiler for the trampoline");
     JitFrame fr = jit_frame();
-    // ds, target and native_ret arrive in S0 to S2.
+    // ds, target and native_ret arrive in S0 to S2. Every way out of generated code returns from
+    // this frame's stack pointer (Dispatch.enter_sp).
+    Dispatch* dl = (Dispatch*)(usz)4096;
+    long enter_sp = (char*)&dl.enter_sp - (char*)dl;
     sljit_emit_enter(c, 0, SLJIT_ARGS3WWW, fr.scratches, JIT_SAVEDS, fr.locals);
+    if (REG_CALLS) {
+        sljit_shim_move_sp(c, R0, 0);
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_s(0), enter_sp, R0, 0);
+    }
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, reg_s(2), 0);
     sljit_emit_ijump(c, SLJIT_JUMP, reg_s(1), 0);
     int sp = SLJIT_MEM | reg_sp();
     int la = reg_s(1);
     // A frame's return to C: the caller the record register names becomes current.
     void* ret = sljit_emit_label(c);
+    if (REG_CALLS) {
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | reg_s(0), enter_sp);
+        sljit_shim_move_sp(c, R0, 1);
+    }
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, reg_s(0), 0);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, la, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_sync);
@@ -1202,22 +1233,48 @@ fn void init_trampoline() @noinline @private {
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_sync);
     for (int r = 0; r < SYNC_WORDS - 1; r++) sljit_emit_op1(c, SLJIT_MOV, R0 + r, 0, sp, fr.sync_off + 8 * ((long)r + 1));
     sljit_emit_op_src(c, SLJIT_FAST_RETURN, sp, fr.sync_off);
+    void* reg_ret = sljit_emit_label(c);
+    if (REG_CALLS) {
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, fr.link_off);
+        sljit_shim_adjust_sp(c, REG_FRAME_BYTES);
+        sljit_emit_op_src(c, SLJIT_FAST_RETURN, R2, 0);
+    }
     void* code = sljit_generate_code(c, 0, null);
     assert(code != null, "no code for the trampoline");
     trampoline_data.ret = (void*)sljit_shim_label_addr(ret);
     trampoline_data.sync = (void*)sljit_shim_label_addr(sync);
+    trampoline_data.reg_ret = REG_CALLS ? (void*)sljit_shim_label_addr(reg_ret) : null;
     sljit_free_compiler(c);
     trampoline_data.code = code;
 }
 
 // Run generated code from C at `target` (BaselineCode.exec) for the frame ds.act names. Its
-// register-mode calls take at most vm::JIT_REG_DEPTH native frames below this one.
+// register calls take at most vm::JIT_REG_DEPTH native frames below this one. Code that leaves
+// rather than returning abandons the native frames of the register calls above that frame:
+// their records then return through jit_ret's general path, and their callers continue in
+// their baseline code from the window, where each call stored them.
 fn long jit_enter(Dispatch* ds, void* target, void* native_ret) @inline {
     uptr floor = ds.reg_floor;
+    uptr enter_sp = ds.enter_sp;
+    Activation* base = ds.act;
+    Activation* enter_act = ds.enter_act;
     ds.reg_floor = (uptr)&floor - vm::JIT_REG_DEPTH * REG_FRAME_BYTES;
+    ds.enter_act = base;
     long status = ((EnterFn)trampoline().code)(ds, target, native_ret);
     ds.reg_floor = floor;
+    ds.enter_sp = enter_sp;
+    ds.enter_act = enter_act;
+    if (REG_CALLS && status != BASELINE_RETURNED) jit_forget_reg_returns(ds.vm, base);
     return status;
+}
+
+// Forget the returns of the register calls' records above `base` (Trampoline.reg_ret), whose
+// native frames are gone.
+fn void jit_forget_reg_returns(Vm* vm, Activation* base) @noinline {
+    void* reg_ret = trampoline().reg_ret;
+    for (Activation* a = base + 1; a < vm.activations + vm.activation_count; a++) {
+        if (a.native_ret == reg_ret) a.forget_return();
+    }
 }
 
 // A call the threaded handlers take as a lean call: vm::jit_call publishes

@@ -67,6 +67,38 @@ int sljit_shim_adjust_sp(struct sljit_compiler *compiler, int delta)
 #endif
 }
 
+/* Copy the stack pointer into general register `reg` (to_sp == 0), or `reg` into the stack pointer:
+ * the stack of an entry from C, which every way out of generated code returns to, whatever native
+ * frames of register-mode calls lie below it. Other targets return -1. */
+int sljit_shim_move_sp(struct sljit_compiler *compiler, int reg, int to_sp)
+{
+#if (defined SLJIT_CONFIG_X86_64 && SLJIT_CONFIG_X86_64)
+    int r = sljit_get_register_index(SLJIT_GP_REGISTER, reg);
+    unsigned char op[3];
+    if (r < 0 || r > 15) return -1;
+    /* MOV r/m64, r64: MOV RSP, r (to_sp) or MOV r, RSP. */
+    if (to_sp) {
+        op[0] = (unsigned char)(0x48 | (r >= 8 ? 0x04 : 0));
+        op[2] = (unsigned char)(0xc0 | ((r & 7) << 3) | 4);
+    } else {
+        op[0] = (unsigned char)(0x48 | (r >= 8 ? 0x01 : 0));
+        op[2] = (unsigned char)(0xc0 | (4 << 3) | (r & 7));
+    }
+    op[1] = 0x89;
+    return sljit_emit_op_custom(compiler, op, sizeof(op));
+#elif (defined SLJIT_CONFIG_ARM_64 && SLJIT_CONFIG_ARM_64)
+    int r = sljit_get_register_index(SLJIT_GP_REGISTER, reg);
+    sljit_u32 op;
+    if (r < 0 || r > 30) return -1;
+    /* ADD SP, Xr, #0 or ADD Xr, SP, #0 (MOV to and from SP). */
+    op = to_sp ? (0x91000000u | ((sljit_u32)r << 5) | 31u) : (0x91000000u | (31u << 5) | (sljit_u32)r);
+    return sljit_emit_op_custom(compiler, &op, sizeof(op));
+#else
+    (void)compiler; (void)reg; (void)to_sp;
+    return -1;
+#endif
+}
+
 int sljit_shim_info(int key)
 {
     switch (key) {

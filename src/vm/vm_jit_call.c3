@@ -230,58 +230,6 @@ const uint INLINE_SAVE_MAX = 3 * 32;
 // as an entry's would; the slots from the next frame's window up are that frame's. Returns the
 // baseline code to continue in. No frame is one a native call site waits for (jit_floor and
 // jit_depth stay), so the innermost's return unwinds to the interpreter, as after a thunk call.
-// Push the frame of the call at `pc` whose callee register is regs[callee_reg]: the record of
-// `callee` on the window after it, which optimized code filled, so that no slot is cleared. A
-// NEW_OBJ's frame constructs the object the code built and stored in the receiver slot, as
-// jit_new_lean's frame would. Returns whether the callee needs its `arguments` object.
-fn bool jit_publish_call(ColdCtx* cold, TVal* regs, Instruction* pc, CompiledFunction* callee, uint callee_reg) @private {
-    TVal this_value = th_undefined();
-    bool this_valid = false;
-    bool construct = pc.op == Opcode.NEW_OBJ;
-    // A forwarding call (CALL_S after APPLY_ARGS) has the receiver a method call has.
-    bool method = pc.op == Opcode.CALL || pc.op == Opcode.CALL_S;
-    HObject* new_target = construct ? (HObject*)regs[callee_reg].get_heapptr() : null;
-    if ((construct || (method && !callee.call_flags.ignores_this)) && regs[callee_reg + 1].is_object()) {
-        this_value = regs[callee_reg + 1];
-        this_valid = true;
-    }
-    return th_publish_lean(pc, regs, cold, callee, callee_reg, pc.a, callee.num_regs, false, !method && !construct,
-                           this_value, this_valid, new_target);
-}
-
-// Publish the frames of the register-mode calls an exit unwound (jit::OptCg.emit_call_reg): `calls`
-// holds their call instructions innermost first, the last one made by the frame on top, and each
-// callee's window holds its values. Leaves ds on the innermost callee's frame and returns its function.
-fn CompiledFunction* jit_publish_reg_calls(Dispatch* ds, Instruction*[] calls) {
-    ColdCtx* cold = &ds.cold;
-    th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
-    TVal* regs = ds.regs_base;
-    CompiledFunction* callee = null;
-    for (usz k = calls.len; k > 0; k--) {
-        Instruction* pc = calls[k - 1];
-        bool var_call = pc.op == Opcode.CALL_VAR || pc.op == Opcode.CALL_GLOBAL;
-        uint callee_reg = var_call ? pc.a : pc.b;
-        callee = (CompiledFunction*)((HObject*)regs[callee_reg].get_heapptr()).extra_ptr().func.comp_func;
-        // The publish clears the scratch slots above the callee's frame, where the next callee's
-        // window may begin.
-        TVal* window = regs + callee_reg + 2;
-        TVal* scratch = window + callee.num_regs;
-        uint kept = (uint)min((sz)FRAME_SCRATCH_SLOTS, ds.vm.valstack_end - scratch);
-        TVal[FRAME_SCRATCH_SLOTS] saved @noinit;
-        mem::copy(&saved, scratch, (usz)kept * TVal::size);
-        ds.curr_pc = pc + 1;
-        bool needs_arguments = jit_publish_call(cold, regs, pc, callee, callee_reg);
-        mem::copy(scratch, &saved, (usz)kept * TVal::size);
-        Activation* la = ds.act;
-        uint argc = var_call ? pc.b : pc.c;
-        if (needs_arguments) bind_register_arguments(ds.vm, la, callee, (HObject*)la.tv_func.get_heapptr(), window, argc);
-        la.heap_reg_count = callee.num_regs;
-        regs = window;
-    }
-    jit_view(ds, callee);
-    return callee;
-}
-
 fn void* jit_inline_materialize(Dispatch* ds, jit::OptInlineExit* site) {
     ds.curr_pc = site.frames[0].resume;
     ColdCtx* cold = &ds.cold;
@@ -299,7 +247,24 @@ fn void* jit_inline_materialize(Dispatch* ds, jit::OptInlineExit* site) {
     for (uint level = 0; level < site.depth; level++) {
         jit::OptInlineFrame* fr = &site.frames[level];
         callee = fr.callee;
-        bool needs_arguments = jit_publish_call(cold, frame0 + prev_base, fr.resume - 1, callee, fr.base - 2 - prev_base);
+        Instruction* pc = fr.resume - 1;
+        TVal* regs = frame0 + prev_base;
+        uint callee_reg = fr.base - 2 - prev_base;
+        TVal this_value = th_undefined();
+        bool this_valid = false;
+        // A NEW_OBJ's frame constructs the object the optimized code built, which it stored in the
+        // receiver slot, as jit_new_lean's frame would.
+        bool construct = pc.op == Opcode.NEW_OBJ;
+        // A forwarding call (CALL_S after APPLY_ARGS) has the receiver a method call has.
+        bool method = pc.op == Opcode.CALL || pc.op == Opcode.CALL_S;
+        HObject* new_target = construct ? (HObject*)regs[callee_reg].get_heapptr() : null;
+        if ((construct || (method && !callee.call_flags.ignores_this)) && regs[callee_reg + 1].is_object()) {
+            this_value = regs[callee_reg + 1];
+            this_valid = true;
+        }
+        // The publish's own fill would overwrite the registers the optimized code stored.
+        bool needs_arguments = th_publish_lean(pc, regs, cold, callee, callee_reg, pc.a, callee.num_regs, false, !method && !construct,
+                                               this_value, this_valid, new_target);
         Activation* la = ds.act;
         TVal* bottom = la.bottom;
         if (level + 1 < site.depth) {
@@ -692,14 +657,18 @@ fn long jit_ret(Dispatch* ds, ulong next_arg) {
 // The native entry of the frame a RESTART leaves current, loaded into ds as
 // Vm.run would load it before entering that entry, or null when the restart
 // goes to Vm.run: a native caller waits on the C stack, an interrupt hook
-// wants the restart poll, a handoff is pending, or the frame has no code
-// yet (Vm.run counts the entry and compiles).
+// wants the restart poll, a handoff is pending, the frame has no code yet
+// (Vm.run counts the entry and compiles), or it lies below the frame the
+// innermost entry from C ran.
 fn void* jit_switch(Dispatch* ds) {
     Vm* vm = ds.vm;
     if (ds.jit_depth != 0 || ds.jit_floor != 0 || !ds.needs_restart || vm.activation_count == 0) return null;
     if (vm.threaded_handoff != ThreadedHandoff.NONE) return null;
     if (vm.heap.capi_interrupt_fn != null || vm.heap.capi_runtime != null) return null;
-    CompiledFunction* f = (CompiledFunction*)vm.activations[vm.activation_count - 1].func;
+    // A frame below the one this entry from C ran runs on an outer entry's native frames.
+    Activation* top = &vm.activations[vm.activation_count - 1];
+    if (top < ds.enter_act) return null;
+    CompiledFunction* f = (CompiledFunction*)top.func;
     if (f == null || f.jit_code == null) return null;
     ds.needs_restart = false;
     ds.load_frame();

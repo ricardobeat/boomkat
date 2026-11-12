@@ -6,9 +6,9 @@
 Runs the program with --jit --opt --opt-log (added when missing) and reads the optimizer's log:
 
   - compiles: each optimized build, how many calls it inlined, and how the calls it kept were
-    lowered: `reg` (register mode, no record), `direct` (the proven callee's entry) or `generic`
-    (the full call protocol). `register` marks code its callers can enter in register mode;
-    `framed: X` names what keeps it from that.
+    lowered: `reg` (a register call: the proven callee's entry on a native frame of its own, the
+    caller's values kept in registers), `direct` (the proven callee's entry) or `generic` (the
+    full call protocol).
   - exits: where optimized code fell back to baseline code, by instruction and reason, including
     exits from inlined bodies (attributed to the callee, with the function they were inlined in).
   - discards and refusals: builds thrown away after repeated exits, functions the tier declined.
@@ -41,7 +41,7 @@ if a.log:
 
 FN = r'(fn#\d+ \S+?:\d+)'
 pats = {
-    'compile': re.compile(r'^opt compile ' + FN + r' words (\d+) nodes (\d+) inlined (\d+) reopt (\d+)(?: region (\S+))?(?: calls reg (\d+) direct (\d+) generic (\d+))?(?: (leaf)| not-leaf (.+))?$'),
+    'compile': re.compile(r'^opt compile ' + FN + r' words (\d+) nodes (\d+) inlined (\d+) reopt (\d+)(?: region (\S+))?(?: calls reg (\d+) direct (\d+) generic (\d+))?$'),
     'exit': re.compile(r'^opt exit ' + FN + r' \+(\d+) (\S+) (\S+)(?: inlined in ' + FN + ')?'),
     'discard': re.compile(r'^opt discard ' + FN + r' exits (\d+)'),
     'refuse': re.compile(r'^opt refuse ' + FN + r' (.+?) (\S+) words (\d+) registers (\d+)$'),
@@ -55,8 +55,6 @@ class Fn:
         self.words = 0
         self.inlined = 0
         self.calls = [0, 0, 0]
-        self.leaf = False
-        self.blocker = None
         self.region = False
         self.exits = collections.Counter()      # (pc, op, reason, host) -> count
         self.discards = 0
@@ -77,8 +75,6 @@ for line in log:
         f.region = f.region or m[6] is not None
         if m[7] is not None:
             f.calls = [int(m[7]), int(m[8]), int(m[9])]
-        f.leaf = m[10] is not None
-        f.blocker = m[11]
         continue
     m = pats['exit'].match(line)
     if m:
@@ -108,7 +104,7 @@ tot_calls = [sum(f.calls[i] for f in allf) for i in range(3)]
 print('\n== JIT report: %d functions optimized (%d builds), %d refused, %d discarded builds, %d exits'
       % (sum(1 for f in allf if f.compiles), sum(f.compiles for f in allf), sum(1 for f in allf if f.refused),
          sum(f.discards for f in allf), tot_exits))
-print('   calls kept in the latest builds: %d in register mode, %d direct, %d generic; %d inlined'
+print('   calls kept in the latest builds: %d register, %d direct, %d generic; %d inlined'
       % (tot_calls[0], tot_calls[1], tot_calls[2], sum(f.inlined for f in allf)))
 
 key = {'exits': lambda f: (sum(f.exits.values()), f.compiles),
@@ -121,8 +117,6 @@ if a.top:
 print('\n%-34s %6s %5s %5s %5s %5s %4s %4s %4s  %s' % ('function', 'builds', 'disc', 'exits', 'words', 'inl', 'reg', 'dir', 'gen', 'notes'))
 for f in shown:
     notes = []
-    if f.leaf: notes.append('register')
-    elif f.blocker: notes.append('framed: ' + f.blocker)
     if f.region: notes.append('region')
     if f.refused: notes.append('refused: ' + f.refused)
     print('%-34s %6d %5d %5d %5d %5d %4d %4d %4d  %s' % (f.name[:34], f.compiles, f.discards, sum(f.exits.values()),

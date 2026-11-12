@@ -368,8 +368,8 @@ struct Catcher {
 
 enum ThreadedHandoff : char { NONE, THROW, CALL }
 
-// The most register-mode calls generated code nests below one entry from C (jit::jit_enter). A frame
-// that makes them reserves a record for each, which an exit inside them publishes.
+// The most register-mode calls generated code nests below one entry from C (jit::jit_enter), each
+// on a native frame of its own; a deeper one declines and its caller exits to make it as a framed call.
 const uint JIT_REG_DEPTH = MAX_CALLS / 16;
 
 struct Vm {
@@ -406,10 +406,6 @@ struct Vm {
     // never makes a tail call pays nothing. See TailCaller.
     TailCaller* tail_callers;
     uint tail_caller_cap;
-    // The calls of the register-mode frames an exit has unwound so far, innermost first
-    // (jit::opt_reg_unwind).
-    Instruction*[JIT_REG_DEPTH] reg_calls @if($feat(SLJIT));
-    uint reg_call_count @if($feat(SLJIT));
 
     // Current execution state (stable pointers reloaded on restart)
     Instruction* curr_pc; /// Current PC, kept in sync with the dispatch loop's local
@@ -554,12 +550,13 @@ struct Dispatch {
     // The native_ret of the frame vm::jit_ret just popped for a waiting caller.
     void* jit_waiter @if($feat(SLJIT));
     // The lowest stack pointer a register-mode call may take (JIT_REG_DEPTH frames below the
-    // entry from C, jit::jit_enter), and the exit a register-mode body took, which its callers
-    // unwind to the frame that publishes them (jit::opt_reg_unwind).
+    // entry from C, jit::jit_enter), and the entry's own, which every way out of generated code
+    // restores before it returns to C.
     uptr reg_floor @if($feat(SLJIT));
-    void* reg_exit_oc @if($feat(SLJIT));
-    void* reg_exit_site @if($feat(SLJIT));
-    long reg_exit_at @if($feat(SLJIT));
+    uptr enter_sp @if($feat(SLJIT));
+    // The record of the frame the innermost entry from C ran (jit::jit_enter). Frames below it
+    // belong to the native frames of an outer entry, whose register calls hold state there.
+    Activation* enter_act @if($feat(SLJIT));
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first

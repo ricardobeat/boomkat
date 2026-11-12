@@ -388,7 +388,6 @@ fn void OptCg.emit_inline_exit(&self, uint fidx, uint pc, uint mask, uint reason
         sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, 1);
         sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R0, 0, R1, 0);
     }
-    if (self.a.reg_leaf) self.a.emit_reg_exit(self.oc, reason, pc, site);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.oc);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)reason);
@@ -1396,7 +1395,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
-            self.load_own_this(R0);
+            a.load_this(R0);
         }
     } else if (n.b != NO_NODE) {
         rr = self.obj_reg(n.b, R0);
@@ -1593,28 +1592,6 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
 // PUTPROPC or PUTTHISC of an own writable data property, as emit_put does for a hit: a plain
 // object of the cache's shape, an old value that needs no count, and a value that needs no
 // barrier. Everything else leaves for the baseline code before anything is written.
-// The function's own `this` into `reg`: its record's, or in register mode the receiver its caller
-// stored below the window. A receiver a sloppy function would coerce, which is not an object, takes
-// node `i`'s exit; without a node the object guard that follows takes it. Clobbers R2.
-fn void OptCg.load_own_this(&self, int reg, uint i = NO_NODE) {
-    Asm* a = self.a;
-    if (!a.reg_leaf) {
-        a.load_this(reg);
-        return;
-    }
-    void* framed = a.emit_framed_test();
-    sljit_emit_op1(a.c, SLJIT_MOV, reg, 0, SLJIT_MEM | a.regs, -(long)TVal::size);
-    if (i != NO_NODE && !a.f.is_strict()) {
-        sljit_emit_op2(a.c, SLJIT_XOR, R2, 0, reg, 0, SLJIT_IMM, K_OBJ);
-        self.exit_at(sljit_emit_cmp(a.c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
-        self.exit_at(sljit_emit_cmp(a.c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
-    }
-    void* done = sljit_emit_jump(a.c, SLJIT_JUMP);
-    sljit_set_label(framed, sljit_emit_label(a.c));
-    a.load_this(reg);
-    sljit_set_label(done, sljit_emit_label(a.c));
-}
-
 fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -1630,7 +1607,7 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
-            self.load_own_this(R0);
+            a.load_this(R0);
         }
     } else if (n.b != NO_NODE) {
         rr = self.obj_reg(n.b, R0);
@@ -2171,7 +2148,7 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
     if (n.cc == 3) {
         a.load(R0, (uint)n.imm);
     } else if (n.cc == 4) {
-        self.load_own_this(R0, i);
+        a.load_this(R0);
     } else {
         a.decode((uint)n.imm);
         a.load(R0, n.cc == 1 ? base - 1 : (n.cc == 2 ? a.w.b : a.w.a) + base);
@@ -2719,16 +2696,6 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     self.store_dirty(n.dirty_first, n.dirty_count);
     uint at = (uint)n.imm;
-    // A register leaf's only GENERICs are its returns: in register mode, the result in R1.
-    if (self.a.reg_leaf) {
-        self.a.decode(at);
-        if (self.a.w.op == Opcode.RET) {
-            self.a.load(R1, self.a.w.a);
-        } else {
-            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, K_UNDEF);
-        }
-        self.a.emit_reg_leave(0);
-    }
     self.a.direct_called = false;
     self.a.direct_cf = (CompiledFunction*)n.key;
     self.a.emit_insn(at);
@@ -2751,59 +2718,52 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
     }
 }
 
-// Slots past a register-mode callee's frame that its inlined bodies may use and its callers' entries
-// test for room; a callee that needs more tests its own room (opt_emit's register entry).
-const uint REG_ROOM_EXTRA = 32;
-
-// CALL_REG: enter the optimized code of n.key in register mode, with no record: its window is the
-// call's, past the callee register (R1), which the stores of the node's snapshot completed, and it
-// runs on a native frame of its own, so the values live across the call wait in this frame's save
-// area. A callee that declines (REG_DECLINE) did nothing: this code exits at the call, which the
-// baseline code then makes. One that exited (REG_EXIT) is published by opt_reg_unwind, from this
-// frame if it has a record of its own, else from the first caller up the chain that has one.
+// CALL_REG: the call of n.key, which CHECK_CALLEE proved, through the register label of the
+// callee's code as it stands (Asm.emit_call_entry): the direct label's path on a native frame of
+// its own, so that the values live across the call wait in this frame's save area rather than
+// boxed in the window. The callee's record is an ordinary one: it may exit, throw, collect or
+// call as any frame does, and it returns its result in R1. The snapshot's stores and the resume
+// point in this frame's record let the baseline code continue this frame from its window should
+// the native frames be abandoned (jit_enter). A callee that declines (no native stack, record or
+// value stack left) did nothing, and the baseline code makes the call (OptExit.DEEP).
 fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     void* c = a.c;
+    CallLayout* k = call_layout();
     self.store_dirty(n.dirty_first, n.dirty_count);
     a.decode((uint)n.imm);
     bool var_call = a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL;
-    long window = (long)((var_call ? a.w.a : a.w.b) + 2) * TVal::size;
+    bool method = a.w.op == Opcode.CALL;
+    uint callee = var_call ? a.w.a : a.w.b;
+    uint nargs = var_call ? a.w.b : a.w.c;
     CompiledFunction* cf = (CompiledFunction*)n.key;
-    // The records an exit publishes for the deepest chain of calls this one can start.
-    a.room_acts = max(a.room_acts, vm::JIT_REG_DEPTH + 1);
-    a.room_slots = max(a.room_slots, (uint)(window / TVal::size) + cf.num_regs + REG_ROOM_EXTRA);
     self.spill_live(i, true);
-    // The callee takes its `this` from the receiver slot (OptCg.load_own_this), which a call
-    // without a receiver may have left holding anything.
-    if (a.w.op != Opcode.CALL) a.store(var_call ? a.w.a + 1 : a.w.b + 1, SLJIT_IMM, K_UNDEF);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
+    // A plain call's receiver is undefined, as th_publish_lean's clear_this makes it.
+    if (!method) a.store(callee + 1, SLJIT_IMM, K_UNDEF);
+    a.mov(R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
     void* no_code = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, call_layout().bc_reg_entry);
+    a.mov(R0, 0, SLJIT_MEM | R0, k.bc_reg_entry);
     void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, window);
+    a.mov(R4, 0, SLJIT_IMM, (long)(usz)(a.f.code + (uint)n.imm + 1));
+    a.mov(SLJIT_MEM | a.la, k.act_curr_pc, R4, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, a.regs, 0, SLJIT_IMM, (long)a.w.a * TVal::size);
+    a.mov(R3, 0, SLJIT_IMM, (long)nargs | (method ? CALL_METHOD : CALL_PLAIN));
     sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
-    // The callee keeps its window in the register.
-    sljit_emit_op2(c, SLJIT_SUB, a.regs, 0, a.regs, 0, SLJIT_IMM, window);
-    void* status = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    // The entry used the window register; the return left this frame's record in its register.
+    a.mov(a.regs, 0, SLJIT_MEM | a.la, k.act_bottom);
+    void* declined = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW);
     a.store(a.w.a, R1);
     a.track_heap_store(a.w.a);
     self.spill_live(i, false);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(status, sljit_emit_label(c));
-    void* declined = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, REG_DECLINE);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, a.regs, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)(a.f.code + (uint)n.imm));
-    a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_reg_unwind);
-    void* unwound = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
-    sljit_set_label(unwound, sljit_emit_label(c));
-    a.emit_reg_return(REG_EXIT);
+    // The window holds every value (store_dirty), and the registers the snapshot names may not:
+    // the entry uses them before it declines.
     sljit_set_label(declined, sljit_emit_label(c));
     self.spill_live(i, false);
-    self.exit_at(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.DEEP);
-    self.exit_at(no_code, i, OptExit.DECLINED);
-    self.exit_at(no_entry, i, OptExit.DECLINED);
+    self.exit_clean(sljit_emit_jump(c, SLJIT_JUMP), n.pc, OptExit.DEEP);
+    self.exit_clean(no_code, n.pc, OptExit.DECLINED);
+    self.exit_clean(no_entry, n.pc, OptExit.DECLINED);
     sljit_set_label(done, sljit_emit_label(c));
 }
 
@@ -2957,40 +2917,6 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     }
 }
 
-// What keeps the code of `f` from this graph from running in register mode (OptCg.emit_call_reg),
-// or "" when nothing does. Such a body has no record and runs in its caller's: it may read and
-// write its window and the heap and call other register-mode code, but not run a GENERIC (whose
-// baseline code expects its own record), allocate (a collection scans records, not its window),
-// or loop (a back edge polls). Its return and its exits leave register mode themselves. With
-// `moves`, a GENERIC window move does not count: a rebuild lowers it as COPY_WINDOW.
-fn String OptGraph.reg_blocker(&self, CompiledFunction* f, bool moves = false) {
-    if (!REG_CALLS) return "target";
-    if (self.region.end != 0) return "region";
-    if (f.maps_formals()) return "mapped arguments";
-    foreach (&blk : self.blocks) if (blk.header || blk.osr) return "loop";
-    foreach (&nd : self.nodes) {
-        switch (nd.op) {
-            case CONST_I32: case CONST_F64: case CHECK_I32: case CHECK_NUM: case LOAD_FIELD: case LOAD_LENGTH:
-            case STORE_FIELD: case PHI: case STORE_OBJ: case COPY: case ADD_I32: case SUB_I32: case MUL_I32:
-            case AND_I32: case OR_I32: case XOR_I32: case NOT_I32: case SHL_I32: case SAR_I32: case SHR_I32:
-            case MOD_I32: case I32_TO_F64: case F64_TO_I32: case ADD_F64: case SUB_F64: case MUL_F64:
-            case DIV_F64: case NEG_F64: case CHECK_CALLEE: case LOAD_GLOBAL: case COPY_WINDOW:
-            case STORE_CONST: case COMPARE: case COMPARE_WINDOW: case LNOT: case EXIT: case JUMP: case BRANCH:
-            case BRANCH_TRUTH: case BRANCH_WINDOW: case CALL_REG: case LOAD_ELEM: case STORE_ELEM: case CHECK_BUILTIN:
-                break;
-            // The function's own scoped read takes the running record's scope (Asm.var_slot).
-            case LOAD_VAR:
-                if (nd.fidx == 0 && nd.cc != 0) return "scope";
-            case GENERIC:
-                Opcode op = f.code[(uint)nd.imm].op;
-                if (op != Opcode.RET && op != Opcode.RETUNDEF && !(moves && op == Opcode.LDREG)) return Opcode::names[op.ordinal];
-            default:
-                return OptOp::names[nd.op.ordinal];
-        }
-    }
-    return "";
-}
-
 // Generate native code for the graph. Null when code generation fails.
 fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc, OptPools pools) {
     uint count = f.code_count;
@@ -3002,7 +2928,6 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     Asm a = asm_new(c, h, f);
     defer a.release();
     a.opt = true;
-    a.reg_leaf = g.reg_blocker(f).len == 0;
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;
     foreach (&nd : g.nodes) {
@@ -3057,35 +2982,6 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     if (call_entry_eligible(f) && !g.blocks[0].osr) {
         a.labels[0] = cg.labels[0];
         call_entry = a.emit_call_entry(bc, touch: true);
-    }
-    // A register leaf's register entry: the caller's return address kept in the Dispatch, the
-    // window in R1, the registers past the formals undefined as a call entry leaves them.
-    // The register entry (OptCg.emit_call_reg), the window in R1: a native frame below the
-    // caller's, within the floor jit_enter set, and room for what the callers did not test. It
-    // reads no record (reg_blocker), whose scope would be its caller's.
-    if (a.reg_leaf) {
-        assert(!a.reads_env);
-        a.reg_label = sljit_emit_label(c);
-        // The window is the register's from here on, whatever the call's outcome: the caller
-        // takes its own back from it.
-        sljit_emit_op_dst(c, SLJIT_FAST_ENTER, R0, 0);
-        sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, R1, 0);
-        sljit_shim_adjust_sp(c, -REG_FRAME_BYTES);
-        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), jit_frame().link_off, R0, 0);
-        Jumps decline;
-        sljit_get_local_base(c, R2, 0, 0);
-        decline.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_MEM | a.ds, a.lay.ds_reg_floor));
-        if (a.room_slots > f.num_regs + REG_ROOM_EXTRA) {
-            sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.ds, call_layout().ds_vm);
-            sljit_emit_op2(c, SLJIT_ADD, R2, 0, R1, 0, SLJIT_IMM, (long)a.room_slots * TVal::size);
-            decline.add(sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_MEM | R0, call_layout().vm_valstack_end));
-        }
-        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, K_UNDEF);
-        sljit_emit_op1(c, SLJIT_MOV, R3, 0, R2, 0);
-        if (f.num_formals < f.num_regs) a.clear_slots(a.regs, f.num_formals, f.num_regs, R2, R3, R4, R0);
-        cg.gotos.push({ .jump = sljit_emit_jump(c, SLJIT_JUMP), .block = 0 });
-        decline.bind(sljit_emit_label(c));
-        a.emit_reg_return(REG_DECLINE);
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;

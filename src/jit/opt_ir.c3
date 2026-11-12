@@ -161,7 +161,7 @@ enum OptOp : char {
     // result register) as a published store; exits (SLOW_PATH) where publish does. cc 1 copies
     // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG),
     // cc 3 the graph register imm itself (a forwarded argument, OptBuild.forward_window), cc 4 the
-    // function's own receiver (OptCg.load_own_this).
+    // function's own receiver (its record's this_binding).
     // Of rep OBJECT the value stays in a register (finish_object), for a home beyond the
     // caller's frame.
     COPY_WINDOW,
@@ -223,10 +223,10 @@ enum OptOp : char {
     BRANCH_CALLEE,
     // The bytecode instruction at pc, through the baseline emitter.
     GENERIC,
-    // The call at pc of the register leaf key (its CompiledFunction), CHECK_CALLEE before it: the
-    // window stored as a GENERIC's, the callee entered in register mode (OptCg.emit_call_reg),
-    // its result stored to the window. The caller's registers survive; it exits at the call
-    // (CALLEE) when the callee exits or has no register entry.
+    // The call at pc of key (its CompiledFunction), CHECK_CALLEE before it: the window stored as a
+    // GENERIC's, the callee entered through its register label (OptCg.emit_call_reg), its result
+    // stored to the window. The caller's registers survive the call; it exits at the call when the
+    // callee has no call entry (DECLINED) or declines (DEEP).
     CALL_REG,
     // A NEW_OBJ (pc) of the constructor imm (its CompiledFunction*), after its CHECK_CALLEE: a plain
     // object with the prototype the instruction's cache reads from the constructor, the OBJECT node
