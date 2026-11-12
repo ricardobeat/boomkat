@@ -82,7 +82,7 @@ fn void* PagePool.alloc_uninit(&self) @inline {
     return self.alloc_cleared(0);
 }
 
-macro void* PagePool.alloc_cleared(&self, sz clear_bytes) @private {
+macro void* PagePool.alloc_cleared(&self, sz clear_bytes) {
     PoolPage* p = self.avail_head;
     if (p == null) p = self.add_page();
     void* block;

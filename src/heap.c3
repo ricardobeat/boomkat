@@ -5007,7 +5007,7 @@ $if $feat(HEAP_VERIFY):
     uint checked = 0;
     uint errors = 0;
 
-    for (uint i = 0; i < (uint)self.gc_roots.len(); i++) {
+    for (uint i = 0; i < (uint)self.gc_roots.len; i++) {
         void* root = self.gc_roots[i];
         if (root != null) {
             if (!self.validate_hobject((HeapHeader*)root, "gc_root")) errors++;
