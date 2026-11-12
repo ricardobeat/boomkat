@@ -2999,9 +2999,10 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
 }
 
 // Print where the code of each node of the optimized code `bc` starts, for attributing profiler
-// samples to nodes: "onodes fn#<index> <start> <end> <address>:<op>:<pc>:<fn> ..." in node order,
-// then "onodes-end <address>" past the last node, where the stubs begin (--jit-dump-feedback).
-fn void opt_dump_nodes(CompiledFunction* f, OptGraph* g, BaselineCode* bc, void*[] labels) {
+// samples to nodes: "onodes fn#<index> <start> <end> <address>:<op>:<pc>:<fn>:<node> ..." in node order,
+// then "end:<address>" past the last node, where the stubs begin (--jit-dump-feedback). With
+// --jit-dump-code, "ocode fn#<index> <start> <hex bytes>" follows.
+fn void opt_dump_nodes(Heap* h, CompiledFunction* f, OptGraph* g, BaselineCode* bc, void*[] labels) {
     // One write, as dump_code_map makes it.
     DString out;
     out.init(mem, 256);
@@ -3010,9 +3011,13 @@ fn void opt_dump_nodes(CompiledFunction* f, OptGraph* g, BaselineCode* bc, void*
     for (sz i = 0; i < g.nodes.len(); i++) {
         if (labels[i] == null) continue;
         OptNode* n = &g.nodes[i];
-        out.appendf(" %x:%s:%d:%d", (usz)sljit_shim_label_addr(labels[i]), n.op, n.pc, n.fidx);
+        out.appendf(" %x:%s:%d:%d:%d", (usz)sljit_shim_label_addr(labels[i]), n.op, n.pc, n.fidx, i);
     }
     out.appendf(" end:%x", (usz)sljit_shim_label_addr(labels[g.nodes.len()]));
+    if (h.jit_stats.dump_code) {
+        out.appendf("\nocode fn#%d %x ", f.func_index, (usz)bc.exec);
+        foreach (b : ((char*)bc.exec)[:bc.code_bytes]) out.appendf("%02x", b);
+    }
     io::eprintn(out.str_view());
 }
 
@@ -3093,7 +3098,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;
-    if (node_labels.len != 0) opt_dump_nodes(f, g, bc, node_labels);
+    if (node_labels.len != 0) opt_dump_nodes(h, f, g, bc, node_labels);
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(to_base);
     }

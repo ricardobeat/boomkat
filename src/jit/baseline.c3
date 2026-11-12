@@ -175,6 +175,9 @@ struct JitStats {
     bool count_ops;
     // Print every instruction's recorded operand feedback at exit (--jit-dump-feedback).
     bool dump_feedback;
+    // Also print the bytes of each optimized body as it is compiled, for scripts/jit_disasm.py
+    // (--jit-dump-code).
+    bool dump_code;
     ulong[Opcode::values.len] fast_hits;
     ulong[Opcode::values.len] slow_calls;
     // Thunk calls the threaded handler or the builtin call path completed

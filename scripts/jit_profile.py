@@ -51,7 +51,7 @@ for line in open(map_path, errors='replace'):
             if tok.startswith('end:'):
                 nodes.append((int(tok[4:], 16), 'stubs', '', ''))
             else:
-                ad, op, pc, fidx = tok.split(':')
+                ad, op, pc, fidx = tok.split(':')[:4]
                 nodes.append((int(ad, 16), op, pc, fidx))
         nodes.sort(key=lambda x: x[0])
         onodes[int(p[2], 16)] = (p[1], nodes)

@@ -68,6 +68,7 @@ fn int main(String[] args) {
     bool jit_stats = false;
     bool jit_count_ops = false;
     bool jit_dump_feedback = false;
+    bool jit_dump_code = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
         bool bytecode_input = false;
@@ -166,6 +167,9 @@ fn int main(String[] args) {
             jit_stats = true;
         } else if (a == "--jit-dump-feedback") {
             jit_dump_feedback = true;
+        } else if (a == "--jit-dump-code") {
+            jit_dump_feedback = true;
+            jit_dump_code = true;
         } else if (a == "--jit-count-ops") {
             jit_stats = true;
             jit_count_ops = true;
@@ -276,6 +280,7 @@ fn int main(String[] args) {
     $if $feat(SLJIT):
         hp.jit_stats.count_ops = jit_count_ops;
         hp.jit_stats.dump_feedback = jit_dump_feedback;
+        hp.jit_stats.dump_code = jit_dump_code;
         hp.jit_stats.timing = jit_stats;
     $endif
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
@@ -403,6 +408,7 @@ fn void print_usage() {
         io::printn("--opt adds the optimizing tier: SSA graphs for hot functions, exiting into the baseline.");
         io::printn("--opt-always compiles on the first call instead of waiting for the hot threshold.");
         io::printn("--opt-log traces each refusal, exit and discard; --opt-dump prints each graph.");
+        io::printn("--jit-dump-code prints each optimized body's code, for scripts/jit_disasm.py.");
     $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");
