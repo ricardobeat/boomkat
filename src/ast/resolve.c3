@@ -310,10 +310,6 @@ fn void Resolver.recorded_body(&self, uint block) {
 fn void Resolver.ref(&self, uint node, char mode = REF_READ) {
     uint name = self.ast.lhs.data[node];
     self.refs.push({ .node = node, .atom = name, .scope = self.cur, .mode = mode });
-    if (name == self.atom_eval) {
-        self.scopes.data[self.var_scope()].flags |= SCOPE_HAS_EVAL;
-        if (self.in_params) self.scopes.data[self.var_scope()].flags |= SCOPE_EVAL_PARAMS;
-    }
 }
 
 // ---- traversal ----
@@ -627,6 +623,13 @@ fn void Resolver.node(&self, uint n) {
             }
         case CALL:
             uint callee = self.ast.lhs.data[n];
+            // A direct eval: `eval(...)` by that name, not an optional call. Any other use of the
+            // name reads a function whose calls run in the global scope.
+            if (self.ast.tags.data[callee] == NodeTag.IDENT && self.ast.lhs.data[callee] == self.atom_eval
+                && (self.ast.flags.data[n] & FLAG_OPTIONAL) == 0) {
+                self.scopes.data[self.var_scope()].flags |= SCOPE_HAS_EVAL;
+                if (self.in_params) self.scopes.data[self.var_scope()].flags |= SCOPE_EVAL_PARAMS;
+            }
             if (!is_apply_arguments_call(self.ast, n, self.atom_apply, self.atom_arguments)) {
                 self.generic(n);
             } else {
