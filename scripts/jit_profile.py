@@ -6,7 +6,8 @@
 Runs BIN with --jit-dump-feedback (the code map is printed at exit by the same process that is
 sampled, so the addresses match), samples it with /usr/bin/sample, and prints: time by category
 (generated code / runtime helpers / other), the hottest runtime helpers, and the generated code by
-function, by bytecode op within a function, and by shared subroutine. `fn#N` is the compiled
+function, by bytecode op within a function, by shared subroutine, and optimized code by the kind
+of graph node it was emitted for (--opt-dump names the nodes). `fn#N` is the compiled
 function index (see the `feedback fn#N` lines of --jit-dump-feedback to identify it); `opt` marks
 optimized code. /usr/bin/sample needs the sandbox disabled (run this from a shell that allows it);
 profile a mid-run window with --delay (the run must still be going when sampling starts).
@@ -39,9 +40,22 @@ if not os.path.exists(sample_path):
 proc.wait()
 
 maps, subs = [], []
+# Optimized code by start address: its node map as the latest compile there printed it.
+onodes = {}
 cur = None
 for line in open(map_path, errors='replace'):
-    if line.startswith('map '):
+    if line.startswith('onodes '):
+        p = line.split()
+        nodes = []
+        for tok in p[4:]:
+            if tok.startswith('end:'):
+                nodes.append((int(tok[4:], 16), 'stubs', '', ''))
+            else:
+                ad, op, pc, fidx = tok.split(':')
+                nodes.append((int(ad, 16), op, pc, fidx))
+        nodes.sort(key=lambda x: x[0])
+        onodes[int(p[2], 16)] = (p[1], nodes)
+    elif line.startswith('map '):
         p = line.split()
         # Subroutines and the call entry follow the instruction bodies.
         lo, hi = int(p[3], 16), int(p[4], 16)
@@ -70,6 +84,16 @@ cat = collections.Counter()
 helpers = collections.Counter()
 fns, ops, subc = collections.Counter(), collections.Counter(), collections.Counter()
 hot = collections.Counter()
+nodekinds, nodesites = collections.Counter(), collections.Counter()
+
+def node_at(start, pc):
+    """The node of the optimized code at `start` whose code holds pc: (fn, op, pc, inlined fn)."""
+    if start not in onodes:
+        return None
+    fn, nodes = onodes[start]
+    k = bisect.bisect_right([x[0] for x in nodes], pc) - 1
+    return (fn,) + nodes[k][1:] if k >= 0 else (fn, 'prologue', '', '')
+
 for l in block.splitlines()[1:]:
     m = re.match(r'\s+(.*?)\s+\(in (.*?)\)\s+(?:\[(0x[0-9a-f]+)\]\s+)?(\d+)$', l)
     if not m:
@@ -86,6 +110,10 @@ for l in block.splitlines()[1:]:
             fns[mp['fn'] + (' opt' if mp['opt'] else '') + ' n' + str(len(mp['ents']))] += n
             e = [x for x in mp['ents'] if x[0] <= pc]
             ops[(mp['fn'] + (' opt' if mp['opt'] else ''), e[-1][1] if e else 'entry')] += n
+            nd = node_at(mp['start'], pc) if mp['opt'] else None
+            if nd:
+                nodekinds[nd[1]] += n
+                nodesites['%s %s pc %s%s' % (nd[0], nd[1], nd[2], ' (inlined fn %s)' % nd[3] if nd[3] not in ('', '0') else '')] += n
         else:
             j = bisect.bisect_right(sub_at, pc) - 1
             if j >= 0 and pc - sub_at[j] < 4096:
@@ -111,6 +139,9 @@ show('runtime helpers / other', helpers)
 show('generated code by function', fns)
 show('generated code by function + bytecode op', ops, a.top + 10)
 show('shared subroutines', subc)
+if nodekinds:
+    show('optimized code by node kind (stubs: exits, polls and call entry after the nodes)', nodekinds)
+    show('optimized code by node (function, kind, bytecode pc)', nodesites, a.top + 10)
 show('hottest addresses (offset from the function start; disassemble with lldb: image/memory around start+offset)', hot, 12)
 if a.keep:
     os.replace(sample_path, a.keep + '.sample.txt')

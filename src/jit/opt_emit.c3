@@ -2917,6 +2917,19 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     }
 }
 
+// Print where the code of each node of the optimized code `bc` starts, for attributing profiler
+// samples to nodes: "onodes fn#<index> <start> <end> <address>:<op>:<pc>:<fn> ..." in node order,
+// then "onodes-end <address>" past the last node, where the stubs begin (--jit-dump-feedback).
+fn void opt_dump_nodes(CompiledFunction* f, OptGraph* g, BaselineCode* bc, void*[] labels) {
+    io::eprintf("onodes fn#%d %x %x", f.func_index, (usz)bc.exec, (usz)bc.exec + bc.code_bytes);
+    for (sz i = 0; i < g.nodes.len(); i++) {
+        if (labels[i] == null) continue;
+        OptNode* n = &g.nodes[i];
+        io::eprintf(" %x:%s:%d:%d", (usz)sljit_shim_label_addr(labels[i]), n.op, n.pc, n.fidx);
+    }
+    io::eprintfn(" end:%x", (usz)sljit_shim_label_addr(labels[g.nodes.len()]));
+}
+
 // Generate native code for the graph. Null when code generation fails.
 fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc, OptPools pools) {
     uint count = f.code_count;
@@ -2954,15 +2967,21 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     uint blocks = (uint)g.blocks.len();
     cg.labels = mem::new_array(void*, blocks);
     cg.osr_labels = mem::new_array(void*, blocks);
+    // Where each node's code starts, and the end of the last (--jit-dump-feedback).
+    void*[] node_labels;
+    if (h.jit_stats.dump_feedback) node_labels = mem::new_array(void*, g.nodes.len() + 1);
+    defer if (node_labels.len != 0) mem::free(node_labels);
     for (uint pos = 0; pos < blocks; pos++) {
         OptBlock* blk = &g.blocks[pos];
         cg.labels[pos] = sljit_emit_label(c);
         if (pos == 0) cg.emit_cap_refs();
         for (uint i = blk.first; i < blk.end; i++) {
+            if (node_labels.len != 0) node_labels[i] = sljit_emit_label(c);
             cg.emit_node(i, pos);
             bc.insns++;
         }
     }
+    if (node_labels.len != 0) node_labels[g.nodes.len()] = sljit_emit_label(c);
     cg.use_fn(0);
     a.emit_stubs();
     cg.emit_taken_stubs();
@@ -2985,6 +3004,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;
+    if (node_labels.len != 0) opt_dump_nodes(f, g, bc, node_labels);
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(to_base);
     }
