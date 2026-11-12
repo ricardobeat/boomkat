@@ -422,8 +422,8 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
             // th_getprop_array: an index into an array, or a string key.
             Jumps done;
             self.load(R3, w.c);
-            sljit_emit_op2(self.c, SLJIT_XOR, R0, 0, R3, 0, SLJIT_IMM, K_INT);
-            void* not_index = sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+            sljit_emit_op2(self.c, SLJIT_XOR, R0, 0, R3, 0, k_int_op(), k_int_w());
+            void* not_index = sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
             void* elem = sljit_emit_label(self.c);
             self.emit_get_elem(w.a, w.b);
             done.add(sljit_emit_jump(self.c, SLJIT_JUMP));
@@ -457,8 +457,8 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
             // th_putprop: an index into an array, or a string key.
             Jumps done;
             self.load(R3, w.b);
-            sljit_emit_op2(self.c, SLJIT_XOR, R0, 0, R3, 0, SLJIT_IMM, K_INT);
-            void* not_index = sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+            sljit_emit_op2(self.c, SLJIT_XOR, R0, 0, R3, 0, k_int_op(), k_int_w());
+            void* not_index = sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
             void* elem = sljit_emit_label(self.c);
             self.emit_put_elem(w.a, w.c);
             done.add(sljit_emit_jump(self.c, SLJIT_JUMP));
@@ -496,8 +496,8 @@ fn void Asm.load_this(&self, int reg) {
 
 // dst = the HObject* `src` boxes; the slow path when it is not an object.
 fn void Asm.unbox_object(&self, int dst, int src) {
-    sljit_emit_op2(self.c, SLJIT_XOR, dst, 0, src, 0, SLJIT_IMM, K_OBJ);
-    self.call.add(sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, dst, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(self.c, SLJIT_XOR, dst, 0, src, 0, k_obj_op(), k_obj_w());
+    self.call.add(sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, dst, 0, span_op(), span_w()));
 }
 
 // The slow path when object `obj` has any of the flag bits `mask`.
@@ -550,7 +550,7 @@ fn void Asm.guard_not_tdz(&self) {
     void* c = self.c;
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_UNDEF);
     void* plain = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0);
-    self.call.add(sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.call.add(sljit_emit_cmp(c, SLJIT_LESS, R1, 0, span_op(), span_w()));
     sljit_set_label(plain, sljit_emit_label(c));
 }
 
@@ -563,8 +563,8 @@ fn void Asm.publish(&self, uint ra) {
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
     // An object while the collector is not marking is the common case: store it
     // and raise the watermark here, as the subroutine does.
-    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    void* not_object = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
+    void* not_object = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w());
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
     void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
     self.store(ra, R0);
@@ -593,7 +593,7 @@ fn void Asm.emit_publish_body(&self) {
     Layout* l = self.lay;
     Jumps fail;
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_STRING_START);
-    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w());
     // Queued already, or counted beyond the intern table's own count.
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.str_flags);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.interned_mask | l.queued_mask);
@@ -603,8 +603,8 @@ fn void Asm.emit_publish_body(&self) {
     fail.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, R3, 0));
     void* counted = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_string, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w()));
     Jumps publishable;
     publishable.add(counted);
     publishable.add(queued);
@@ -672,15 +672,15 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     Layout* l = self.lay;
     if (length) {
         // A string or an array takes its length out of line (emit_length).
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-        self.alt.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+        self.alt.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
     } else if (key != 0 && !((hstring::HString*)key).is_arridx()) {
         // A string primitive reads through String.prototype, whose entry the
         // site holds (th_getpropc); a symbol and any other value go to the thunk.
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-        void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+        void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, span_op(), span_w());
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
-        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
         self.guard_flags_clear(R1, l.symbol_mask, R2);
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.heap, l.heap_string_proto);
         sljit_set_label(object, sljit_emit_label(c));
@@ -706,7 +706,7 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
         // Another string key takes the keyed read out of line (emit_get_keyed).
         self.load(R4, (uint)key_reg);
         sljit_emit_op2(c, SLJIT_XOR, R4, 0, R4, 0, SLJIT_IMM, K_STRING_START);
-        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, span_op(), span_w()));
         self.alt.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_MEM | R2, l.ic_key));
     } else if (check_key) {
         self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, key));
@@ -899,7 +899,7 @@ fn void Asm.emit_get_keyed(&self, uint ra, uint rb, uint rkey) {
     self.load(R2, rkey);
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R2, 0, SLJIT_IMM, K_STRING_START);
     self.load(R1, rb);
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
     self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
@@ -940,7 +940,7 @@ fn void Asm.emit_length(&self, uint ra, uint rb) {
     Layout* l = self.lay;
     self.load(R0, rb);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
-    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
     self.guard_flags_clear(R1, l.symbol_mask, R2);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.str_length);
     void* store = sljit_emit_jump(c, SLJIT_JUMP);
@@ -952,7 +952,7 @@ fn void Asm.emit_length(&self, uint ra, uint rb) {
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_array_len);
     sljit_set_label(store, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
     self.store(ra, R0);
 }
 
@@ -1017,8 +1017,8 @@ fn void Asm.guard_old_value(&self, Jumps* miss = null, bool object_first = false
         return;
     }
     void* old_ok = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
-    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
-    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
     sljit_set_label(old_ok, sljit_emit_label(c));
 }
 
@@ -1037,8 +1037,8 @@ fn void Asm.store_value_r2(&self, Jumps* miss = null, bool uncounted = false) {
     if (!miss) miss = &self.call;
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
     if (!uncounted) {
-        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R2, 0, SLJIT_IMM, K_OBJ);
-        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R2, 0, k_obj_op(), k_obj_w());
+        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
     }
     self.guard_not_marking_to(miss, R3);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_gc);
@@ -1127,7 +1127,7 @@ fn void Asm.put_key_check(&self, long key, int key_reg, Jumps* to) {
     if (key_reg >= 0) {
         self.load(R3, (uint)key_reg);
         sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_STRING_START);
-        to.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        to.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
         to.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R2, l.ic_key));
     } else {
         to.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, key));
@@ -1201,8 +1201,8 @@ fn void Asm.emit_put_absent_body(&self, bool helper = true) {
     self.mov(R3, 0, sp, SUB_VALUE_OFF);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | R3, 0);
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R3, 0, SLJIT_IMM, K_OBJ);
-    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R3, 0, k_obj_op(), k_obj_w());
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     self.guard_not_marking_to(&fail, R0);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R4, 0, SLJIT_IMM, l.old_mask);
     fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
@@ -1302,13 +1302,13 @@ fn void Asm.emit_index_body(&self) {
     void* c = self.c;
     Jumps slow;
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_FALSE);
-    void* done = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, K_INT);
+    void* done = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, k_int_op(), k_int_w());
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R3);
     sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, R0, 0, FR0, 0);
     slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, 1L << 31));
     sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR1, 0, R0, 0);
     slow.add(sljit_emit_fcmp(c, SLJIT_UNORDERED_OR_NOT_EQUAL, FR0, 0, FR1, 0));
-    sljit_emit_op2(c, SLJIT_OR, R3, 0, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R3, 0, R0, 0, k_int_op(), k_int_w());
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_TRUE);
     void* joined = sljit_emit_jump(c, SLJIT_JUMP);
     slow.bind(sljit_emit_label(c));
@@ -1490,7 +1490,7 @@ $if features::BUFFERS:
             }
             if (is_float) {
                 // TVal.set_number: a NaN whose bits would read as a tag.
-                void* plain = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_INT);
+                void* plain = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, k_int_op(), k_int_w());
                 sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, CANONICAL_NAN);
                 sljit_set_label(plain, sljit_emit_label(c));
                 ok.add(sljit_emit_jump(c, SLJIT_JUMP));
@@ -1505,28 +1505,28 @@ $if features::BUFFERS:
                 sljit_set_label(small, sljit_emit_label(c));
             }
             sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-            sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+            sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
             ok.add(sljit_emit_jump(c, SLJIT_JUMP));
             continue;
         }
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, sp, SUB_VALUE_OFF);
-        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_int_op(), k_int_w());
         if (!is_float) {
             // ta_store_int keeps the low bits of the fastint payload.
-            fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
+            fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w()));
             sljit_emit_op1(c, kind.mov, elem, kind.shift, R0, 0);
             ok.add(sljit_emit_jump(c, SLJIT_JUMP));
             continue;
         }
         int f32 = cls == hobject::ObjClass.FLOAT32ARRAY ? SLJIT_32 : 0;
-        void* not_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        void* not_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w());
         sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
         sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
         sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW | f32, FR0, 0, R0, 0);
         void* stored = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(not_int, sljit_emit_label(c));
         // A double, which ta_store_scalar narrows for Float32.
-        fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT));
+        fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, k_int_op(), k_int_w()));
         sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
         if (f32 != 0) sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32 | SLJIT_32, FR0, 0, FR0, 0);
         sljit_set_label(stored, sljit_emit_label(c));
@@ -1597,7 +1597,7 @@ fn void Asm.emit_put_var(&self, uint rv, long vic) {
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R0, 0);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_UNDEF);
     void* plain = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0);
-    self.call.add(sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.call.add(sljit_emit_cmp(c, SLJIT_LESS, R3, 0, span_op(), span_w()));
     sljit_set_label(plain, sljit_emit_label(c));
     self.store_slot_moved(rv);
     self.store(rv, SLJIT_IMM, K_UNDEF);
@@ -1621,8 +1621,8 @@ fn void Asm.emit_capture_ref_body(&self) {
     Jumps fail;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.la, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
-    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, k_obj_op(), k_obj_w());
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
     fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.fn_comp_func);
@@ -1665,7 +1665,7 @@ fn void Asm.emit_get_cap_value_of(&self, uint index, uint callee_reg, uint count
     } else {
         self.load(R3, callee_reg);
     }
-    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, index);

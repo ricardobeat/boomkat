@@ -47,7 +47,7 @@ fn void Asm.typeof_value(&self, uint dst) {
     Layout* l = self.lay;
     Jumps done;
     sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
-    void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
+    void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, k_int_op(), k_int_w());
     self.typeof_pick(BuiltinStr.NUMBER, &done);
     sljit_set_label(tagged, sljit_emit_label(c));
     self.typeof_tag(types::TAG_FASTINT, BuiltinStr.NUMBER, &done);
@@ -109,8 +109,8 @@ fn bool Asm.emit_instanceof(&self) {
         hobject::ObjFlags bound = { .is_bound = true };
         long mask = (long)(uint)callable | (long)(uint)bound | l.proxy_mask;
         self.load(R0, self.w.c);
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
         sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
         sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, mask);
         miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, (long)(uint)callable));
@@ -130,13 +130,13 @@ fn bool Asm.emit_instanceof(&self) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
         self.prop_base(R0, R1);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
-        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
-        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, k_obj_op(), k_obj_w());
+        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
         self.load(R1, self.w.b);
-        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, SLJIT_IMM, K_OBJ);
-        void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, k_obj_op(), k_obj_w());
+        void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w());
         sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, SLJIT_IMM, K_LIGHTFUNC);
-        miss.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        miss.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w()));
         Jumps no;
         no.add(sljit_emit_jump(c, SLJIT_JUMP));
         // The walk starts at the left operand's [[GetPrototypeOf]]: it is tested for a proxy,
@@ -216,6 +216,6 @@ fn void Asm.emit_mod(&self) {
     self.call.add(sljit_emit_cmp(c, SLJIT_SIG_LESS, R0, 0, SLJIT_IMM, 0));
     self.call.add(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL, R1, 0, SLJIT_IMM, 0));
     sljit_emit_op0(c, SLJIT_DIVMOD_UW);
-    sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, k_int_op(), k_int_w());
     self.store(self.w.a, R1);
 }

@@ -189,7 +189,7 @@ fn void Asm.closure_lex_env(&self, uint reg, int closure) {
     } else {
         self.load(R3, reg);
     }
-    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R3, k.fn_var_env);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R3, k.fn_lex_env);
     env::EnvFlags decl_flag;
@@ -261,7 +261,7 @@ fn void Asm.emit_throw_unresolved(&self, uint ra) {
     void* c = self.c;
     self.load(R0, ra);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_ENVREF);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
 }
 
@@ -376,8 +376,8 @@ fn bool Asm.emit_declvar(&self, uint ra, uint index, long ic) {
     // The value: inert, or an object while not marking into a young scope.
     self.load(R3, ra);
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
-    sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, SLJIT_IMM, K_OBJ);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, k_obj_op(), k_obj_w());
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, span_op(), span_w()));
     self.guard_not_marking(R4);
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R1, l.obj_gc);
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, l.old_mask);

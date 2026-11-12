@@ -23,8 +23,8 @@ struct OptPools {
 
 fn OptPools opt_pools() {
     int total = sljit_shim_info(0);
-    // The baseline frame keeps six registers saved (reg_s(0) to reg_s(5)).
-    int scratches = total - 6;
+    // The rest are the baseline frame's saved registers (jit_saveds).
+    int scratches = total - jit_saveds();
     if (scratches > 20) scratches = 20;
     int fscratches = sljit_shim_info(2);
     if (fscratches > 26) fscratches = 26;

@@ -271,7 +271,7 @@ fn bool Asm.emit_alloc(&self) {
     if (inline_alloc_ok() && self.inline_alloc_plan(&plan)) {
         self.emit_inline_alloc(&plan, &slow);
         // The boxed object into the result register, which holds no count to release.
-        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
         self.store(ra, R0);
         self.track_heap_store(ra);
         done = sljit_emit_jump(c, SLJIT_JUMP);
@@ -306,8 +306,8 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
     foreach (&slot : site.arg) *slot = NEW_ARG_NONE;
     // The callee: a constructable closure of the armed function, as emit_check_callee tests it.
     self.load(R1, self.w.b);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
-    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     hobject::ObjFlags ctor_bit;
     ctor_bit.constructable = true;
@@ -334,7 +334,7 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | R1, 0);
     // An unarmed site holds 0, which no prototype boxes to.
     miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM, (long)(usz)&site.proto_bits));
-    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, k_obj_op(), k_obj_w());
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, l.obj_shape);
     miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM, (long)(usz)&site.proto_shape));
     sljit_emit_op1(c, SLJIT_MOV, m | reg_sp(), SUB_VALUE_OFF, R2, 0);
@@ -347,9 +347,9 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, mem_index(R2, R1), 3);
         void* inert = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
         sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, SLJIT_IMM, K_STRING_START);
-        void* string = sljit_emit_cmp(c, SLJIT_LESS, R4, 0, SLJIT_IMM, PAYLOAD_SPAN);
-        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
-        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        void* string = sljit_emit_cmp(c, SLJIT_LESS, R4, 0, span_op(), span_w());
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
+        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
         sljit_set_label(inert, sljit_emit_label(c));
         sljit_set_label(string, sljit_emit_label(c));
         sljit_set_label(skip, sljit_emit_label(c));
@@ -358,7 +358,7 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
     plan.site = site;
     self.emit_inline_alloc(&plan, miss);
     void* replays = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM, (long)(usz)&site.count, SLJIT_IMM, (long)NEW_SITE_CALLS);
-    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
     self.store(self.w.b + 1, R0);
     self.track_heap_store(self.w.b + 1);
     self.emit_direct_call(generic);
@@ -381,7 +381,7 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
         sljit_emit_op1(c, SLJIT_MOV, m | R0, base + (long)j * 8, R3, 0);
         // A string the slot holds is counted, as TVal.incref_if_heap does; a pinned one is not.
         sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, SLJIT_IMM, K_STRING_START);
-        void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, span_op(), span_w());
         sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R4, l.str_refcount);
         void* pinned = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)types::STRING_PINNED_REFCOUNT);
         sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, 1);
@@ -394,7 +394,7 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_count, R1, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&site.final_shape);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_shape, R1, 0);
-    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
     self.store(self.w.a, R0);
     self.track_heap_store(self.w.a);
     self.count(&self.stats.fast_hits[0], self.w.op);

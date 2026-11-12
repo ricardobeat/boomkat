@@ -298,7 +298,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     // The `arguments` register of a forwarding function is the count.
     if (forwards) {
         sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
-        sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, k_int_op(), k_int_w());
         self.mov(m | bottom, (long)f.arguments_reg * TVal::size, R4, 0);
     }
     self.mov(R4, 0, SLJIT_MEM | reg_sp(), SUB_RET_OFF);
@@ -312,7 +312,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         self.mov(m | la, l.act_func, SLJIT_IMM, (long)(usz)f);
     }
     if (self.reads_env) {
-        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
         self.mov(R2, 0, m | R3, k.fn_var_env);
         self.mov(R1, 0, m | R3, k.fn_lex_env);
         self.emit_entry_env(la);
@@ -350,7 +350,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     uint from = forwards ? f.arguments_reg + 1 : f.num_formals;
     self.mov(R2, 0, undef, 0);
     self.clear_slots(bottom, from, clear_end, undef, R2, R4, R1);
-    if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, SLJIT_IMM, K_INT);
+    if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, k_int_op(), k_int_w());
     // The VM's frame state, the value stack's top included, waits for vm::jit_sync. The body's record and window
     // registers; the heap and thunk table registers are the caller's.
     self.mov(self.la, 0, la, 0);
@@ -601,12 +601,12 @@ fn void Asm.emit_forward_call(&self, Jumps* generic) {
     // Function.prototype.apply, a lightfunc or a builtin function object (builtins::is_intrinsic_apply).
     self.load(R0, callee);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
-    void* not_light = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    void* not_light = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
     generic.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, apply));
     void* is_apply = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_light, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    generic.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+    generic.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     generic.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, m | R0, 0, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, k.fn_mask);
@@ -616,12 +616,12 @@ fn void Asm.emit_forward_call(&self, Jumps* generic) {
     sljit_set_label(is_apply, sljit_emit_label(c));
     // The count the arguments register holds in place of an arguments object, at most `kept`.
     self.load(R0, self.f.arguments_reg);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_int_op(), k_int_w());
     generic.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, kept));
     // The receiver, an object: one @apply_args drops for a callee that ignores it takes `generic`.
     self.load(R0, callee + 2);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    generic.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+    generic.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     generic.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     // The moves are plain stores, as @apply_args makes them, with nothing to mark (th_can_publish).
     self.mov(R0, 0, m | self.heap, l.heap_gc_phase, SLJIT_MOV_U8);
@@ -643,7 +643,7 @@ fn void Asm.emit_forward_call(&self, Jumps* generic) {
     self.store(callee + 1, R0);
     self.store(callee + 2, SLJIT_IMM, K_UNDEF);
     self.load(R4, self.f.arguments_reg);
-    sljit_emit_op2(c, SLJIT_XOR, R4, 0, R4, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_XOR, R4, 0, R4, 0, k_int_op(), k_int_w());
     Jumps moved;
     for (uint i = 0; i < kept; i++) {
         moved.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R4, 0, SLJIT_IMM, i));
@@ -659,7 +659,7 @@ fn void Asm.emit_forward_call(&self, Jumps* generic) {
         self.mov(m | self.la, l.act_hrc, R0, 0, SLJIT_MOV_U32);
         sljit_set_label(covered, sljit_emit_label(c));
     }
-    sljit_emit_op2(c, SLJIT_OR, R0, 0, R4, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R4, 0, k_int_op(), k_int_w());
     self.store(self.w.c, R0);
     sljit_emit_op2(c, SLJIT_OR, R3, 0, R4, 0, SLJIT_IMM, CALL_METHOD);
     Jumps declined;
@@ -696,8 +696,8 @@ fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     int m = SLJIT_MEM;
     uint rb = self.w.b;
     self.load(R0, rb);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, m | R0, 0, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, k.fn_mask);
@@ -706,7 +706,7 @@ fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal));
     self.load(R1, rb + 1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_STRING_START);
-    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
     self.mov(R2, 0, m | R1, 0, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.byte_units_mask);
     miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
@@ -719,7 +719,7 @@ fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R2, 0));
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R3, 0);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R1, (long)hstring::HSTRING_HDR_SIZE);
-    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
     self.store(self.w.a, R0);
 }
 
@@ -799,7 +799,7 @@ fn void Asm.emit_note_callee(&self) {
 // has checked that it is a compiled function with a body).
 fn void Asm.emit_callee_cf(&self, int reg) {
     self.mov(reg, 0, SLJIT_MEM | R1, -2 * (long)TVal::size);
-    sljit_emit_op2(self.c, SLJIT_XOR, reg, 0, reg, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(self.c, SLJIT_XOR, reg, 0, reg, 0, k_obj_op(), k_obj_w());
     self.mov(reg, 0, SLJIT_MEM | reg, self.lay.fn_comp_func);
 }
 
@@ -824,11 +824,11 @@ fn void Asm.emit_call_body(&self) {
     // R2, the result slot, stays for the call entry.
     self.mov(m | self.la, k.act_curr_pc, R4, 0);
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
     // A value that is not a heap object still may be a callee: a lightfunc has
     // that shape, so route it to the tag test below instead of to the slow
     // path here.
-    void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     self.mov(R4, 0, m | R0, 0, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
@@ -868,8 +868,8 @@ fn void Asm.emit_call_body(&self) {
     sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, CALL_PRIM);
     void* prim_done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(heap_value, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_set_label(receiver_done, sljit_emit_label(c));
     sljit_set_label(prim_done, sljit_emit_label(c));
@@ -886,7 +886,7 @@ fn void Asm.emit_call_body(&self) {
     sljit_set_label(tagged, sljit_emit_label(c));
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
-    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
     self.mov(R1, 0, R4, 0);
     self.mov(R0, 0, ds, 0);
     self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);
@@ -1081,8 +1081,8 @@ fn void Asm.emit_return_body(&self) {
 // as Asm.publish stores one. Anything else joins `helper`. Clobbers R1.
 fn void Asm.emit_result_object(&self, Jumps* helper) {
     void* c = self.c;
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+    helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, SLJIT_MEM | self.heap, self.lay.heap_gc_phase, SLJIT_MOV_U8);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
@@ -1097,10 +1097,10 @@ fn void Asm.load_global_callee(&self, Jumps* generic) {
     self.var_slot(vic, false);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     // Neither is a TDZ hole: the tag tests route that too.
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+    void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, span_op(), span_w());
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
     sljit_set_label(object, sljit_emit_label(c));
     for (uint k = 0; k < self.call.len; k++) generic.add(self.call.at[k]);
     self.call.len = 0;

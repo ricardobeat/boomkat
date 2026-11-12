@@ -161,7 +161,7 @@ fn int OptCg.flt_reg(&self, uint n, int ftmp) {
 fn void OptCg.reload_flt(&self, int fr, uint slot) {
     void* c = self.a.c;
     self.a.load(R2, slot);
-    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, K_INT);
+    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, k_int_op(), k_int_w());
     sljit_emit_fop1(c, SLJIT_MOV_F64, fr, 0, SLJIT_MEM | self.a.regs, (long)slot * TVal::size);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_double, sljit_emit_label(c));
@@ -176,7 +176,7 @@ fn void OptCg.reload_flt(&self, int fr, uint slot) {
 fn void OptCg.store_flt(&self, uint slot, int fsrc) {
     void* c = self.a.c;
     sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, fsrc, R0);
-    void* ok = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_INT);
+    void* ok = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, k_int_op(), k_int_w());
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, CANONICAL_NAN);
     sljit_set_label(ok, sljit_emit_label(c));
     self.a.store(slot, R0);
@@ -228,7 +228,7 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
         self.store_obj(nd, slot, nd.reg);
     } else if (nd.rep == OptRep.INT32) {
         sljit_emit_op2(c, SLJIT_AND, R0, 0, nd.reg, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
         self.a.store(slot, R0);
     } else {
         self.store_flt(slot, nd.reg);
@@ -251,7 +251,7 @@ fn void OptCg.def_int(&self, uint n, int src) {
         return;
     }
     sljit_emit_op2(c, SLJIT_AND, R1, 0, src, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-    sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, k_int_op(), k_int_w());
     self.a.store(nd.home, R1);
 }
 
@@ -668,7 +668,7 @@ fn void OptCg.int32_from_r0(&self, uint slot = uint::max) {
     // The fastint is tested first: its path runs nothing of the double's.
     sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R0, 0, SLJIT_IMM, 48);
     void* fastint = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT);
-    self.a.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT));
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, k_int_op(), k_int_w()));
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
     sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, R1, 0, FR0, 0);
     sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, R1, 0);
@@ -714,7 +714,7 @@ fn void OptCg.emit_check_num(&self, uint i, OptNode* n) {
 // A double from the value in R0, which must be a number (exit NOT_NUMBER): into `fr`.
 fn void OptCg.number_from_r0(&self, uint i, int fr) {
     void* c = self.a.c;
-    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
+    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, k_int_op(), k_int_w());
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, fr, R0);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_double, sljit_emit_label(c));
@@ -819,8 +819,8 @@ fn void OptCg.emit_cap_refs(&self) {
     self.a.reads_callee = true;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.a.la, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
-    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, k_obj_op(), k_obj_w());
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.fn_comp_func);
     fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R1, l.act_func));
@@ -836,7 +836,7 @@ fn void OptCg.box_index(&self, uint n) {
     void* c = self.a.c;
     int r = self.int_reg(n, R3);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, r, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-    sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, k_int_op(), k_int_w());
 }
 
 // The boxed value of number node `n`, or the constant of STORE_CONST `n`, in `dst`.
@@ -853,10 +853,10 @@ fn void OptCg.box_node(&self, uint n, int dst) {
         self.a.load(dst, nd.home);
     } else if (nd.rep == OptRep.INT32) {
         sljit_emit_op2(c, SLJIT_AND, dst, 0, nd.reg, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-        sljit_emit_op2(c, SLJIT_OR, dst, 0, dst, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op2(c, SLJIT_OR, dst, 0, dst, 0, k_int_op(), k_int_w());
     } else {
         sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, nd.reg, dst);
-        void* ok = sljit_emit_cmp(c, SLJIT_LESS, dst, 0, SLJIT_IMM, K_INT);
+        void* ok = sljit_emit_cmp(c, SLJIT_LESS, dst, 0, k_int_op(), k_int_w());
         sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, CANONICAL_NAN);
         sljit_set_label(ok, sljit_emit_label(c));
     }
@@ -1074,7 +1074,7 @@ fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, int x) 
     }
     if (is_float) {
         // TVal.set_number: a NaN whose bits would read as a tag.
-        void* plain = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_INT);
+        void* plain = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, k_int_op(), k_int_w());
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, CANONICAL_NAN);
         sljit_set_label(plain, sljit_emit_label(c));
     } else {
@@ -1088,7 +1088,7 @@ fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, int x) 
             sljit_set_label(small, sljit_emit_label(c));
         }
         sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
         if (boxed != null) sljit_set_label(boxed, sljit_emit_label(c));
     }
     if (n.rep == OptRep.NONE) {
@@ -1230,8 +1230,8 @@ fn void OptCg.publish(&self, uint i, uint slot) {
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     a.call.bind(sljit_emit_label(c));
     a.call.len = 0;
-    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w()), i, OptExit.SLOW_PATH);
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
     self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal), i, OptExit.SLOW_PATH);
     self.shade(i);
@@ -1246,8 +1246,8 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     // An object or an inert value, while the collector is not marking: the invariant of OptRep.OBJECT.
     // The object is tested first, as what such a node mostly holds.
-    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
+    void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w());
     self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_STRING_START), i, OptExit.SLOW_PATH);
     void* inert = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(object, sljit_emit_label(c));
@@ -1447,7 +1447,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         known_slot = true;
     } else if (n.cc == 1) {
         // The receiver was proven an object of this shape by an earlier node (see OptBuild.forget_facts).
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     } else {
         a.unbox_object(R1, rr);
         a.guard_not_proxy(R1, R2);
@@ -1658,7 +1658,7 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
         a.load(R0, a.w.a);
     }
     if (n.cc != 0) {
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     } else {
         a.unbox_object(R1, rr);
         a.guard_plain(R1);
@@ -1759,8 +1759,8 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
         sljit_set_label(other[0], tests);
         sljit_set_label(other[1], tests);
     }
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
-    miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, k_obj_op(), k_obj_w());
+    miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
     miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R0, 0);
     // A NEW_OBJ's constructor is also constructable.
@@ -1787,12 +1787,12 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
         if ((n.cc & 8) == 0) {
             if (n.b != NO_NODE) {
                 int r = self.obj_reg(n.b, R0);
-                sljit_emit_op2(c, SLJIT_XOR, R0, 0, r, 0, SLJIT_IMM, K_OBJ);
+                sljit_emit_op2(c, SLJIT_XOR, R0, 0, r, 0, k_obj_op(), k_obj_w());
             } else {
                 a.load(R0, callee_reg + 1);
-                sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+                sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
             }
-            miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+            miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
             miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
         }
         if (n.b == NO_NODE && callee_reg + 1 >= a.frame_regs) {
@@ -1853,7 +1853,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
         a.load(R1, callee_reg);
     }
     // The guard before proved it an object.
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
     // The common case builds the object inline, from the cache the helper would read. R0 to R4 hold
     // no values of the optimized code, so nothing is saved around it.
     Jumps slow;
@@ -1885,14 +1885,14 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
         slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R0, 0));
         a.prop_base(R0, R1);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
-        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
-        slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
+        slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w()));
         // Heap.set_prototype also walks the other realms when there are any.
         slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | a.heap, l.heap_realms, SLJIT_IMM, 0));
         sljit_emit_op1(c, SLJIT_MOV, m | reg_sp(), SUB_VALUE_OFF, R2, 0);
         InlineAlloc plan = a.plain_object_plan(vm::constructor_inline_capacity(want));
         a.emit_inline_alloc(&plan, &slow);
-        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
         done = sljit_emit_jump(c, SLJIT_JUMP);
         slow.bind(sljit_emit_label(c));
         // The slow path reloads the constructor.
@@ -1902,7 +1902,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
         } else {
             a.load(R1, callee_reg);
         }
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
     }
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
@@ -1948,7 +1948,7 @@ fn void OptCg.emit_sunk_object(&self, uint i, OptNode* n) {
         a.load(R1, callee_reg);
     }
     // The guard before proved it an object.
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
     void*[5] slow;
     slow[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM, (long)(usz)&site.ctor);
@@ -2053,7 +2053,7 @@ fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, boxed);
     }
     int rr = self.obj_reg(n.b, R1);
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     a.put_key_check(key, -1, &a.call);
     a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUT_ABSENT_FAST_SUB });
@@ -2206,7 +2206,7 @@ fn void OptCg.emit_alloc(&self, uint i, OptNode* n) {
     Jumps slow;
     a.emit_inline_alloc(&plan, &slow);
     // The boxed object into the result register, which holds no count to release.
-    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
     a.store(n.home, R0);
     a.track_heap_store(n.home);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
@@ -2271,8 +2271,8 @@ fn void OptCg.emit_check_builtin(&self, uint i, OptNode* n) {
     }
     // A builtin not yet given an object of its realm is a light function.
     void* light = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)((types::TAG_LIGHTFUNC << 48) | (ulong)n.imm));
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.CALLEE);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, k_obj_op(), k_obj_w());
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()), i, OptExit.CALLEE);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.CALLEE);
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, SLJIT_MEM | R0, 0);
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
@@ -2424,8 +2424,8 @@ fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
         int r = self.obj_reg(n.b, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     }
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()), i, OptExit.SLOW_PATH);
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
     self.a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_array_push);
@@ -2728,8 +2728,8 @@ fn uint OptCg.emit_callee_test(&self, uint i, OptNode* n, void** jumps) {
     } else {
         a.load(R1, a.w.b + self.g.fns[n.fidx].reg_base);
     }
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
-    jumps[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, k_obj_op(), k_obj_w());
+    jumps[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
     jumps[1] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, SLJIT_MEM | R0, 0);
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);

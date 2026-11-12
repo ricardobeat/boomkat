@@ -1142,7 +1142,23 @@ struct JitFrame {
 
 const int REG_FRAME_BYTES = 512;
 
-const int JIT_SAVEDS = 6;
+// The saved registers of the shared native frame: ds, the record, the native return, the window,
+// the thunks and the heap, then the three pinned tag words where the target has the registers.
+fn int jit_saveds() @inline => pinned_tags() ? 9 : 6;
+
+// Whether generated code keeps K_OBJ, PAYLOAD_SPAN and K_INT in saved registers (reg_s(6) to
+// reg_s(8)), loaded once by the trampoline, so that the tag test or boxing of a value is one
+// register operation rather than a constant built for each. A target with few registers keeps them
+// immediates.
+fn bool pinned_tags() @inline => sljit_shim_info(0) >= 20;
+
+// The sljit operand pairs of K_OBJ, PAYLOAD_SPAN and K_INT.
+fn int k_obj_op() @inline => pinned_tags() ? reg_s(6) : SLJIT_IMM;
+fn long k_obj_w() @inline => pinned_tags() ? 0 : K_OBJ;
+fn int span_op() @inline => pinned_tags() ? reg_s(7) : SLJIT_IMM;
+fn long span_w() @inline => pinned_tags() ? 0 : PAYLOAD_SPAN;
+fn int k_int_op() @inline => pinned_tags() ? reg_s(8) : SLJIT_IMM;
+fn long k_int_w() @inline => pinned_tags() ? 0 : K_INT;
 // Words at JitFrame.sync_off: the return address and R0 to R4.
 const int SYNC_WORDS = 6;
 
@@ -1158,7 +1174,7 @@ fn JitFrame jit_frame() {
 // prologue of its own.
 fn void Asm.set_frame(&self) {
     JitFrame fr = jit_frame();
-    sljit_set_context(self.c, 0, SLJIT_ARGS3WWW, fr.scratches, JIT_SAVEDS, fr.locals);
+    sljit_set_context(self.c, 0, SLJIT_ARGS3WWW, fr.scratches, jit_saveds(), fr.locals);
 }
 
 // Make the VM's frame state describe the record register's frame, unless it
@@ -1225,7 +1241,12 @@ fn void init_trampoline() @noinline @private {
     // this frame's stack pointer (Dispatch.enter_sp).
     Dispatch* dl = (Dispatch*)(usz)4096;
     long enter_sp = (char*)&dl.enter_sp - (char*)dl;
-    sljit_emit_enter(c, 0, SLJIT_ARGS3WWW, fr.scratches, JIT_SAVEDS, fr.locals);
+    sljit_emit_enter(c, 0, SLJIT_ARGS3WWW, fr.scratches, jit_saveds(), fr.locals);
+    if (pinned_tags()) {
+        sljit_emit_op1(c, SLJIT_MOV, k_obj_op(), 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op1(c, SLJIT_MOV, span_op(), 0, SLJIT_IMM, PAYLOAD_SPAN);
+        sljit_emit_op1(c, SLJIT_MOV, k_int_op(), 0, SLJIT_IMM, K_INT);
+    }
     if (REG_CALLS) {
         sljit_shim_move_sp(c, R0, 0);
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_s(0), enter_sp, R0, 0);
@@ -1386,7 +1407,7 @@ fn void Asm.guard_int_alt(&self, int reg) {
 // `reg`, a fastint payload shifted left by 16, boxed as a fastint.
 fn void Asm.box_shifted(&self, int reg) {
     sljit_emit_op2(self.c, SLJIT_LSHR, reg, 0, reg, 0, SLJIT_IMM, 16);
-    sljit_emit_op2(self.c, SLJIT_OR, reg, 0, reg, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(self.c, SLJIT_OR, reg, 0, reg, 0, k_int_op(), k_int_w());
 }
 
 // Charge a backward branch against the GC budget as vm_branch does, taking
@@ -1444,7 +1465,7 @@ fn void Asm.load_number(&self, int fr, uint r) {
     void* c = self.c;
     long off = (long)r * TVal::size;
     self.load(R2, r);
-    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, K_INT);
+    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, k_int_op(), k_int_w());
     sljit_emit_fop1(c, SLJIT_MOV_F64, fr, 0, SLJIT_MEM | self.regs, off);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_double, sljit_emit_label(c));
@@ -1466,7 +1487,7 @@ fn void Asm.load_imm_number(&self, int fr, long value) {
 fn void Asm.store_number(&self, uint r) {
     void* c = self.c;
     sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R2);
-    void* ok = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_INT);
+    void* ok = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, k_int_op(), k_int_w());
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, CANONICAL_NAN);
     sljit_set_label(ok, sljit_emit_label(c));
     self.store(r, R2);
@@ -1536,7 +1557,7 @@ $else
             sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
             sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, (long)w.get_bc());
             sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-            sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+            sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
             self.store(ra, R0);
         case LDUNDEF:
         case LDNULL:
@@ -1945,7 +1966,7 @@ fn void Asm.emit_bitop(&self, Opcode op, uint ra, uint rb, uint rc, bool numbers
     sljit_emit_op2(c, sop | SLJIT_32, R0, 0, R0, 0, src, srcw);
     sljit_emit_op1(c, base == USHR ? SLJIT_MOV_U32 : SLJIT_MOV_S32, R0, 0, R0, 0);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
     self.store(ra, R0);
 }
 
@@ -1972,8 +1993,8 @@ fn void Asm.truth_test(&self, uint r, Jumps* truthy, Jumps* falsy) {
     truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     falsy.add(sljit_emit_jump(c, SLJIT_JUMP));
     sljit_set_label(not_bool, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_INT);
-    void* not_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_int_op(), k_int_w());
+    void* not_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
     sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 16);
     truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     falsy.add(sljit_emit_jump(c, SLJIT_JUMP));
@@ -1988,7 +2009,7 @@ fn void Asm.truth_test(&self, uint r, Jumps* truthy, Jumps* falsy) {
 fn void Asm.truth_rest(&self, Jumps* truthy, Jumps* falsy, Jumps* slow) {
     void* c = self.c;
     // A double is truthy unless it is zero or NaN.
-    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
+    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, k_int_op(), k_int_w());
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
     self.load_imm_number(FR1, 0);
     truthy.add(sljit_emit_fcmp(c, SLJIT_ORDERED_NOT_EQUAL, FR0, 0, FR1, 0));
@@ -1996,7 +2017,7 @@ fn void Asm.truth_rest(&self, Jumps* truthy, Jumps* falsy, Jumps* slow) {
     sljit_set_label(not_double, sljit_emit_label(c));
     // A string is truthy when it is not empty or is a symbol.
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
-    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, self.lay.str_length);
     truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, self.lay.str_flags);
@@ -2004,8 +2025,8 @@ fn void Asm.truth_rest(&self, Jumps* truthy, Jumps* falsy, Jumps* slow) {
     truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
     falsy.add(sljit_emit_jump(c, SLJIT_JUMP));
     sljit_set_label(not_string, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
     // An object is truthy unless it is the realm's [[IsHTMLDDA]] object.
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.heap, self.htmldda_off);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, R2, 0));
@@ -2033,7 +2054,7 @@ fn void Asm.int32_operand(&self, int reg) {
     sljit_emit_op1(c, SLJIT_MOV, reg, 0, SLJIT_IMM, 0);
     done.add(sljit_emit_jump(c, SLJIT_JUMP));
     sljit_set_label(not_null, sljit_emit_label(c));
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, reg, 0, SLJIT_IMM, K_INT));
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, reg, 0, k_int_op(), k_int_w()));
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, reg);
     // Out-of-range doubles, infinities and NaN either give a value outside the
     // int32 range or, for NaN on some targets, 0, which is NaN's ToInt32.
@@ -2068,8 +2089,8 @@ fn void Asm.equality(&self, bool strict, Jumps* eq, Jumps* ne, Jumps* slow) {
         eq.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R3, 0, SLJIT_IMM, 1));
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, R1, 0);
         sljit_set_label(test_other, sljit_emit_label(c));
-        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
-        ne.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
+        ne.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.heap, self.htmldda_off);
         eq.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, R2, 0));
         ne.add(sljit_emit_jump(c, SLJIT_JUMP));
@@ -2084,7 +2105,7 @@ fn void Asm.equality(&self, bool strict, Jumps* eq, Jumps* ne, Jumps* slow) {
         slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, K_INT + PAYLOAD_SPAN));
     }
     sljit_emit_op2(c, SLJIT_AND, R2, 0, R0, 0, R1, 0);
-    void* not_ints = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_INT);
+    void* not_ints = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, k_int_op(), k_int_w());
     eq.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, R1, 0));
     ne.add(sljit_emit_jump(c, SLJIT_JUMP));
     sljit_set_label(not_ints, sljit_emit_label(c));
@@ -2155,7 +2176,7 @@ fn void Asm.equality(&self, bool strict, Jumps* eq, Jumps* ne, Jumps* slow) {
 // FR(fr) = the number `reg` holds, a double or a fastint. Uses R3.
 fn void Asm.to_double(&self, int fr, int reg) {
     void* c = self.c;
-    void* is_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, reg, 0, SLJIT_IMM, K_INT);
+    void* is_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, reg, 0, k_int_op(), k_int_w());
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, fr, reg);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(is_int, sljit_emit_label(c));
@@ -2177,8 +2198,8 @@ fn void Asm.null_test_r0(&self, Jumps* nullish, Jumps* other) {
     void* c = self.c;
     nullish.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
     nullish.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_NULL));
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    other.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+    other.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.heap, self.htmldda_off);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, R2, 0));
     other.add(sljit_emit_jump(c, SLJIT_JUMP));
