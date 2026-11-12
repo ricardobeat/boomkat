@@ -15,10 +15,12 @@ lines of --jit-dump-feedback to identify it); `opt` marks optimized code.
 
 --callers PATTERN shows the call chains into the functions whose name contains PATTERN.
 --annotate PATTERN prints the disassembly of the hottest engine function whose name contains
-PATTERN with the samples at each instruction. Call chains follow frame pointers: a function that
+PATTERN with the samples at each instruction. --annotate-code fn#N does the same for the optimized
+code of function N (its hottest body), node by node, leaving out the nodes no sample fell in; it
+disassembles with llvm-mc. Call chains follow frame pointers: a function that
 keeps none (generated code may not) ends its chain.
 """
-import argparse, bisect, collections, os, re, subprocess, sys, tempfile
+import argparse, bisect, collections, os, platform, re, shutil, subprocess, sys, tempfile
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument('--delay', type=float, default=2.0, help='seconds before sampling starts')
@@ -26,6 +28,7 @@ ap.add_argument('--seconds', type=float, default=6, help='sampling duration')
 ap.add_argument('--top', type=int, default=15)
 ap.add_argument('--callers', help='show the call chains into functions whose name contains this')
 ap.add_argument('--annotate', help='annotate the hottest engine function whose name contains this')
+ap.add_argument('--annotate-code', metavar='FN', help='annotate the optimized code of this function (fn#N)')
 ap.add_argument('--keep', help='keep raw sample and map files with this path prefix')
 ap.add_argument('cmd', nargs=argparse.REMAINDER)
 a = ap.parse_args()
@@ -35,7 +38,8 @@ if not cmd:
 tmp = tempfile.mkdtemp(prefix='jitprof.')
 sample_path, map_path = os.path.join(tmp, 'samples.txt'), os.path.join(tmp, 'map.txt')
 with open(map_path, 'w') as mf:
-    rc = subprocess.run([cmd[0], '--jit-dump-feedback', '--sample-pcs=' + sample_path,
+    dump_code = ['--jit-dump-code'] if a.annotate_code else []
+    rc = subprocess.run([cmd[0], '--jit-dump-feedback'] + dump_code + ['--sample-pcs=' + sample_path,
                          '--sample-after=%g' % a.delay, '--sample-for=%g' % a.seconds] + cmd[1:],
                         stdout=mf, stderr=subprocess.STDOUT).returncode
 if not os.path.exists(sample_path):
@@ -44,6 +48,7 @@ if not os.path.exists(sample_path):
 # The code map: generated code by address.
 maps, subs = [], []
 onodes = {}  # optimized code by start address: its node map as the latest compile there printed it
+ocode = {}  # optimized code bytes by start address (--annotate-code)
 cur = None
 for line in open(map_path, errors='replace'):
     if line.startswith('onodes '):
@@ -58,6 +63,9 @@ for line in open(map_path, errors='replace'):
                 nodes.append((int(ad, 16), op + ' ' + opcode if op == 'GENERIC' and opcode else op, pc, fidx, opcode))
         nodes.sort(key=lambda x: x[0])
         onodes[int(p[2], 16)] = (p[1], nodes)
+    elif line.startswith('ocode '):
+        _, fn, start, hexcode = line.split()
+        ocode[int(start, 16)] = (fn, bytes.fromhex(hexcode))
     elif line.startswith('map '):
         p = line.split()
         # Subroutines and the call entry follow the instruction bodies.
@@ -144,6 +152,7 @@ hot = collections.Counter()
 nodekinds, nodesites = collections.Counter(), collections.Counter()
 callers = collections.Counter()
 annot = collections.defaultdict(collections.Counter)  # engine function -> unslid address -> samples
+code_hits = collections.defaultdict(collections.Counter)  # optimized body start -> pc -> samples
 
 for l in lines[1:]:
     toks = l.split()[1:]
@@ -163,6 +172,8 @@ for l in lines[1:]:
             hot['%s +0x%x (op %s)' % (tag, pc - mp['start'], e[-1][1] if e else 'entry')] += 1
             fns[tag + ' n' + str(len(mp['ents']))] += 1
             ops[(tag, e[-1][1] if e else 'entry')] += 1
+            if mp['opt'] and mp['fn'] == a.annotate_code:
+                code_hits[mp['start']][pc] += 1
             nd = node_at(mp['start'], pc) if mp['opt'] else None
             if nd:
                 nodekinds[nd[1]] += 1
@@ -230,6 +241,45 @@ if a.annotate:
                 continue
             c = counts.get(int(m.group(1), 16), 0)
             print('%6s  %5x  %s' % (c or '', int(m.group(1), 16) - lo, m.group(2)))
+if a.annotate_code:
+    bodies = [(sum(c.values()), start) for start, c in code_hits.items() if start in ocode]
+    if not bodies:
+        print('\nno samples in optimized code of %s' % a.annotate_code)
+    else:
+        n, start = max(bodies)
+        fn, code = ocode[start]
+        mc = shutil.which('llvm-mc') or next((c for c in ('/opt/homebrew/opt/llvm/bin/llvm-mc', '/usr/local/opt/llvm/bin/llvm-mc') if os.path.exists(c)), None)
+        triple = {'arm64': 'arm64', 'aarch64': 'aarch64', 'x86_64': 'x86_64', 'AMD64': 'x86_64'}.get(platform.machine())
+        if mc is None or triple is None:
+            sys.exit('jit_profile: --annotate-code needs llvm-mc on an arm64 or x86_64 host')
+        out = subprocess.run([mc, '--disassemble', '--show-encoding', '-triple=' + triple],
+                             input=' '.join('0x%02x' % b for b in code), capture_output=True, text=True).stdout
+        insns, off = [], 0
+        for line in out.splitlines():
+            m = re.search(r'encoding: \[([^\]]*)\]', line)
+            if m:
+                insns.append((off, line[:m.start()].strip().rstrip(';').strip()))
+                off += len(m.group(1).split(','))
+        hits = code_hits[start]
+        nodes = onodes.get(start, (fn, []))[1]
+        print('\n-- %s optimized code: %d samples (%.1f%%), per instruction, nodes with samples' % (fn, n, 100.0 * n / max(total, 1)))
+        groups = []  # (node label, [(offset, text, samples)])
+        k = 0
+        for o, text in insns:
+            while k < len(nodes) and nodes[k][0] - start <= o:
+                nd = nodes[k]
+                groups.append(('%s pc %s %s%s' % (nd[1], nd[2], nd[4], ' fn %s' % nd[3] if nd[3] not in ('', '0') else ''), []))
+                k += 1
+            if not groups:
+                groups.append(('prologue', []))
+            groups[-1][1].append((o, text, hits.get(start + o, 0)))
+        for label, rows in groups:
+            g = sum(r[2] for r in rows)
+            if g == 0:
+                continue
+            print('  %5d  %s (%d instructions)' % (g, label, len(rows)))
+            for o, text, c in rows:
+                print('%7s  %5x  %s' % (c or '', o, text))
 if a.keep:
     os.replace(sample_path, a.keep + '.samples.txt')
     os.replace(map_path, a.keep + '.map.txt')
