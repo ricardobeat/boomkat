@@ -856,6 +856,13 @@ fn OptRep OptBuild.rep_of(&self, uint node) @inline => self.g.nodes[node].rep;
 fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_NODE, long imm = 0) {
     if (!keeps_fresh(op)) self.fresh_n = 0;
     OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .c = NO_NODE, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1, .home = NO_NODE, .shape = heap::SHAPE_NONE };
+    switch (op) {
+        case LOAD_FIELD: case LOAD_ELEM: case LOAD_CAP: case LOAD_GLOBAL:
+            n.counted = rep == OptRep.VALUE;
+        case COPY:
+            n.counted = self.g.nodes[a].counted;
+        default:
+    }
     self.g.nodes.push(n);
     return (uint)self.g.nodes.len() - 1;
 }
@@ -4337,12 +4344,14 @@ fn OptRegState OptBuild.joined_value(&self, uint pos, uint r) {
     OptRegState same = { .node = NO_NODE };
     bool differ = false;
     bool boolean = true;
+    bool counted = false;
     foreach (p : self.preds(pos)) {
         if (p >= pos || self.dead[p]) continue;
         OptRegState s = self.ends[(usz)p * self.nregs + r];
         if (s.node == NO_NODE || self.rep_of(s.node) != OptRep.VALUE) return { .node = NO_NODE };
         differ |= same.node != NO_NODE && s.node != same.node;
         boolean = boolean && self.g.is_boolean(&self.g.nodes[s.node]);
+        counted |= self.g.nodes[s.node].counted;
         same.node = s.node;
         same.dirty |= s.dirty;
     }
@@ -4351,6 +4360,7 @@ fn OptRegState OptBuild.joined_value(&self, uint pos, uint r) {
     same.node = self.add(OptOp.PHI, OptRep.VALUE, NO_NODE, NO_NODE, (long)r);
     self.g.nodes[same.node].home = r;
     self.g.nodes[same.node].cc = boolean ? 1 : 0;
+    self.g.nodes[same.node].counted = counted;
     return same;
 }
 

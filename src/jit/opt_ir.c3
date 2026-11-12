@@ -14,8 +14,10 @@
 // the node that register currently holds.
 //
 // VALUE nodes: a boxed value in a machine register, such as a property read whose result is used
-// as the receiver of another field access (an object, or an inert value such as null; never a
-// string, a bigint or any other value that publication has to count). The
+// as the receiver of another field access: an object, an inert value such as null, or a string a
+// load read from a counted holder (OptNode.counted); never a bigint or a string that publication
+// would have to queue. A string a counted holder lets go of is queued then (Heap.decref), and only
+// a safepoint frees queued strings, so the window slot it is stored to before one keeps it. The
 // collector reads only the window, so the invariant that keeps it sound is: a VALUE node is
 // created only while incremental marking is off (else the load leaves for the baseline code,
 // which shades what it publishes), and it is stored to its home slot, raising the frame's
@@ -74,7 +76,7 @@ enum OptRep : char {
     INT32,
     // A double in a floating point register.
     FLOAT64,
-    // A boxed object or inert value in a machine register (see the invariant above).
+    // A boxed value in a machine register (see the invariant above).
     VALUE,
 }
 
@@ -268,8 +270,8 @@ enum OptOp : char {
     // VALUE node stored, or NO_NODE for a value in the window. Exits before any effect when the add
     // is not one the cache describes. It defines nothing. With cc 1 the object is one the code is
     // building (OptFresh) and the add is known: the value goes into the next slot and the object
-    // takes the shape `shape`, with only a window value that is neither inert nor an object taking
-    // the cache. The NEW_OBJECT validated every such key against the prototype chain.
+    // takes the shape `shape`, with only a value that is neither inert nor an object (from the
+    // window, or a node that may hold a string) taking the cache. The NEW_OBJECT validated every such key against the prototype chain.
     ADD_FIELD,
     // A field access of a sunk object, done in the graph: no code. Its dirty registers stay for the
     // exit the test hook may force there.
@@ -378,6 +380,9 @@ struct OptNode {
     // An inherited LOAD_FIELD (cc 2) whose entry has only ever held one receiver shape: any other
     // exits (OptExit.RECEIVER), so the read proves the shape as an own one does.
     bool exact;
+    // A VALUE node that may hold a string (read from a counted holder by a load, or a copy or phi
+    // of one), which a store into the heap counts. Any other VALUE node holds no counted value.
+    bool counted;
 }
 
 // A sunk allocation: its NEW_OBJECT node, the keys its fields are added under, in order, and the

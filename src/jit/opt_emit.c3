@@ -1306,11 +1306,12 @@ fn void OptCg.publish(&self, uint i, uint slot) {
 fn void OptCg.finish_value(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
-    // An object or an inert value, while the collector is not marking: the invariant of OptRep.VALUE.
-    // The object is tested first, as what such a node mostly holds.
+    // An object, an inert value or (from a counted holder) a string, while the collector is not
+    // marking: the invariant of OptRep.VALUE. The object is tested first, as what such a node
+    // mostly holds; the tags above the object's are the other counted values.
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
     void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w());
-    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_STRING_START), i, OptExit.SLOW_PATH);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, n.counted ? K_OBJ : K_STRING_START), i, OptExit.SLOW_PATH);
     void* inert = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(object, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
@@ -1624,8 +1625,8 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     // A typed array converts a number inline (an int32 one: the builder converts a double to the
     // integer kinds, OptBuild.put_elem); an object goes to the subroutine, as in the baseline code.
     OptRep rep = self.g.nodes[n.b].rep;
-    bool object = rep == OptRep.VALUE;
-    if (!object && self.const_view(n, true, &view) && (rep == OptRep.INT32 || TYPED_KINDS[view.kind].is_float())) {
+    bool boxed = rep == OptRep.VALUE;
+    if (!boxed && self.const_view(n, true, &view) && (rep == OptRep.INT32 || TYPED_KINDS[view.kind].is_float())) {
         int v = self.typed_store_value(n, TYPED_KINDS[view.kind]);
         self.emit_typed_store(TYPED_KINDS[view.kind], v, self.const_elem(i, n.a, &view));
         return;
@@ -1645,7 +1646,7 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         a.unbox_object(R1, rr);
         int k = self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
         // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
-        if (!object && k >= 0 && (rep == OptRep.INT32 || TYPED_KINDS[k].is_float())) {
+        if (!boxed && k >= 0 && (rep == OptRep.INT32 || TYPED_KINDS[k].is_float())) {
             int v = self.typed_store_value(n, TYPED_KINDS[k]);
             int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, a.lay.indexed_named_mask, true);
             self.exit_calls(i, OptExit.SLOW_PATH);
@@ -1658,9 +1659,9 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     self.value_to(n.b, R2);
     Jumps counted;
-    a.guard_old_value(&counted, object);
-    if (object) {
-        a.store_value_r2(&counted, true);
+    a.guard_old_value(&counted, boxed);
+    if (boxed) {
+        a.store_value_r2(&counted, !self.g.nodes[n.b].counted);
     } else {
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
     }
@@ -1801,11 +1802,11 @@ fn void OptCg.store_slot_value(&self, uint i, uint v, uint rv) {
     } else {
         self.value_to(v, R2);
     }
-    // A VALUE node (an object or an inert value) mostly replaces an object.
-    bool object = v != NO_NODE && self.g.nodes[v].rep == OptRep.VALUE;
-    a.guard_old_value(&counted, object);
-    if (v == NO_NODE || object) {
-        a.store_value_r2(&counted, object);
+    // A VALUE node mostly replaces an object; one that may hold a string has it counted.
+    bool boxed = v != NO_NODE && self.g.nodes[v].rep == OptRep.VALUE;
+    a.guard_old_value(&counted, boxed);
+    if (v == NO_NODE || boxed) {
+        a.store_value_r2(&counted, boxed && !self.g.nodes[v].counted);
     } else {
         // A number or a constant: inert.
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
@@ -2259,8 +2260,8 @@ fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
 // key against the prototype chain, and its shape is the one the previous add left, so the value
 // goes into the next slot and the object takes n.shape, pinned so that its id stays its own. The
 // object is young and nothing has scanned it since it was allocated (shaded while marking), so the
-// store needs no barrier. A window value that is neither inert nor an object needs its count and
-// takes the cache's path, which the caller emits next: true then, with `done` the jump past it.
+// store needs no barrier. A value that is neither inert nor an object (from the window, or a node
+// that may hold a string) needs its count and takes the cache's path, which the caller emits next: true then, with `done` the jump past it.
 fn bool OptCg.emit_known_add(&self, OptNode* n, void** done) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -2270,12 +2271,14 @@ fn bool OptCg.emit_known_add(&self, OptNode* n, void** done) {
     void* other = null;
     if (n.a == NO_NODE) {
         a.load(R2, a.w.a);
+    } else {
+        self.value_to(n.a, R2);
+    }
+    if (n.a == NO_NODE || self.g.nodes[n.a].counted) {
         void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
         sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, k_obj_op(), k_obj_w());
         other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
         sljit_set_label(inert, sljit_emit_label(c));
-    } else {
-        self.value_to(n.a, R2);
     }
     int rr = self.value_reg(n.b, R1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
