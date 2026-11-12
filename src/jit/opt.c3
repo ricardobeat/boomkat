@@ -384,7 +384,8 @@ fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     // A function of integers alone records no operand feedback, but a call to a body the tier can
     // inline is something to specialize on.
     for (uint i = 0; i < f.code_count; i++) {
-        if ((ic[i].feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0 && (opt_inline_plausible(h, f, i) || opt_direct_plausible(h, f, i))) return true;
+        OptCallees set;
+        if ((ic[i].feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0 && (opt_inline_plausible(h, f, i) || opt_direct_targets(h, f, i, &set))) return true;
         if (opt_push_site(h, f, i)) return true;
     }
     return false;
@@ -427,16 +428,27 @@ fn bool opt_has_field_feedback(CompiledFunction* f) {
     return false;
 }
 
-// Whether the call at word `i` of `f` names one callee whose call entry takes the call
-// (entry_takes): optimized code enters it directly (OptBuild.direct_callee).
-fn bool opt_direct_plausible(Heap* h, CompiledFunction* f, uint i) {
+// The functions optimized code enters the call at word `i` of `f` into directly
+// (OptBuild.direct_callee): every one its feedback names, each with a call entry that takes the
+// call (entry_takes). Several only with register calls, which enter the function the callee holds.
+// False, with `set` unfinished, when any is not such a function.
+fn bool opt_direct_targets(Heap* h, CompiledFunction* f, uint i, OptCallees* set) {
     Instruction w = f.code[i];
     bool var_call = w.op == Opcode.CALL_VAR || w.op == Opcode.CALL_GLOBAL;
     if (w.op != Opcode.CALL && w.op != Opcode.CALL_UNDEF_THIS && !var_call) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
-    if ((ic.feedback & (hobject::FB_POLY | hobject::FB_DOTCALL)) != 0 || hobject::ic_call_count(ic) != 1) return false;
-    CompiledFunction* cf = opt_site_callee(h, f, i);
-    return cf != null && cf.realm == f.realm && call_entry_eligible(cf) && entry_takes(cf, var_call ? w.b : w.c, w.op != Opcode.CALL);
+    uint count = hobject::ic_call_count(ic);
+    if (count == 0 || (count > 1 && !REG_CALLS) || (ic.feedback & hobject::FB_DOTCALL) != 0) return false;
+    uint nargs = var_call ? w.b : w.c;
+    for (uint k = 0; k < count; k++) {
+        uint index = hobject::ic_call_target(ic, k);
+        if (index >= h.compiled_func_count) return false;
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[index];
+        if (cf == null || cf.realm != f.realm || !call_entry_eligible(cf) || !entry_takes(cf, nargs, w.op != Opcode.CALL)) return false;
+        set.fns[k] = cf;
+    }
+    set.count = count;
+    return true;
 }
 
 // Whether the call at word `i` of `f` names a callee that looks like an inline site: the cheap part

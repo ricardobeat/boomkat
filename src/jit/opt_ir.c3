@@ -154,7 +154,8 @@ enum OptOp : char {
     // that function, the receiver and the frame a real call would publish are acceptable, and
     // there is room for it. The nodes after it, until the next such node, are the callee's body.
     // a and b, when not NO_NODE, are OBJECT nodes holding the callee and the receiver (a nested
-    // call whose window lies beyond the caller's frame).
+    // call whose window lies beyond the caller's frame). Before a CALL_REG of a polymorphic call,
+    // imm is 0 and poly names the functions any of which passes.
     CHECK_CALLEE,
     // The variable a CALL_VAR (cc nonzero) or CALL_GLOBAL (imm its pc) names, stored in the call's
     // callee register as a published value; exits (SLOW_PATH) when its cache does not hold. Of
@@ -244,7 +245,7 @@ enum OptOp : char {
     GENERIC,
     // The call at pc of key (its CompiledFunction), CHECK_CALLEE before it: the window stored as a
     // GENERIC's, the callee entered through its register label (OptCg.emit_call_reg), its result
-    // stored to the window. The caller's registers survive the call; it exits at the call when the
+    // stored to the window. A null key is a polymorphic call, of the function the callee holds. The caller's registers survive the call; it exits at the call when the
     // callee has no call entry (DECLINED) or declines (DEEP).
     CALL_REG,
     // A NEW_OBJ (pc) of the constructor imm (its CompiledFunction*), after its CHECK_CALLEE: a plain
@@ -349,6 +350,7 @@ struct OptNode {
     // node, which the callee frame an exit publishes must keep.
     uint live_mask;
     // LOAD_FIELD, STORE_FIELD: 1 + the index in OptGraph.polys of the receiver shapes it accepts.
+    // CHECK_CALLEE of a polymorphic call: 1 + the index in OptGraph.callees of its functions.
     uint poly;
     // The window slot a node was defined into.
     uint home;
@@ -513,9 +515,16 @@ struct OptRegion {
     TVal* regs;
 }
 
+// The functions the callee of a polymorphic register call may be a closure of (OptNode.poly).
+struct OptCallees {
+    CompiledFunction*[hobject::IC_CALL_TARGETS] fns;
+    uint count;
+}
+
 struct OptGraph {
     OptRegion region;
     List{OptPoly} polys;
+    List{OptCallees} callees;
     List{OptNode} nodes;
     List{OptBlock} blocks;
     List{OptMove} moves;
@@ -544,6 +553,7 @@ fn void OptGraph.init(&self) {
     self.bindings.init(mem);
     self.captures.init(mem);
     self.polys.init(mem);
+    self.callees.init(mem);
     self.nodes.init(mem);
     self.blocks.init(mem);
     self.moves.init(mem);
@@ -559,6 +569,7 @@ fn void OptGraph.clear(&self) {
     self.bindings.clear();
     self.captures.clear();
     self.polys.clear();
+    self.callees.clear();
     self.nodes.clear();
     self.blocks.clear();
     self.moves.clear();
@@ -573,6 +584,7 @@ fn void OptGraph.free(&self) {
     self.bindings.free();
     self.captures.free();
     self.polys.free();
+    self.callees.free();
     self.nodes.free();
     self.blocks.free();
     self.moves.free();

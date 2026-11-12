@@ -2382,29 +2382,28 @@ fn void OptBuild.kill(&self, uint r) {
     self.drop_reg(r, NO_NODE);
 }
 
-// The function a call the tier runs as a GENERIC enters through its call entry's direct label
-// (Asm.emit_direct_call), or null: the one its feedback names alone, with a call entry whose shape
-// tests the call passes (entry_takes), guarded here by CHECK_CALLEE. A call of a variable reads
-// it for the guard first, as an inlined one does.
-fn CompiledFunction* OptBuild.direct_callee(&self) {
+// Whether the call the tier runs as a GENERIC enters its callee directly, guarded here by
+// CHECK_CALLEE: the functions its feedback names, each with a call entry whose shape tests the
+// call passes (entry_takes). `one` gets the function when it is the only one (entered through its
+// direct label, Asm.emit_direct_call, or its register label), else null: a polymorphic call, which
+// only a register call makes (CALL_REG of the function the callee holds). A call of a variable
+// reads it for the guard first, as an inlined one does.
+fn bool OptBuild.direct_callee(&self, CompiledFunction** one) {
     Opcode op = self.w.op;
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
-    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) || self.wide || self.f.ic_entries == null) return null;
-    if (var_call && self.f.var_ic_entries == null) return null;
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) || self.wide || self.f.ic_entries == null) return false;
+    if (var_call && self.f.var_ic_entries == null) return false;
     uint at = self.next_pc - 1;
-    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[at];
-    if ((ic.feedback & hobject::FB_CALL) == 0 || (ic.feedback & (hobject::FB_POLY | hobject::FB_DOTCALL)) != 0
-        || hobject::ic_call_count(ic) != 1 || opt_site_banned(self.f, self.f, at)) return null;
-    CompiledFunction* cf = opt_site_callee(self.h, self.f, at);
+    OptCallees set;
+    if (opt_site_banned(self.f, self.f, at) || !opt_direct_targets(self.h, self.f, at, &set)) return false;
     bool method = op == Opcode.CALL;
-    uint nargs = var_call ? self.w.b : self.w.c;
-    if (cf == null || cf.realm != self.f.realm || !call_entry_eligible(cf) || !entry_takes(cf, nargs, !method)) return null;
+    CompiledFunction* cf = set.count == 1 ? set.fns[0] : null;
     uint callee_reg = var_call ? self.w.a : self.w.b;
     uint callee_node = NO_NODE;
     uint recv_node = NO_NODE;
     if (var_call) {
         uint closure;
-        if (!self.body_closure(&closure)) return null;
+        if (!self.body_closure(&closure)) return false;
         // Into an OBJECT node beyond the caller's frame, else into the callee register.
         bool beyond = callee_reg >= self.caller_regs;
         uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, closure, (long)self.pc);
@@ -2417,14 +2416,19 @@ fn CompiledFunction* OptBuild.direct_callee(&self) {
             self.kill(callee_reg);
         }
     } else {
-        if (!self.call_operand(callee_reg, &callee_node)) return null;
-        if ((method || callee_reg + 1 < self.caller_regs) && !self.call_operand(callee_reg + 1, &recv_node)) return null;
+        if (!self.call_operand(callee_reg, &callee_node)) return false;
+        if ((method || callee_reg + 1 < self.caller_regs) && !self.call_operand(callee_reg + 1, &recv_node)) return false;
     }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)cf);
     self.g.nodes[chk].cc = method ? 1 : 0;
-    if (method) self.settle_method(chk, callee_reg, cf);
+    if (cf == null) {
+        self.g.callees.push(set);
+        self.g.nodes[chk].poly = (uint)self.g.callees.len();
+    } else if (method) {
+        self.settle_method(chk, callee_reg, cf);
+    }
     // A variable's binding as it stands, which the guard then compares the read with.
-    if (var_call) {
+    if (var_call && cf != null) {
         hobject::VarICEntry* vic = &((hobject::VarICEntry*)self.f.var_ic_entries)[at];
         if (vic.slot_ptr != null && vic.recycle_epoch == self.h.shape_recycle_epoch) {
             self.g.nodes[chk].key = constant_callee(vic.slot_ptr.get(), cf);
@@ -2432,13 +2436,14 @@ fn CompiledFunction* OptBuild.direct_callee(&self) {
     }
     self.snapshot(chk);
     self.direct_calls++;
-    return cf;
+    *one = cf;
+    return true;
 }
 
-// The call being lowered, of the callee `cf` its guard proved (direct_callee), as a CALL_REG into
-// the register label of the callee's code as it stands: its window stored, and what a call
-// leaves, its window dead, its result in the window and nothing known of the heap, but the
-// caller's values kept in their registers.
+// The call being lowered, of the callee `cf` its guard proved (direct_callee; null for any of a
+// polymorphic call's), as a CALL_REG into the register label of the callee's code as it stands:
+// its window stored, and what a call leaves, its window dead, its result in the window and
+// nothing known of the heap, but the caller's values kept in their registers.
 fn bool OptBuild.reg_call(&self, CompiledFunction* cf) {
     bool var_call = self.w.op == Opcode.CALL_VAR || self.w.op == Opcode.CALL_GLOBAL;
     uint callee_reg = var_call ? self.w.a : self.w.b;
@@ -2497,8 +2502,10 @@ fn bool OptBuild.generic(&self) {
                 return self.refuse_op(op);
         }
     }
-    CompiledFunction* direct = self.direct_callee();
-    if (direct != null && REG_CALLS) return self.reg_call(direct);
+    CompiledFunction* direct;
+    bool guarded = self.direct_callee(&direct);
+    if (guarded && REG_CALLS) return self.reg_call(direct);
+    if (!guarded) direct = null;
     uint n = self.add(OptOp.GENERIC, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
     self.g.nodes[n].key = direct;
     self.forget_facts();

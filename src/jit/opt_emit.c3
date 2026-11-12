@@ -1739,12 +1739,14 @@ fn void OptCg.store_counted(&self, uint i, Jumps* counted) {
 // The guard of an inlined call, run before anything of the call is: the callee register holds a
 // closure of the inlined function that a real call would enter (th_lean_target and the checks
 // around it), a method call's receiver is acceptable, and the frame it would publish has room.
-// Any miss leaves for the baseline code at the call.
+// Any miss leaves for the baseline code at the call. A polymorphic call's closure may be of any of
+// its functions.
 fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
     CallLayout* k = call_layout();
-    CompiledFunction* cf = (CompiledFunction*)(usz)n.imm;
+    OptCallees set = { .fns[0] = (CompiledFunction*)(usz)n.imm, .count = 1 };
+    if (n.poly != 0) set = self.g.callees[(sz)n.poly - 1];
     a.decode(n.pc);
     // The call is an instruction of the node's function: of an inlined body for a nested call.
     OptFn* caller = &self.g.fns[n.fidx];
@@ -1786,16 +1788,31 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV_S32, R4, 0, m | R0, k.fn_builtin);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R0, a.lay.fn_comp_func);
-    miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)(usz)cf);
+    uint most_regs = 0;
+    void*[hobject::IC_CALL_TARGETS] found;
+    for (uint f = 0; f < set.count; f++) {
+        if (f + 1 < set.count) {
+            found[f] = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, (long)(usz)set.fns[f]);
+        } else {
+            miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)(usz)set.fns[f]);
+        }
+        most_regs = max(most_regs, set.fns[f].num_regs);
+    }
+    if (set.count > 1) {
+        void* is_one = sljit_emit_label(c);
+        for (uint f = 0; f + 1 < set.count; f++) sljit_set_label(found[f], is_one);
+    }
     Jumps scope;
     a.emit_scope_test(R0, R4, &scope);
     for (uint j = 0; j < scope.len; j++) miss[misses++] = scope.at[j];
     if (constant != null) sljit_set_label(constant, sljit_emit_label(c));
     // An exit from the body publishes its frame and those of the calls around it.
     a.room_acts = max(a.room_acts, caller.depth + 1);
-    a.room_slots = max(a.room_slots, callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS);
+    a.room_slots = max(a.room_slots, callee_reg + 2 + most_regs + vm::FRAME_SCRATCH_SLOTS);
+    bool takes_this = false;
+    for (uint f = 0; f < set.count; f++) takes_this = takes_this || !set.fns[f].call_flags.ignores_this;
     // A sunk receiver (c names its sink) is an object any exit allocates into the frame it publishes.
-    if ((n.cc & 3) == 1 && !cf.call_flags.ignores_this && !(n.b == NO_NODE && n.c != NO_NODE)) {
+    if ((n.cc & 3) == 1 && takes_this && !(n.b == NO_NODE && n.c != NO_NODE)) {
         // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
         // that any exit stores into a frame it publishes.
         // The read of the method proved it an object when it is that read's receiver (bit 3).
@@ -2929,8 +2946,9 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
     }
 }
 
-// CALL_REG: the call of n.key, which CHECK_CALLEE proved, through the register label of the
-// callee's code as it stands (Asm.emit_call_entry): the direct label's path on a native frame of
+// CALL_REG: the call of n.key, which CHECK_CALLEE proved (or of the function the callee holds,
+// for a polymorphic call's null key), through the register label of the callee's code as it stands
+// (Asm.emit_call_entry): the direct label's path on a native frame of
 // its own, so that the values live across the call wait in this frame's save area rather than
 // boxed in the window. The callee's record is an ordinary one: it may exit, throw, collect or
 // call as any frame does, and it returns its result in R1. The snapshot's stores and the resume
@@ -2951,7 +2969,14 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     self.spill_live(i, true);
     // A plain call's receiver is undefined, as th_publish_lean's clear_this makes it.
     if (!method) a.store(callee + 1, SLJIT_IMM, K_UNDEF);
-    a.mov(R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
+    if (cf != null) {
+        a.mov(R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
+    } else {
+        a.load(R0, callee);
+        sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+        a.mov(R0, 0, SLJIT_MEM | R0, a.lay.fn_comp_func);
+        a.mov(R0, 0, SLJIT_MEM | R0, k.cf_jit_code);
+    }
     void* no_code = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     a.mov(R0, 0, SLJIT_MEM | R0, k.bc_reg_entry);
     void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
