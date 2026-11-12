@@ -35,7 +35,7 @@ struct OptOverride {
     uint block;
     uint reg;
     OptRep rep;
-    // An OBJECT rep asked only to keep a read out of a window slot beyond the caller's frame
+    // A VALUE rep asked only to keep a read out of a window slot beyond the caller's frame
     // (OptBuild.get_field), which a numeric use may still turn into its own rep.
     bool soft;
 }
@@ -45,7 +45,7 @@ struct OptRegState {
     bool dirty;
 }
 
-// A field value the code holds: field `key` of the OBJECT node `recv` (the root of its copies), or
+// A field value the code holds: field `key` of the VALUE node `recv` (the root of its copies), or
 // of window register `reg` when recv is NO_NODE (reg is NO_NODE otherwise), last read into or
 // stored from `node`.
 struct OptAvail {
@@ -866,7 +866,7 @@ fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_
 fn bool keeps_fresh(OptOp op) {
     switch (op) {
         case CONST_I32: case CONST_F64: case CONST_OBJ: case CHECK_I32: case CHECK_NUM: case LOAD_CAP:
-        case LOAD_FIELD: case LOAD_LENGTH: case STORE_FIELD: case STORE_OBJ: case COPY:
+        case LOAD_FIELD: case LOAD_LENGTH: case STORE_FIELD: case STORE_VALUE: case COPY:
         case ADD_I32: case SUB_I32: case MUL_I32: case AND_I32: case OR_I32: case XOR_I32: case NOT_I32:
         case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32: case I32_TO_F64: case F64_TO_I32:
         case ADD_F64: case SUB_F64: case MUL_F64: case DIV_F64: case NEG_F64: case MATH:
@@ -887,7 +887,7 @@ fn void OptBuild.note_fresh(&self, uint node, CompiledFunction* cf) {
     self.fresh[self.fresh_n++] = { .node = node, .shape = 0, .count = 0, .capacity = vm::constructor_inline_capacity(want) };
 }
 
-// The ADD_FIELD node `n` adds `key` to the object of OBJECT node `recv`. When that is an object
+// The ADD_FIELD node `n` adds `key` to the object of VALUE node `recv`. When that is an object
 // being built, the add is the shared transition from the shape it has, if there is one and the
 // object has room: the node records the shape it leaves (cc 1), and so does the object.
 fn void OptBuild.add_known(&self, uint n, uint recv, void* key) {
@@ -1008,8 +1008,8 @@ fn uint OptBuild.const_f64(&self, double v) {
 fn uint OptBuild.operand(&self, uint reg, OptRep want) {
     if (reg >= self.nregs) return NO_NODE;
     OptRegState s = self.cur[reg];
-    if (s.node != NO_NODE && self.rep_of(s.node) == OptRep.OBJECT) {
-        // A field read of this body kept beyond the caller's frame as an OBJECT node only for want
+    if (s.node != NO_NODE && self.rep_of(s.node) == OptRep.VALUE) {
+        // A field read of this body kept beyond the caller's frame as a VALUE node only for want
         // of a use (OptBuild.get_field): the next round reads it as a number.
         OptNode* ld = &self.g.nodes[s.node];
         bool load = ld.op == OptOp.LOAD_FIELD || ld.op == OptOp.LOAD_ELEM || ld.op == OptOp.LOAD_GLOBAL;
@@ -1018,7 +1018,7 @@ fn uint OptBuild.operand(&self, uint reg, OptRep want) {
         }
         // A number was asked of a register that holds an object: read it from the window as any other
         // value there (the guard exits when it is not a number).
-        self.publish_object(reg);
+        self.publish_value(reg);
         self.kill(reg);
         s = self.cur[reg];
     }
@@ -1105,7 +1105,7 @@ fn bool OptBuild.wraps(&self, uint rb, uint rc) {
     if (op != Opcode.ADD && op != Opcode.SUB && op != Opcode.ADDI && op != Opcode.SUBI) return false;
     if (self.cur_fn != 0 || self.wide || (self.feedback() & (hobject::FB_DBL | hobject::FB_STR | hobject::FB_OTHER)) != 0) return false;
     if (self.state_float(rb) || (rc != NO_NODE && self.state_float(rc))) return false;
-    if (self.is_object(rb) || (rc != NO_NODE && self.is_object(rc))) return false;
+    if (self.holds_value(rb) || (rc != NO_NODE && self.holds_value(rc))) return false;
     return self.truncated_use(self.insn, self.w.a, 3);
 }
 
@@ -1186,7 +1186,7 @@ fn uint OptBuild.bit_operand(&self, uint reg, bool numbers) {
 fn void OptBuild.ask_load(&self, uint pc, uint reg, OptRep want) {
     foreach (&c : self.load_reps) {
         if (c.block != pc) continue;
-        if (c.rep != want && (c.rep != OptRep.OBJECT || c.soft)) {
+        if (c.rep != want && (c.rep != OptRep.VALUE || c.soft)) {
             c.rep = want;
             c.soft = false;
             self.load_changed = true;
@@ -1220,7 +1220,7 @@ fn bool OptBuild.asked_rep(&self, OptRep* rep) {
     return false;
 }
 
-// The node holding the value of field `key` of the receiver, the OBJECT node `recv` (the root of
+// The node holding the value of field `key` of the receiver, the VALUE node `recv` (the root of
 // its copies) or window register `reg` when recv is NO_NODE, or NO_NODE.
 fn uint OptBuild.held_field(&self, void* key, uint recv, uint reg) {
     for (uint i = 0; i < self.avail_n; i++) {
@@ -1266,14 +1266,14 @@ fn void OptBuild.drop_reg(&self, uint reg, uint node) {
     self.avail_n = kept;
 }
 
-// GETCAP: a typed load (a number, or an OBJECT) when a use asked for one; else the value read into
+// GETCAP: a typed load (a number, or a VALUE) when a use asked for one; else the value read into
 // the window. In an inlined body a value of any kind
 // in a slot beyond the caller's frame would be out of the collector's sight.
 fn bool OptBuild.get_cap(&self) {
-    // The read takes the callee's closure from its window slot, or from the OBJECT node a nested
+    // The read takes the callee's closure from its window slot, or from the VALUE node a nested
     // call's guard checked.
     uint closure = self.cur_fn == 0 ? NO_NODE : self.cur[self.sites[self.cur_site].base - 2].node;
-    if (closure != NO_NODE && self.rep_of(closure) != OptRep.OBJECT) return self.generic();
+    if (closure != NO_NODE && self.rep_of(closure) != OptRep.VALUE) return self.generic();
     if (self.w.a < self.nregs && self.fold_capture()) return true;
     uint t = self.typed_load(OptOp.LOAD_CAP, NO_NODE);
     if (t != NO_NODE) {
@@ -1306,19 +1306,19 @@ fn bool OptBuild.get_global(&self) {
 
 // GETVAR in an inlined body, as GETGLOBAL, through its scope cache. The cache is keyed by the scope
 // chain the function runs with, which is the callee closure's, not the running frame's: the read
-// takes the closure from its window slot, or from the OBJECT node a nested call's guard checked
+// takes the closure from its window slot, or from the VALUE node a nested call's guard checked
 // (the node's cc is 1, b the closure node).
 fn bool OptBuild.get_scoped(&self) {
     return self.get_variable(true);
 }
 
-// The OBJECT node holding the closure of the body being lowered (NO_NODE when it is in its window
+// The VALUE node holding the closure of the body being lowered (NO_NODE when it is in its window
 // slot, or the function's own body); false when the slot holds a node of another kind.
 fn bool OptBuild.body_closure(&self, uint* node) {
     *node = NO_NODE;
     if (self.cur_fn == 0) return true;
     uint c = self.cur[self.sites[self.cur_site].base - 2].node;
-    if (c != NO_NODE && self.rep_of(c) != OptRep.OBJECT) return false;
+    if (c != NO_NODE && self.rep_of(c) != OptRep.VALUE) return false;
     *node = c;
     return true;
 }
@@ -1340,7 +1340,7 @@ fn bool OptBuild.get_variable(&self, bool scoped) {
     self.snapshot(n);
     self.kill(ra);
     self.load_def[ra] = self.pckey();
-    if (ra >= self.caller_regs) self.soft_object(ra);
+    if (ra >= self.caller_regs) self.soft_value(ra);
     return true;
 }
 
@@ -1480,7 +1480,7 @@ fn void OptBuild.fold_binding(&self, uint k) {
     } else {
         // Its death would let its address name another object: folded, it moves the epoch first.
         ((HObject*)v.get_heapptr()).gc.folded = true;
-        n = self.add(OptOp.CONST_OBJ, OptRep.OBJECT, NO_NODE, NO_NODE, (long)b.value);
+        n = self.add(OptOp.CONST_OBJ, OptRep.VALUE, NO_NODE, NO_NODE, (long)b.value);
     }
     self.set(self.w.a, n);
 }
@@ -1535,9 +1535,9 @@ fn bool OptBuild.load_this(&self) {
     uint ra = self.w.a;
     if (ra >= self.nregs) return false;
     uint recv = self.sites[self.cur_site].base - 1;
-    // The receiver of a nested call held in an OBJECT node.
-    if (self.is_object(recv)) {
-        self.set(ra, self.add(OptOp.COPY, OptRep.OBJECT, self.cur[recv].node));
+    // The receiver of a nested call held in a VALUE node.
+    if (self.holds_value(recv)) {
+        self.set(ra, self.add(OptOp.COPY, OptRep.VALUE, self.cur[recv].node));
     } else if (!self.window_copy(ra, 1)) {
         return false;
     }
@@ -1547,11 +1547,11 @@ fn bool OptBuild.load_this(&self) {
 
 // A window value copied to register `ra` of an inlined body, from the receiver slot (cc 1), register
 // B of the instruction (cc 2) or register A (cc 0, a return). A slot beyond the caller's frame takes
-// it in a register as an OBJECT node instead, which exits for any other value.
+// it in a register as a VALUE node instead, which exits for any other value.
 fn bool OptBuild.window_copy(&self, uint ra, char cc, uint* node = null) {
     if (ra >= self.nregs) return false;
     bool beyond = ra >= self.caller_regs;
-    uint n = self.add(OptOp.COPY_WINDOW, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    uint n = self.add(OptOp.COPY_WINDOW, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
     self.g.nodes[n].home = ra;
     self.g.nodes[n].cc = cc;
     self.snapshot(n);
@@ -1581,9 +1581,9 @@ fn bool OptBuild.index_ok(&self, uint r) {
 }
 
 // Whether register `r` holds an object (or other value) in the window.
-// A register holding an OBJECT node.
-fn bool OptBuild.is_object(&self, uint r) {
-    return r < self.nregs && self.cur[r].node != NO_NODE && self.rep_of(self.cur[r].node) == OptRep.OBJECT;
+// A register holding a VALUE node.
+fn bool OptBuild.holds_value(&self, uint r) {
+    return r < self.nregs && self.cur[r].node != NO_NODE && self.rep_of(self.cur[r].node) == OptRep.VALUE;
 }
 
 // Whether register `r` holds a CONST_OBJ node: an object, never a number.
@@ -1618,42 +1618,42 @@ fn char OptBuild.equality_cc(&self, uint kind, uint rb, uint rc, long* imm, uint
     return kind >= 2 ? (char)(kind + 2) : (char)(kind | (id << WINDOW_CONST_SHIFT));
 }
 
-// Store the OBJECT node of register `r` to its window slot if it is dirty.
-fn void OptBuild.publish_object(&self, uint r) {
+// Store the VALUE node of register `r` to its window slot if it is dirty.
+fn void OptBuild.publish_value(&self, uint r) {
     if (!self.cur[r].dirty) return;
-    // An OBJECT node of an inlined body's slot beyond the caller's frame is never stored in the
+    // A VALUE node of an inlined body's slot beyond the caller's frame is never stored in the
     // normal flow, unless a boolean (see the header of opt_ir.c3): the site stays a call.
     if (self.cur_fn != 0 && r >= self.caller_regs && !self.g.is_boolean(&self.g.nodes[self.cur[r].node])) self.inline_unsafe = true;
-    self.add(OptOp.STORE_OBJ, OptRep.NONE, self.cur[r].node, NO_NODE, (long)r);
+    self.add(OptOp.STORE_VALUE, OptRep.NONE, self.cur[r].node, NO_NODE, (long)r);
     self.cur[r].dirty = false;
 }
 
-// Whether `r` can be read from the window by a node that takes no OBJECT operand: holds a window
-// value, or an OBJECT node, which is then stored first.
+// Whether `r` can be read from the window by a node that takes no VALUE operand: holds a window
+// value, or a VALUE node, which is then stored first.
 fn bool OptBuild.in_window(&self, uint r) {
     if (r >= self.nregs) return false;
     if (self.cur[r].node == NO_NODE) return true;
-    if (!self.is_object(r)) return false;
-    self.publish_object(r);
+    if (!self.holds_value(r)) return false;
+    self.publish_value(r);
     return true;
 }
 
 // The read being lowered into register `ra`, beyond the caller's frame, left its value in the window,
-// out of the collector's sight: the next round builds it as an OBJECT node, which stays in a
+// out of the collector's sight: the next round builds it as a VALUE node, which stays in a
 // register, unless a numeric use asks for a number (OptOverride.soft). The body waits for it.
-fn void OptBuild.soft_object(&self, uint ra) {
+fn void OptBuild.soft_value(&self, uint ra) {
     bool asked = false;
     foreach (c : self.load_reps) asked |= c.block == self.pckey();
     if (!asked) {
-        self.load_reps.push({ .block = self.pckey(), .reg = ra, .rep = OptRep.OBJECT, .soft = true });
+        self.load_reps.push({ .block = self.pckey(), .reg = ra, .rep = OptRep.VALUE, .soft = true });
         self.load_changed = true;
     }
     self.inline_unsafe = true;
 }
 
 // The register `reg`, still in the window, was written by a property read the next round can
-// build as an OBJECT node.
-fn void OptBuild.ask_object(&self, uint reg) {
+// build as a VALUE node.
+fn void OptBuild.ask_value(&self, uint reg) {
     uint key = self.load_def[reg];
     if (key == NO_NODE) return;
     // The key names the inline site the load belongs to and its pc (OptBuild.pckey).
@@ -1667,7 +1667,7 @@ fn void OptBuild.ask_object(&self, uint reg) {
     if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC && o != Opcode.GETCAP
         && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR && o != Opcode.GETPROP) || si1 == 0)) return;
     foreach (&c : self.load_reps) if (c.block == key) return;
-    self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.OBJECT });
+    self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.VALUE });
     self.load_changed = true;
 }
 
@@ -1856,15 +1856,15 @@ fn bool OptBuild.get_field(&self) {
     uint recv = self.field_receiver();
     uint rnode = NO_NODE;
     if (self.w.op != Opcode.GETTHISC) {
-        if (self.is_object(recv)) {
+        if (self.holds_value(recv)) {
             rnode = self.cur[recv].node;
         } else if (self.in_window(recv)) {
-            self.ask_object(recv);
+            self.ask_value(recv);
         } else {
             return self.generic();
         }
-    } else if (self.cur_fn != 0 && self.is_object(recv)) {
-        // The receiver of a nested call held in an OBJECT node.
+    } else if (self.cur_fn != 0 && self.holds_value(recv)) {
+        // The receiver of a nested call held in a VALUE node.
         rnode = self.cur[recv].node;
     }
     void* key = (void*)ic.key.borrow();
@@ -1895,9 +1895,9 @@ fn bool OptBuild.get_field(&self) {
         self.kill(ra);
         if (ra < self.nregs) self.load_def[ra] = self.pckey();
         // A value of any kind in a slot beyond the caller's frame would be out of the collector's
-        // sight: the next round builds the read as an OBJECT node, which stays in a register, unless
+        // sight: the next round builds the read as a VALUE node, which stays in a register, unless
         // a numeric use asks for a number.
-        if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_object(ra);
+        if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_value(ra);
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].exact = exact;
@@ -1927,10 +1927,10 @@ fn bool OptBuild.length_site(&self) {
 fn bool OptBuild.get_length(&self) {
     uint recv = self.w.b;
     uint rnode = NO_NODE;
-    if (self.is_object(recv)) {
+    if (self.holds_value(recv)) {
         rnode = self.cur[recv].node;
     } else if (self.in_window(recv)) {
-        self.ask_object(recv);
+        self.ask_value(recv);
     } else {
         return self.generic();
     }
@@ -1943,7 +1943,7 @@ fn bool OptBuild.get_length(&self) {
 
 // A CALL of Array.prototype.push with one argument (opt_push_site): a CHECK_BUILTIN of the callee,
 // then an ARRAY_PUSH of the argument onto the receiver, whose result is the new length. In an
-// inlined body an operand beyond the caller's frame must be an OBJECT node; one a read left in the
+// inlined body an operand beyond the caller's frame must be a VALUE node; one a read left in the
 // window asks for that in the next round.
 fn bool OptBuild.push_call(&self) {
     if (self.w.op != Opcode.CALL || self.wide || !opt_push_site(self.h, self.cur_f(), self.next_pc - 1)) return false;
@@ -1955,7 +1955,7 @@ fn bool OptBuild.push_call(&self) {
     for (uint k = 0; k < 3; k++) {
         uint r = callee + k;
         nodes[k] = NO_NODE;
-        if (self.cur[r].node != NO_NODE && (k == 2 || self.is_object(r))) {
+        if (self.cur[r].node != NO_NODE && (k == 2 || self.holds_value(r))) {
             nodes[k] = self.cur[r].node;
         } else if (self.cur_fn != 0 && r >= self.caller_regs) {
             if (!self.call_operand(r, &nodes[k])) return self.cur_fn == 0 ? false : self.generic();
@@ -2018,7 +2018,7 @@ fn bool OptBuild.math_call(&self) {
     if (callee + 1 + m.args >= self.nregs || ra >= self.nregs) return false;
     if (self.cur_fn != 0 && callee + 1 + m.args >= self.caller_regs) return false;
     uint cnode = NO_NODE;
-    if (self.is_object(callee)) {
+    if (self.holds_value(callee)) {
         cnode = self.cur[callee].node;
     } else if (!self.in_window(callee)) {
         return false;
@@ -2027,7 +2027,7 @@ fn bool OptBuild.math_call(&self) {
     if (m == ABS && (ic.feedback & hobject::FB_OVF) != 0) ints = false;
     for (uint k = 0; k < m.args; k++) {
         uint r = callee + 2 + k;
-        if (self.is_object(r)) return false;
+        if (self.holds_value(r)) return false;
         if (self.cur[r].node == NO_NODE || self.rep_of(self.cur[r].node) != OptRep.INT32) ints = false;
     }
     uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, cnode, NO_NODE, (long)builtin);
@@ -2060,21 +2060,21 @@ fn bool OptBuild.put_field(&self) {
     uint recv = self.field_receiver();
     uint rnode = NO_NODE;
     if (!this_op) {
-        if (self.is_object(recv)) {
+        if (self.holds_value(recv)) {
             rnode = self.cur[recv].node;
         } else if (!self.in_window(recv)) {
             return self.generic();
         }
-    } else if (self.cur_fn != 0 && self.is_object(recv)) {
+    } else if (self.cur_fn != 0 && self.holds_value(recv)) {
         rnode = self.cur[recv].node;
     }
     uint rv = this_op ? self.w.a : self.w.b;
     // A constant is stored as one. A value with no node is stored from the window, through the
     // counted and traced store when it is a heap value (OptCg.store_slot_value); a property read
-    // that defined it is built as an OBJECT node in the next round.
+    // that defined it is built as a VALUE node in the next round.
     if (rv >= self.nregs) return self.generic();
     uint value = self.cur[rv].node != NO_NODE ? self.cur[rv].node : self.const_def[rv];
-    if (value == NO_NODE) self.ask_object(rv);
+    if (value == NO_NODE) self.ask_value(rv);
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, value, rnode, (long)self.pc);
     self.snapshot(n);
     void* key = (void*)ic.key.borrow();
@@ -2090,12 +2090,12 @@ fn bool OptBuild.put_field(&self) {
 }
 
 // PUTTHISC of an inlined constructor that adds its key to the object the inline allocated, held in
-// the receiver slot as an OBJECT node.
+// the receiver slot as a VALUE node.
 fn bool OptBuild.add_field(&self) {
     uint recv = self.field_receiver();
     uint rv = self.w.a;
     hobject::ICEntry* ic = self.absent_field();
-    if (ic == null || !self.is_object(recv) || rv >= self.nregs) return self.generic();
+    if (ic == null || !self.holds_value(recv) || rv >= self.nregs) return self.generic();
     uint value = self.cur[rv].node;
     // A window value is read from its slot, which lies in the caller's frame (beyond it there are
     // only nodes, see OptBuild.inline_unsafe).
@@ -2109,18 +2109,18 @@ fn bool OptBuild.add_field(&self) {
     return true;
 }
 
-// The receiver register `r` of an element access: a window value, or in an inlined body an OBJECT
+// The receiver register `r` of an element access: a window value, or in an inlined body a VALUE
 // node of a slot beyond the caller's frame, which `node` receives (it is never stored, so the access
-// takes it from its machine register). Any other OBJECT node is stored first.
+// takes it from its machine register). Any other VALUE node is stored first.
 fn bool OptBuild.elem_receiver(&self, uint r, uint* node) {
     *node = NO_NODE;
-    if (self.cur_fn != 0 && r >= self.caller_regs && self.is_object(r)) {
+    if (self.cur_fn != 0 && r >= self.caller_regs && self.holds_value(r)) {
         *node = self.cur[r].node;
         return true;
     }
     // A receiver a property or global read left in a slot beyond the frame: the next round builds
-    // that read as an OBJECT node.
-    if (self.cur_fn != 0 && r >= self.caller_regs && r < self.nregs && self.cur[r].node == NO_NODE) self.ask_object(r);
+    // that read as a VALUE node.
+    if (self.cur_fn != 0 && r >= self.caller_regs && r < self.nregs && self.cur[r].node == NO_NODE) self.ask_value(r);
     return self.in_window(r);
 }
 
@@ -2178,7 +2178,7 @@ fn bool OptBuild.get_elem(&self) {
     self.snapshot(n);
     self.kill(ra);
     self.load_def[ra] = self.pckey();
-    if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_object(ra);
+    if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_value(ra);
     return true;
 }
 
@@ -2192,7 +2192,7 @@ fn bool OptBuild.put_elem(&self) {
     if (rv >= self.nregs || !self.index_ok(self.w.b)) return self.generic();
     OptView view;
     uint cv = self.const_view(self.w.a, true, &view);
-    if (cv != NO_NODE && !self.is_object(rv)) {
+    if (cv != NO_NODE && !self.holds_value(rv)) {
         // A number stored into a constant typed array: an integer kind takes ToInt32 of it (its low
         // bits are those of the narrower conversions), a float kind the double.
         uint idx = self.operand(self.w.b, OptRep.INT32);
@@ -2282,13 +2282,13 @@ fn bool OptBuild.compare_value(&self) {
     // A folded constant that is not a number says as much as the feedback.
     bool non_number = (fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0 || self.const_non_number(rb) || self.const_non_number(rc);
     if (equality) {
-        if (self.is_object(rb)) self.publish_object(rb);
-        if (self.is_object(rc)) self.publish_object(rc);
+        if (self.holds_value(rb)) self.publish_value(rb);
+        if (self.holds_value(rc)) self.publish_value(rc);
     } else if (non_number) {
         return self.generic();
     }
-    bool numeric_b = self.cur[rb].node != NO_NODE && !self.is_object(rb);
-    bool numeric_c = self.cur[rc].node != NO_NODE && !self.is_object(rc);
+    bool numeric_b = self.cur[rb].node != NO_NODE && !self.holds_value(rb);
+    bool numeric_c = self.cur[rc].node != NO_NODE && !self.holds_value(rc);
     if (equality && non_number) {
         // Values the number path would only exit on: the baseline's equality test on the window.
         if (numeric_b || numeric_c) return self.generic();
@@ -2309,7 +2309,7 @@ fn bool OptBuild.compare_value(&self) {
     uint y = self.operand(rc, rep);
     if (x == NO_NODE || y == NO_NODE) return self.generic();
     uint row = equality ? ((op == Opcode.EQ || op == Opcode.SEQ) ? 8 : 9) : 4 + op.ordinal - Opcode.LT.ordinal;
-    uint n = self.add(OptOp.COMPARE, OptRep.OBJECT, x, y, (long)rep.ordinal);
+    uint n = self.add(OptOp.COMPARE, OptRep.VALUE, x, y, (long)rep.ordinal);
     self.g.nodes[n].cc = (char)row;
     self.set(ra, n);
     return true;
@@ -2321,7 +2321,7 @@ fn bool OptBuild.not_value(&self) {
     uint rb = self.w.b;
     if (ra >= self.nregs || rb >= self.nregs) return self.generic();
     uint node = self.truth_operand(rb);
-    uint n = self.add(OptOp.LNOT, node == NO_NODE ? OptRep.NONE : OptRep.OBJECT, node, NO_NODE, (long)rb);
+    uint n = self.add(OptOp.LNOT, node == NO_NODE ? OptRep.NONE : OptRep.VALUE, node, NO_NODE, (long)rb);
     // (A known operand cannot exit, but the test hook exits at any LNOT, with the frame it describes.)
     self.snapshot(n);
     if (node == NO_NODE) {
@@ -2334,11 +2334,11 @@ fn bool OptBuild.not_value(&self) {
 }
 
 // The node whose truth a test of register `r` reads, a number or a boolean; NO_NODE for a value
-// in the window, where any other OBJECT node is stored first.
+// in the window, where any other VALUE node is stored first.
 fn uint OptBuild.truth_operand(&self, uint r) {
     uint node = self.cur[r].node;
-    if (!self.is_object(r) || self.g.is_boolean(&self.g.nodes[node])) return node;
-    self.publish_object(r);
+    if (!self.holds_value(r) || self.g.is_boolean(&self.g.nodes[node])) return node;
+    self.publish_value(r);
     return NO_NODE;
 }
 
@@ -2371,8 +2371,8 @@ fn bool OptBuild.typeof_value(&self) {
     if (ra >= self.nregs || rb >= self.nregs) return self.generic();
     uint rnode = NO_NODE;
     // A number's name is known here: an int32 or a double read as such, never a window value.
-    bool number = self.cur[rb].node != NO_NODE && !self.is_object(rb);
-    if (!number && self.is_object(rb)) rnode = self.cur[rb].node;
+    bool number = self.cur[rb].node != NO_NODE && !self.holds_value(rb);
+    if (!number && self.holds_value(rb)) rnode = self.cur[rb].node;
     uint n = self.add(OptOp.TYPEOF, OptRep.NONE, rnode, NO_NODE, (long)rb);
     self.g.nodes[n].home = ra;
     self.g.nodes[n].cc = number ? 1 : 0;
@@ -2425,7 +2425,7 @@ fn bool OptBuild.init_slot(&self) {
     uint value = NO_NODE;
     // A numeric node in the object's register is not an object.
     if (self.cur[ra].node != NO_NODE) {
-        if (!self.is_object(ra)) return self.generic();
+        if (!self.holds_value(ra)) return self.generic();
         obj = self.cur[ra].node;
     }
     if (self.cur[rc].node != NO_NODE) value = self.cur[rc].node;
@@ -2469,9 +2469,9 @@ fn bool OptBuild.direct_callee(&self, CompiledFunction** one) {
     if (var_call) {
         uint closure;
         if (!self.body_closure(&closure)) return false;
-        // Into an OBJECT node beyond the caller's frame, else into the callee register.
+        // Into a VALUE node beyond the caller's frame, else into the callee register.
         bool beyond = callee_reg >= self.caller_regs;
-        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, closure, (long)self.pc);
+        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, closure, (long)self.pc);
         self.g.nodes[load].cc = op == Opcode.CALL_VAR ? 1 : 0;
         self.snapshot(load);
         if (beyond) {
@@ -2635,11 +2635,11 @@ fn bool OptBuild.equality_branch(&self) {
     uint rb = self.w.b;
     uint rc = unary ? rb : self.w.c;
     if (rb >= self.nregs || rc >= self.nregs) return self.refuse(OptRefuse.BRANCH_OPERANDS);
-    bool numeric_b = self.cur[rb].node != NO_NODE && !self.is_object(rb);
-    bool numeric_c = self.cur[rc].node != NO_NODE && !self.is_object(rc);
+    bool numeric_b = self.cur[rb].node != NO_NODE && !self.holds_value(rb);
+    bool numeric_c = self.cur[rc].node != NO_NODE && !self.holds_value(rc);
     if (numeric_b || numeric_c) {
-        if (self.is_object(rb)) self.publish_object(rb);
-        if (self.is_object(rc)) self.publish_object(rc);
+        if (self.holds_value(rb)) self.publish_value(rb);
+        if (self.holds_value(rc)) self.publish_value(rc);
         return unary ? self.refuse_op(op) : self.numeric_equality();
     }
     uint kind = op.ordinal - Opcode.JMP_SEQ.ordinal;
@@ -2652,12 +2652,12 @@ fn bool OptBuild.equality_branch(&self) {
         rc = other;
         unary = true;
     }
-    // An OBJECT operand is tested in its register, which a read into the window becomes in the next
+    // A VALUE operand is tested in its register, which a read into the window becomes in the next
     // round; one a read left in a slot beyond the caller's frame waits for it.
-    if (self.cur[rb].node == NO_NODE) self.ask_object(rb);
-    if (self.cur[rc].node == NO_NODE) self.ask_object(rc);
-    uint xb = self.is_object(rb) ? self.cur[rb].node : NO_NODE;
-    uint xc = self.is_object(rc) ? self.cur[rc].node : NO_NODE;
+    if (self.cur[rb].node == NO_NODE) self.ask_value(rb);
+    if (self.cur[rc].node == NO_NODE) self.ask_value(rc);
+    uint xb = self.holds_value(rb) ? self.cur[rb].node : NO_NODE;
+    uint xc = self.holds_value(rc) ? self.cur[rc].node : NO_NODE;
     if (self.cur_fn != 0) {
         if (xb == NO_NODE && rb >= self.caller_regs) self.call_operand(rb, &xb);
         if (xc == NO_NODE && rc >= self.caller_regs) self.call_operand(rc, &xc);
@@ -3471,7 +3471,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
             return true;
         }
         bool beyond = callee_reg >= self.caller_regs;
-        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, closure, (long)self.pc);
+        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, closure, (long)self.pc);
         self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
         self.snapshot(load);
         if (beyond) {
@@ -3502,7 +3502,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
         }
     }
     if (s.construct) {
-        uint object = self.add(OptOp.NEW_OBJECT, OptRep.OBJECT, callee_node, NO_NODE, (long)(usz)s.cf);
+        uint object = self.add(OptOp.NEW_OBJECT, OptRep.VALUE, callee_node, NO_NODE, (long)(usz)s.cf);
         self.snapshot(object);
         self.set(callee_reg + 1, object);
         self.note_fresh(object, s.cf);
@@ -3518,12 +3518,12 @@ fn bool OptBuild.enter_flat(&self, uint si) {
 
 // A flat body's return: the value of graph register `ra` becomes the call's result register. A number
 // is a new node in that register; a window value is copied to its slot, or beyond the caller's frame
-// read into an OBJECT node. A constructor's return (`construct`) is its object, which `ra` holds.
+// read into a VALUE node. A constructor's return (`construct`) is its object, which `ra` holds.
 fn bool OptBuild.flat_return(&self, uint result, uint ra, bool construct = false) {
     if (ra >= self.nregs || result >= self.nregs) return false;
     uint src = self.cur[ra].node;
     if (src != NO_NODE) {
-        if (construct && self.rep_of(src) != OptRep.OBJECT) return false;
+        if (construct && self.rep_of(src) != OptRep.VALUE) return false;
         if (!self.g.nodes[src].is_const()) src = self.add(OptOp.COPY, self.rep_of(src), src);
         self.set(result, src);
         return true;
@@ -3532,7 +3532,7 @@ fn bool OptBuild.flat_return(&self, uint result, uint ra, bool construct = false
     // The object in the receiver slot, within the caller's frame.
     if (ra >= self.caller_regs) return false;
     bool beyond = result >= self.caller_regs;
-    uint n = self.add(OptOp.COPY_WINDOW, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, NO_NODE, (long)ra);
+    uint n = self.add(OptOp.COPY_WINDOW, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, NO_NODE, (long)ra);
     self.g.nodes[n].home = result;
     self.g.nodes[n].cc = 3;
     self.snapshot(n);
@@ -3594,7 +3594,7 @@ fn void OptBuild.enter_args(&self, OptInlineSite* s) {
 // The registers of a forwarding call moved as th_apply_args moves them: the function `apply` runs
 // into the callee register, the receiver after it, and the arguments of the forwarding body into the
 // window. A register's node moves as a copy; a window value moves within the caller's frame or is read
-// into an OBJECT node beyond it. Those reads, which can exit, come before anything moves, so an exit
+// into a VALUE node beyond it. Those reads, which can exit, come before anything moves, so an exit
 // resumes the APPLY_ARGS on the registers as they were. False when a value cannot move, with `pending`
 // when a later round may build it as a node.
 fn bool OptBuild.forward_window(&self, OptInlineSite* s, bool* pending) {
@@ -3636,13 +3636,13 @@ fn bool OptBuild.move_window(&self, uint* src, uint moves, uint callee_reg, bool
         if (r >= self.caller_regs) {
             // Only nodes live beyond the caller's frame: a property read may become one next round.
             if (self.load_def[r] != NO_NODE) {
-                self.ask_object(r);
+                self.ask_value(r);
                 *pending = true;
             }
             return false;
         }
         if (dst < self.caller_regs) continue;
-        uint n = self.add(OptOp.COPY_WINDOW, OptRep.OBJECT, NO_NODE, NO_NODE, (long)r);
+        uint n = self.add(OptOp.COPY_WINDOW, OptRep.VALUE, NO_NODE, NO_NODE, (long)r);
         self.g.nodes[n].cc = 3;
         self.g.nodes[n].home = dst;
         self.snapshot(n);
@@ -3680,7 +3680,7 @@ fn bool OptBuild.inline_return(&self, uint result, uint* node) {
         *node = src;
         return true;
     }
-    // A nested call's result register may lie beyond the caller's frame: then an OBJECT node.
+    // A nested call's result register may lie beyond the caller's frame: then a VALUE node.
     return self.window_copy(result, 0, node);
 }
 
@@ -3689,28 +3689,28 @@ fn bool OptBuild.inline_return(&self, uint result, uint* node) {
 // site a call.
 fn bool OptBuild.construct_return(&self, uint this_reg, uint* node) {
     uint object = self.cur[this_reg].node;
-    if (object == NO_NODE || self.rep_of(object) != OptRep.OBJECT) return false;
+    if (object == NO_NODE || self.rep_of(object) != OptRep.VALUE) return false;
     if (self.w.op == Opcode.RET) {
         uint ra = self.w.a;
-        if (ra >= self.nregs || self.cur[ra].node == NO_NODE || self.is_object(ra)) return false;
+        if (ra >= self.nregs || self.cur[ra].node == NO_NODE || self.holds_value(ra)) return false;
     }
-    *node = self.add(OptOp.COPY, OptRep.OBJECT, object);
+    *node = self.add(OptOp.COPY, OptRep.VALUE, object);
     return true;
 }
 
 // A register the guard of a nested call reads its callee or receiver from (OptBuild.try_inline):
-// inside the caller's frame a value in the window, beyond it an OBJECT node, which `node` receives.
+// inside the caller's frame a value in the window, beyond it a VALUE node, which `node` receives.
 // A value there that a property or global read left in the window asks for that read to be an
-// OBJECT node in the next round.
+// VALUE node in the next round.
 fn bool OptBuild.call_operand(&self, uint r, uint* node) {
     *node = NO_NODE;
     if (r < self.caller_regs) return self.in_window(r);
-    if (self.is_object(r)) {
+    if (self.holds_value(r)) {
         *node = self.cur[r].node;
         return true;
     }
     if (r < self.nregs && self.cur[r].node == NO_NODE && self.load_def[r] != NO_NODE) {
-        self.ask_object(r);
+        self.ask_value(r);
         // Not a final refusal: the site waits for the round that has the node (as for a load).
         self.inline_unsafe = true;
     }
@@ -3735,7 +3735,7 @@ fn uint OptBuild.keep_across(&self, OptInlineSite* p, uint insn, uint callee_reg
 // Replace the call being lowered by its callee's body when the call is an inline site and the state
 // allows it; false leaves the graph as it was, for the call to be lowered as a GENERIC (which, in an
 // inlined body, fails that body in turn). A call of an inlined body is a nested site: its window
-// nests in the body's, its guard reads OBJECT nodes for registers beyond the caller's frame, and its
+// nests in the body's, its guard reads VALUE nodes for registers beyond the caller's frame, and its
 // OptGraph.fns entry names the body's as its parent, whose frame an exit publishes first.
 fn bool OptBuild.try_inline(&self) {
     uint si1 = 0;
@@ -3810,9 +3810,9 @@ fn bool OptBuild.try_inline(&self) {
 
     if (s.var_call) {
         // The callee is read from its variable into the callee register, as the call would; beyond
-        // the caller's frame into an OBJECT node.
+        // the caller's frame into a VALUE node.
         bool beyond = callee_reg >= self.caller_regs;
-        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, scope_node, (long)self.pc);
+        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, scope_node, (long)self.pc);
         self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
         self.snapshot(load);
         if (beyond) {
@@ -3844,7 +3844,7 @@ fn bool OptBuild.try_inline(&self) {
     // A constructor's object, allocated in the caller's context: its exit resumes the NEW_OBJ.
     uint object = NO_NODE;
     if (s.construct) {
-        object = self.add(OptOp.NEW_OBJECT, OptRep.OBJECT, callee_node, NO_NODE, (long)(usz)s.cf);
+        object = self.add(OptOp.NEW_OBJECT, OptRep.VALUE, callee_node, NO_NODE, (long)(usz)s.cf);
         self.snapshot(object);
         self.set(callee_reg + 1, object);
         self.note_fresh(object, s.cf);
@@ -3888,7 +3888,7 @@ fn bool OptBuild.try_inline(&self) {
     self.inline_failed = parent_failed;
     self.inline_unsafe = parent_unsafe;
     if (!ok) {
-        // A load a later round builds as an OBJECT node is not a final refusal.
+        // A load a later round builds as a VALUE node is not a final refusal.
         bool pending = unsafe && self.load_changed;
 
         if (!s.counted && !pending) self.count_reject(unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD, Opcode.NOP);
@@ -3992,7 +3992,7 @@ fn bool OptBuild.lower_op(&self) {
         case TONUMERIC:
             if (rb >= self.nregs) return self.generic();
             // A property read's result still in the window may be wanted as an object node.
-            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_object(rb);
+            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_value(rb);
             // A window value moved as it is, typically an argument of a call: a copy, which leaves
             // the values held in registers in place where baseline code would not.
             if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) {
@@ -4001,7 +4001,7 @@ fn bool OptBuild.lower_op(&self) {
                 return true;
             }
             if (self.cur[rb].node == NO_NODE) return self.generic();
-            if (op == Opcode.TONUMERIC && self.is_object(rb)) return self.generic();
+            if (op == Opcode.TONUMERIC && self.holds_value(rb)) return self.generic();
             uint src = self.cur[rb].node;
             if (!self.g.nodes[src].is_const()) src = self.add(OptOp.COPY, self.rep_of(src), src);
             self.set(ra, src);
@@ -4266,11 +4266,11 @@ fn void OptBuild.begin_block(&self, uint pos) {
             foreach (p : self.preds(pos)) {
                 if (p >= pos || self.dead[p]) continue;
                 OptRegState s = self.ends[(usz)p * self.nregs + r];
-                if (s.node == NO_NODE || self.rep_of(s.node) == OptRep.OBJECT) { numeric = false; break; }
+                if (s.node == NO_NODE || self.rep_of(s.node) == OptRep.VALUE) { numeric = false; break; }
                 if (self.rep_of(s.node) == OptRep.FLOAT64) rep = OptRep.FLOAT64;
             }
             if (!numeric) {
-                if (back == 0) self.cur[r] = self.joined_object(pos, r);
+                if (back == 0) self.cur[r] = self.joined_value(pos, r);
                 continue;
             }
             int ov = self.override_of(pos, r);
@@ -4328,17 +4328,17 @@ fn void OptBuild.begin_block(&self, uint pos) {
 }
 
 // Register `r` at the block at `pos`, a join of forward edges, when every predecessor holds an
-// OBJECT node in it: the one node, kept where it is with no store on the edges, or a phi of the
+// VALUE node in it: the one node, kept where it is with no store on the edges, or a phi of the
 // nodes that differ (of booleans when all are). A nested call's callee or receiver beyond the
 // caller's frame cannot be stored there at all. Else the window.
-fn OptRegState OptBuild.joined_object(&self, uint pos, uint r) {
+fn OptRegState OptBuild.joined_value(&self, uint pos, uint r) {
     OptRegState same = { .node = NO_NODE };
     bool differ = false;
     bool boolean = true;
     foreach (p : self.preds(pos)) {
         if (p >= pos || self.dead[p]) continue;
         OptRegState s = self.ends[(usz)p * self.nregs + r];
-        if (s.node == NO_NODE || self.rep_of(s.node) != OptRep.OBJECT) return { .node = NO_NODE };
+        if (s.node == NO_NODE || self.rep_of(s.node) != OptRep.VALUE) return { .node = NO_NODE };
         differ |= same.node != NO_NODE && s.node != same.node;
         boolean = boolean && self.g.is_boolean(&self.g.nodes[s.node]);
         same.node = s.node;
@@ -4346,7 +4346,7 @@ fn OptRegState OptBuild.joined_object(&self, uint pos, uint r) {
     }
     if (!differ) return same;
     if (self.windowed != null && opt_join_windowed(self.windowed, pos, r)) return { .node = NO_NODE };
-    same.node = self.add(OptOp.PHI, OptRep.OBJECT, NO_NODE, NO_NODE, (long)r);
+    same.node = self.add(OptOp.PHI, OptRep.VALUE, NO_NODE, NO_NODE, (long)r);
     self.g.nodes[same.node].home = r;
     self.g.nodes[same.node].cc = boolean ? 1 : 0;
     return same;
@@ -4516,7 +4516,7 @@ fn bool OptBuild.region_carried(&self) {
             uint src = self.ends[(usz)p * self.nregs + r].node;
             if (src == NO_NODE) continue;
             OptRep rep = self.rep_of(src);
-            if (rep == OptRep.OBJECT) continue;
+            if (rep == OptRep.VALUE) continue;
             TVal* regs = self.g.region.regs;
             if (regs != null && !regs[r].is_number()) {
                 changed |= self.set_override(0, r, OptRep.NONE);
@@ -4575,7 +4575,7 @@ fn bool OptBuild.repair(&self) {
                 uint phi = self.entries[(usz)pos * self.nregs + r].node;
                 if (phi == NO_NODE || phi < first_node || phi >= end_node || self.g.nodes[phi].op != OptOp.PHI) continue;
                 uint src = self.ends[(usz)p * self.nregs + r].node;
-                if (src == NO_NODE || self.rep_of(src) == OptRep.OBJECT) {
+                if (src == NO_NODE || self.rep_of(src) == OptRep.VALUE) {
                     changed |= self.set_override(pos, r, OptRep.NONE);
                 } else if (self.rep_of(src) == OptRep.FLOAT64 && self.g.nodes[phi].rep == OptRep.INT32) {
                     changed |= self.set_override(pos, r, OptRep.FLOAT64);
@@ -4606,9 +4606,9 @@ fn bool OptBuild.compute_edges(&self) {
                         self.g.moves.push({ .dst = sn.node, .src = pn.node, .slot = r });
                     }
                 } else if (pn.node != NO_NODE && pn.dirty) {
-                    // An OBJECT node of an inlined body that must be stored beyond the caller's
+                    // A VALUE node of an inlined body that must be stored beyond the caller's
                     // frame on this edge: the site is built as a call instead.
-                    if (self.g.nodes[pn.node].rep == OptRep.OBJECT && r >= self.caller_regs && !self.g.is_boolean(&self.g.nodes[pn.node])) {
+                    if (self.g.nodes[pn.node].rep == OptRep.VALUE && r >= self.caller_regs && !self.g.is_boolean(&self.g.nodes[pn.node])) {
                         uint fi = self.g.nodes[pn.node].fidx;
                         for (uint si = 0; si < (uint)self.sites.len(); si++) {
                             if (self.site_fn[si] != fi || !self.sites[si].flat) continue;
@@ -4683,7 +4683,7 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.end_avail_n = mem::new_array(char, b.nrpo);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
-    // A nested site's operands become OBJECT nodes over rounds of their own, each request
+    // A nested site's operands become VALUE nodes over rounds of their own, each request
     // stopping the body around it.
     uint rounds = OPT_BUILD_ROUNDS;
     foreach (&s : b.sites) if (s.depth > 1) rounds += 2;

@@ -182,8 +182,8 @@ fn void OptCg.store_flt(&self, uint slot, int fsrc) {
     self.a.store(slot, R0);
 }
 
-// OBJECT node `n` in a register: its own, or `tmp` loaded from its home slot.
-fn int OptCg.obj_reg(&self, uint n, int tmp) {
+// VALUE node `n` in a register: its own, or `tmp` loaded from its home slot.
+fn int OptCg.value_reg(&self, uint n, int tmp) {
     OptNode* nd = &self.g.nodes[n];
     if (nd.op == OptOp.CONST_OBJ) {
         sljit_emit_op1(self.a.c, SLJIT_MOV, tmp, 0, SLJIT_IMM, nd.imm);
@@ -201,8 +201,8 @@ fn void OptCg.store_object(&self, uint slot, int src) {
     self.a.track_heap_store(slot);
 }
 
-// The value of OBJECT node `nd`, in `src`, stored to window slot `slot`: plainly when a boolean.
-fn void OptCg.store_obj(&self, OptNode* nd, uint slot, int src) {
+// The value of VALUE node `nd`, in `src`, stored to window slot `slot`: plainly when a boolean.
+fn void OptCg.store_value_node(&self, OptNode* nd, uint slot, int src) {
     if (self.g.is_boolean(nd)) {
         self.a.store(slot, src);
     } else {
@@ -224,8 +224,8 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
         if (!v.is_inert()) self.a.track_heap_store(slot);
     } else if (nd.reg < 0) {
         // Lives in its home slot already.
-    } else if (nd.rep == OptRep.OBJECT) {
-        self.store_obj(nd, slot, nd.reg);
+    } else if (nd.rep == OptRep.VALUE) {
+        self.store_value_node(nd, slot, nd.reg);
     } else if (nd.rep == OptRep.INT32) {
         sljit_emit_op2(c, SLJIT_AND, R0, 0, nd.reg, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
@@ -255,14 +255,14 @@ fn void OptCg.def_int(&self, uint n, int src) {
     self.a.store(nd.home, R1);
 }
 
-// The result of OBJECT node `n`, computed into register `src`.
-fn void OptCg.def_obj(&self, uint n, int src) {
+// The result of VALUE node `n`, computed into register `src`.
+fn void OptCg.def_value(&self, uint n, int src) {
     OptNode* nd = &self.g.nodes[n];
     if (nd.reg >= 0) {
         if (nd.reg != src) sljit_emit_op1(self.a.c, SLJIT_MOV, nd.reg, 0, src, 0);
         return;
     }
-    self.store_obj(nd, nd.home, src);
+    self.store_value_node(nd, nd.home, src);
 }
 
 // The result of boolean node `n`: `yes` when the jump `taken` is, else `no`.
@@ -274,7 +274,7 @@ fn void OptCg.def_bool(&self, uint n, void* taken, long yes, long no) {
     sljit_set_label(taken, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, yes);
     sljit_set_label(done, sljit_emit_label(c));
-    self.def_obj(n, dst);
+    self.def_value(n, dst);
 }
 
 fn void OptCg.def_flt(&self, uint n, int fsrc) {
@@ -419,7 +419,7 @@ fn void OptCg.emit_item(&self, OptMoveItem* m) {
     OptNode* d = &self.g.nodes[m.dst];
     OptNode* s = &self.g.nodes[m.src];
     bool is_const = s.is_const();
-    if (d.rep == OptRep.OBJECT) {
+    if (d.rep == OptRep.VALUE) {
         if (is_const) {
             sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, SLJIT_IMM, s.imm);
         } else if (m.src_reg >= 0) {
@@ -779,7 +779,7 @@ fn void OptCg.def_from_r0(&self, uint i, OptNode* n) {
     }
 }
 
-// GETGLOBAL of an inlined body as a number or an OBJECT node: the baseline's cached read, leaving for the baseline
+// GETGLOBAL of an inlined body as a number or a VALUE node: the baseline's cached read, leaving for the baseline
 // code on the slow cases and on a value that is not of the node's kind.
 fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     Asm* a = self.a;
@@ -792,7 +792,7 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     int closure = -1;
     if (n.cc != 0) {
         creg = self.g.fns[n.fidx].reg_base - 2;
-        closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
+        closure = n.b != NO_NODE ? self.value_reg(n.b, R3) : -1;
     }
     a.var_slot(vic, n.cc != 0, creg, closure);
     if (n.cc != 0) {
@@ -802,12 +802,12 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     }
     sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     // A binding in its TDZ is no number: the numeric test below leaves for it too.
-    if (n.rep == OptRep.OBJECT) a.guard_not_tdz();
+    if (n.rep == OptRep.VALUE) a.guard_not_tdz();
     for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
     a.alt.len = 0;
     self.exit_calls(i, OptExit.SLOW_PATH);
-    if (n.rep == OptRep.OBJECT) {
-        self.finish_object(i, n);
+    if (n.rep == OptRep.VALUE) {
+        self.finish_value(i, n);
     } else {
         self.def_from_r0(i, n);
     }
@@ -822,8 +822,8 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
     if (n.fidx != 0) {
         // An inlined body reads the callee's closure, which the call's guard checked in its register.
         OptFn* fn_ = &self.g.fns[n.fidx];
-        // A nested call's closure may be held in an OBJECT node (b) instead.
-        int closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
+        // A nested call's closure may be held in a VALUE node (b) instead.
+        int closure = n.b != NO_NODE ? self.value_reg(n.b, R3) : -1;
         self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count, closure);
     } else if (self.cap_slot >= 0 && index < self.a.f.capture_count) {
         // The records the entry loaded; zero when the closure was not one the check accepts.
@@ -838,8 +838,8 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
     if (n.rep == OptRep.NONE) {
         self.publish(i, self.a.w.a);
-    } else if (n.rep == OptRep.OBJECT) {
-        self.finish_object(i, n);
+    } else if (n.rep == OptRep.VALUE) {
+        self.finish_value(i, n);
     } else {
         self.def_from_r0(i, n);
     }
@@ -927,7 +927,7 @@ fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
     a.call.len = 0;
     int rr = R0;
     if (n.b != NO_NODE) {
-        rr = self.obj_reg(n.b, R0);
+        rr = self.value_reg(n.b, R0);
     } else {
         a.load(R0, a.w.b);
     }
@@ -957,7 +957,7 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     }
     int rr = R0;
     if (n.c != NO_NODE) {
-        rr = self.obj_reg(n.c, R0);
+        rr = self.value_reg(n.c, R0);
     } else {
         a.load(R0, a.w.b);
     }
@@ -1001,8 +1001,8 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         self.publish(i, a.w.a);
         return;
     }
-    if (n.rep == OptRep.OBJECT) {
-        self.finish_object(i, n);
+    if (n.rep == OptRep.VALUE) {
+        self.finish_value(i, n);
         return;
     }
     self.def_from_r0(i, n);
@@ -1158,9 +1158,9 @@ fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, int x) 
         a.store(a.w.a, R0);
         return;
     }
-    // A number is an inert value, which an OBJECT node holds as it is.
-    if (n.rep == OptRep.OBJECT) {
-        self.def_obj(i, R0);
+    // A number is an inert value, which a VALUE node holds as it is.
+    if (n.rep == OptRep.VALUE) {
+        self.def_value(i, R0);
         return;
     }
     self.def_from_r0(i, n);
@@ -1302,11 +1302,11 @@ fn void OptCg.publish(&self, uint i, uint slot) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// The OBJECT result of a load, in R0: an object or an inert value, else leave for the baseline code.
-fn void OptCg.finish_object(&self, uint i, OptNode* n) {
+// The VALUE result of a load, in R0: an object or an inert value, else leave for the baseline code.
+fn void OptCg.finish_value(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
-    // An object or an inert value, while the collector is not marking: the invariant of OptRep.OBJECT.
+    // An object or an inert value, while the collector is not marking: the invariant of OptRep.VALUE.
     // The object is tested first, as what such a node mostly holds.
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
     void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w());
@@ -1325,7 +1325,7 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     }
     sljit_set_label(quiet, sljit_emit_label(c));
     sljit_set_label(inert, sljit_emit_label(c));
-    self.def_obj(i, R0);
+    self.def_value(i, R0);
 }
 
 // select_chain_slot's result for the receivers whose cases the epoch entry `ic` settled: the one it
@@ -1502,8 +1502,8 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     bool known_slot = false;
     int rr = R0;
     if (a.w.op == Opcode.GETTHISC && n.b != NO_NODE) {
-        // The receiver of a nested inlined call, held in an OBJECT node.
-        rr = self.obj_reg(n.b, R0);
+        // The receiver of a nested inlined call, held in a VALUE node.
+        rr = self.value_reg(n.b, R0);
     } else if (a.w.op == Opcode.GETTHISC) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
@@ -1511,7 +1511,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
             a.load_this(R0);
         }
     } else if (n.b != NO_NODE) {
-        rr = self.obj_reg(n.b, R0);
+        rr = self.value_reg(n.b, R0);
     } else {
         a.load(R0, a.w.b);
     }
@@ -1556,8 +1556,8 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SHAPE);
     if (n.rep == OptRep.NONE) {
         self.publish(i, a.w.a);
-    } else if (n.rep == OptRep.OBJECT) {
-        self.finish_object(i, n);
+    } else if (n.rep == OptRep.VALUE) {
+        self.finish_value(i, n);
     } else {
         self.def_from_r0(i, n);
     }
@@ -1583,7 +1583,7 @@ fn void OptCg.chain_miss(&self, OptNode* n) {
     a.call.len = 0;
     int rr = R0;
     if (n.b != NO_NODE) {
-        rr = self.obj_reg(n.b, R0);
+        rr = self.value_reg(n.b, R0);
     } else if (a.w.op == Opcode.GETTHISC) {
         a.load(R0, self.g.fns[n.fidx].reg_base - 1);
     } else {
@@ -1609,7 +1609,7 @@ fn void OptCg.chain_miss(&self, OptNode* n) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// PUTPROP of a number or an OBJECT node to an element, as emit_put_elem: it overwrites a present
+// PUTPROP of a number or a VALUE node to an element, as emit_put_elem: it overwrites a present
 // element of a dense array, or stores into a typed array; anything else leaves for the baseline code.
 fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     void* c = self.a.c;
@@ -1624,7 +1624,7 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     // A typed array converts a number inline (an int32 one: the builder converts a double to the
     // integer kinds, OptBuild.put_elem); an object goes to the subroutine, as in the baseline code.
     OptRep rep = self.g.nodes[n.b].rep;
-    bool object = rep == OptRep.OBJECT;
+    bool object = rep == OptRep.VALUE;
     if (!object && self.const_view(n, true, &view) && (rep == OptRep.INT32 || TYPED_KINDS[view.kind].is_float())) {
         int v = self.typed_store_value(n, TYPED_KINDS[view.kind]);
         self.emit_typed_store(TYPED_KINDS[view.kind], v, self.const_elem(i, n.a, &view));
@@ -1632,7 +1632,7 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     }
     int rr = R0;
     if (n.c != NO_NODE) {
-        rr = self.obj_reg(n.c, R0);
+        rr = self.value_reg(n.c, R0);
     } else {
         a.load(R0, a.w.a);
     }
@@ -1693,7 +1693,7 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     a.call.len = 0;
     int rr = R0;
     if (n.c != NO_NODE) {
-        rr = self.obj_reg(n.c, R0);
+        rr = self.value_reg(n.c, R0);
     } else {
         a.load(R0, a.w.a);
     }
@@ -1748,7 +1748,7 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     bool this_op = a.w.op == Opcode.PUTTHISC;
     int rr = R0;
     if (this_op && n.b != NO_NODE) {
-        rr = self.obj_reg(n.b, R0);
+        rr = self.value_reg(n.b, R0);
     } else if (this_op) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
@@ -1756,7 +1756,7 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
             a.load_this(R0);
         }
     } else if (n.b != NO_NODE) {
-        rr = self.obj_reg(n.b, R0);
+        rr = self.value_reg(n.b, R0);
     } else {
         a.load(R0, a.w.a);
     }
@@ -1780,13 +1780,13 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SHAPE);
 }
 
-// The boxed value of node `v` in register `dst`: an OBJECT node's own, a number boxed.
+// The boxed value of node `v` in register `dst`: a VALUE node's own, a number boxed.
 fn void OptCg.value_to(&self, uint v, int dst) {
-    if (self.g.nodes[v].rep != OptRep.OBJECT) {
+    if (self.g.nodes[v].rep != OptRep.VALUE) {
         self.box_node(v, dst);
         return;
     }
-    int r = self.obj_reg(v, dst);
+    int r = self.value_reg(v, dst);
     if (r != dst) sljit_emit_op1(self.a.c, SLJIT_MOV, dst, 0, r, 0);
 }
 
@@ -1801,8 +1801,8 @@ fn void OptCg.store_slot_value(&self, uint i, uint v, uint rv) {
     } else {
         self.value_to(v, R2);
     }
-    // An OBJECT node (an object or an inert value) mostly replaces an object.
-    bool object = v != NO_NODE && self.g.nodes[v].rep == OptRep.OBJECT;
+    // A VALUE node (an object or an inert value) mostly replaces an object.
+    bool object = v != NO_NODE && self.g.nodes[v].rep == OptRep.VALUE;
     a.guard_old_value(&counted, object);
     if (v == NO_NODE || object) {
         a.store_value_r2(&counted, object);
@@ -1853,7 +1853,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     void*[16] miss;
     uint misses = 0;
     if (n.a != NO_NODE) {
-        int r = self.obj_reg(n.a, R1);
+        int r = self.value_reg(n.a, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     } else {
         a.load(R1, callee_reg);
@@ -1908,12 +1908,12 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     for (uint f = 0; f < set.count; f++) takes_this = takes_this || !set.fns[f].call_flags.ignores_this;
     // A sunk receiver (c names its sink) is an object any exit allocates into the frame it publishes.
     if ((n.cc & 3) == 1 && takes_this && !(n.b == NO_NODE && n.c != NO_NODE)) {
-        // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
+        // The receiver: an object in a register the caller's frame tracks, or in a VALUE node
         // that any exit stores into a frame it publishes.
         // The read of the method proved it an object when it is that read's receiver (bit 3).
         if ((n.cc & 8) == 0) {
             if (n.b != NO_NODE) {
-                int r = self.obj_reg(n.b, R0);
+                int r = self.value_reg(n.b, R0);
                 sljit_emit_op2(c, SLJIT_XOR, R0, 0, r, 0, k_obj_op(), k_obj_w());
             } else {
                 a.load(R0, callee_reg + 1);
@@ -2033,7 +2033,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
     if (done != null) sljit_set_label(done, sljit_emit_label(c));
-    self.def_obj(i, R0);
+    self.def_value(i, R0);
     self.count_alloc(&self.h.opt.alloc_runs);
 }
 
@@ -2074,7 +2074,7 @@ fn void OptCg.load_constructor(&self, OptNode* n) {
     void* c = self.a.c;
     self.a.decode(n.pc);
     if (n.a != NO_NODE) {
-        int r = self.obj_reg(n.a, R1);
+        int r = self.value_reg(n.a, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     } else {
         self.a.load(R1, self.a.w.b + self.g.fns[n.fidx].reg_base);
@@ -2140,7 +2140,7 @@ fn void OptCg.emit_site_new(&self, uint i, OptSinkSite* site) {
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
     if (done != null) sljit_set_label(done, sljit_emit_label(c));
-    self.def_obj(i, R0);
+    self.def_value(i, R0);
     self.count_alloc(&self.h.opt.alloc_runs);
 }
 
@@ -2186,8 +2186,8 @@ fn void OptCg.materialize(&self, uint node) {
         for (uint k = 0; k < m.count; k++) {
             uint v = self.g.mat_vals[(sz)(m.vals_first + k)];
             int r = R0;
-            if (self.g.nodes[v].rep == OptRep.OBJECT) {
-                r = self.obj_reg(v, R0);
+            if (self.g.nodes[v].rep == OptRep.VALUE) {
+                r = self.value_reg(v, R0);
             } else {
                 self.box_node(v, R0);
             }
@@ -2232,7 +2232,7 @@ fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM, boxed, R2, 0);
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, boxed);
     }
-    int rr = self.obj_reg(n.b, R1);
+    int rr = self.value_reg(n.b, R1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     a.put_key_check(key, -1, &a.call);
@@ -2277,7 +2277,7 @@ fn bool OptCg.emit_known_add(&self, OptNode* n, void** done) {
     } else {
         self.value_to(n.a, R2);
     }
-    int rr = self.obj_reg(n.b, R1);
+    int rr = self.value_reg(n.b, R1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     a.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, (long)slot * TVal::size, R2, 0);
@@ -2305,10 +2305,10 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
         ra += self.g.fns[n.fidx].reg_base;
         if (n.cc != 0) {
             creg = self.g.fns[n.fidx].reg_base - 2;
-            closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
+            closure = n.b != NO_NODE ? self.value_reg(n.b, R3) : -1;
         }
     }
-    if (n.rep == OptRep.OBJECT) {
+    if (n.rep == OptRep.VALUE) {
         // A callee register beyond the caller's frame: the value stays in a register.
         a.var_slot(vic, n.cc != 0, creg, closure);
         if (n.cc != 0) {
@@ -2321,7 +2321,7 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
         for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
         a.alt.len = 0;
         self.exit_calls(i, OptExit.SLOW_PATH);
-        self.finish_object(i, n);
+        self.finish_value(i, n);
         return;
     }
     a.emit_get_var(ra, vic, n.cc != 0, creg, closure);
@@ -2429,7 +2429,7 @@ fn void OptCg.emit_typeof(&self, uint i, OptNode* n) {
         return;
     }
     if (n.a != NO_NODE) {
-        int src = self.obj_reg(n.a, R0);
+        int src = self.value_reg(n.a, R0);
         if (src != R0) sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, src, 0);
     } else {
         a.load(R0, (uint)n.imm);
@@ -2474,7 +2474,7 @@ fn void OptCg.emit_init_slot(&self, uint i, OptNode* n) {
     self.decode(n);
     a.call.len = 0;
     if (n.b != NO_NODE) {
-        int or = self.obj_reg(n.b, R4);
+        int or = self.value_reg(n.b, R4);
         if (or != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, or, 0);
     } else {
         a.load(R0, a.w.a);
@@ -2500,8 +2500,8 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
         a.decode((uint)n.imm);
         a.load(R0, n.cc == 1 ? base - 1 : (n.cc == 2 ? a.w.b : a.w.a) + base);
     }
-    if (n.rep == OptRep.OBJECT) {
-        self.finish_object(i, n);
+    if (n.rep == OptRep.VALUE) {
+        self.finish_value(i, n);
         return;
     }
     self.publish(i, n.home);
@@ -2514,7 +2514,7 @@ fn void OptCg.emit_check_builtin(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     CallLayout* k = call_layout();
     if (n.a != NO_NODE) {
-        int r = self.obj_reg(n.a, R1);
+        int r = self.value_reg(n.a, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     } else {
         a.load(R1, n.home);
@@ -2668,7 +2668,7 @@ fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
     if (n.b == NO_NODE) {
         a.load(R1, callee + 1);
     } else {
-        int r = self.obj_reg(n.b, R1);
+        int r = self.value_reg(n.b, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     }
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
@@ -2725,11 +2725,11 @@ fn void OptCg.emit_move_window(&self, OptNode* n) {
 
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {
     void* c = self.a.c;
-    if (n.rep == OptRep.OBJECT) {
-        int r = self.obj_reg(n.a, R0);
+    if (n.rep == OptRep.VALUE) {
+        int r = self.value_reg(n.a, R0);
         int dst = self.int_dst(i, R0);
         if (dst != r) sljit_emit_op1(c, SLJIT_MOV, dst, 0, r, 0);
-        self.def_obj(i, dst);
+        self.def_value(i, dst);
     } else if (n.rep == OptRep.INT32) {
         int r;
         long rw;
@@ -2836,11 +2836,11 @@ fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     if (n.a != NO_NODE) {
         void* truthy;
-        if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
-            int x = self.obj_reg(n.a, R0);
+        if (self.g.nodes[n.a].rep == OptRep.VALUE) {
+            int x = self.value_reg(n.a, R0);
             int dst = self.int_dst(i, R0);
             sljit_emit_op2(c, SLJIT_XOR, dst, 0, x, 0, SLJIT_IMM, 1);
-            self.def_obj(i, dst);
+            self.def_value(i, dst);
             return;
         }
         if (self.g.nodes[n.a].rep == OptRep.INT32) {
@@ -2951,15 +2951,15 @@ fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
     Jumps no;
     self.a.call.len = 0;
     void* c = self.a.c;
-    // An operand held in an OBJECT node (a, b) is taken from its register.
+    // An operand held in a VALUE node (a, b) is taken from its register.
     if (n.a != NO_NODE) {
-        int x = self.obj_reg(n.a, R0);
+        int x = self.value_reg(n.a, R0);
         if (x != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, x, 0);
     } else {
         self.a.load(R0, rb);
     }
     if (n.b != NO_NODE) {
-        int y = self.obj_reg(n.b, R1);
+        int y = self.value_reg(n.b, R1);
         if (y != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, y, 0);
         self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
     } else {
@@ -2984,7 +2984,7 @@ fn uint OptCg.emit_callee_test(&self, uint i, OptNode* n, void** jumps) {
     CallLayout* k = call_layout();
     a.decode(n.pc);
     if (n.a != NO_NODE) {
-        int r = self.obj_reg(n.a, R1);
+        int r = self.value_reg(n.a, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     } else {
         a.load(R1, a.w.b + self.g.fns[n.fidx].reg_base);
@@ -3022,9 +3022,9 @@ fn uint OptCg.emit_test(&self, uint i, OptNode* n, void** jumps) {
     }
     bool negate = n.cc != 0;
     if (n.a != NO_NODE) {
-        if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
+        if (self.g.nodes[n.a].rep == OptRep.VALUE) {
             // A boolean: its low bit.
-            int x = self.obj_reg(n.a, R0);
+            int x = self.value_reg(n.a, R0);
             sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, x, 0, SLJIT_IMM, 1);
             jumps[0] = sljit_emit_jump(c, negate ? SLJIT_EQUAL : SLJIT_NOT_EQUAL);
         } else if (self.g.nodes[n.a].rep == OptRep.INT32) {
@@ -3068,7 +3068,7 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
         OptDirty d = self.g.dirty[(sz)(n.reload_first + k)];
         OptNode* nd = &self.g.nodes[d.node];
         if (nd.reg < 0 || nd.is_const()) continue;
-        if (nd.rep == OptRep.OBJECT) {
+        if (nd.rep == OptRep.VALUE) {
             self.a.load(nd.reg, d.reg);
         } else if (nd.rep == OptRep.INT32) {
             self.load_unboxed(nd.reg, d.reg);
@@ -3203,7 +3203,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_alloc(i, n);
         case INIT_SLOT:
             self.emit_init_slot(i, n);
-        case STORE_OBJ:
+        case STORE_VALUE:
             self.store_node(n.a, (uint)n.imm);
         case COPY:
             if (!n.sunk) self.emit_copy(n, i);

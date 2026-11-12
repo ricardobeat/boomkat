@@ -13,42 +13,42 @@
 // node is held by two registers, so a register's slot is only ever the home of
 // the node that register currently holds.
 //
-// OBJECT nodes: a property read whose result is used as the receiver of another field access is
-// an OBJECT node, the 64-bit boxed value (an object, or an inert value such as null; never a
-// string, a bigint or any other value that publication has to count) in a machine register. The
-// collector reads only the window, so the invariant that keeps it sound is: an OBJECT node is
+// VALUE nodes: a boxed value in a machine register, such as a property read whose result is used
+// as the receiver of another field access (an object, or an inert value such as null; never a
+// string, a bigint or any other value that publication has to count). The
+// collector reads only the window, so the invariant that keeps it sound is: a VALUE node is
 // created only while incremental marking is off (else the load leaves for the baseline code,
 // which shades what it publishes), and it is stored to its home slot, raising the frame's
 // heap_reg_count as Asm.publish does, before anything that can collect or inspect the window
-// runs: a GENERIC node, an exit, a back edge's poll (a loop header holds no OBJECT node: the
+// runs: a GENERIC node, an exit, a back edge's poll (a loop header holds no VALUE node: the
 // registers that reach one are stored on the edge; a forward join gives the nodes that differ a
-// phi) and any node that reads the window slot (STORE_OBJ). Marking cannot begin in between, as only those points can allocate or call. A
+// phi) and any node that reads the window slot (STORE_VALUE). Marking cannot begin in between, as only those points can allocate or call. A
 // node that finds no machine register lives in its home slot from its definition on, as the
 // numeric ones do.
 //
-// The exception is an OBJECT node of an inlined body whose home slot lies beyond the caller's
+// The exception is a VALUE node of an inlined body whose home slot lies beyond the caller's
 // frame (slot >= the caller's num_regs): the collector does not scan it, and no pop sweeps it,
 // until an exit publishes the callee's frame. The body is a leaf (no GENERIC, no allocation, no
 // loop; its calls are inlined bodies in turn), so its exits are the only points that can collect,
 // and an exit stub stores the live nodes and calls jit_inline_materialize at once, which publishes
 // the frames covering the slot. The callee and receiver of a nested call, register copies and
-// returns into such slots are OBJECT nodes of this kind too. Such a
+// returns into such slots are VALUE nodes of this kind too. Such a
 // node therefore lives in a machine register only: it is never stored in the normal flow. The
-// builder refuses the inline for a STORE_OBJ of it or an edge store of it, the allocator never
+// builder refuses the inline for a STORE_VALUE of it or an edge store of it, the allocator never
 // spills it (the function is then built without inlining), and its load exits instead of
 // publishing while the collector is marking.
 //
-// A boolean a comparison or `!` computes is an OBJECT node as well (OptGraph.is_boolean). No
+// A boolean a comparison or `!` computes is a VALUE node as well (OptGraph.is_boolean). No
 // collector reads it and no store counts it, so none of the above binds it: it is stored to any
 // slot, plainly.
 //
 // An inlined NEW_OBJ allocates (OptOp.NEW_OBJECT) and its constructor body may call the put-absent
 // helper (OptOp.ADD_FIELD). Neither is a point that can collect: the heap's allocators only request
 // a collection for the next safepoint (Heap.request_gc), and a new object is a temporary root and
-// is shaded while marking (Heap.adopt_object), so it may live in a register like any OBJECT node,
+// is shaded while marking (Heap.adopt_object), so it may live in a register like any VALUE node,
 // and the windows beyond the caller's frame need no scan extent. Such a call clobbers the scratch
 // registers, so the machine registers that hold values across it are saved in the frame around it
-// (OptCg.spill_live). The object is an OBJECT node homed in the receiver slot of the NEW_OBJ, the
+// (OptCg.spill_live). The object is a VALUE node homed in the receiver slot of the NEW_OBJ, the
 // constructor's `this`, where an exit from the body stores it for the frame it publishes.
 //
 // Allocation sinking (opt_sink.c3): a NEW_OBJECT whose object only flows through COPY nodes into
@@ -75,7 +75,7 @@ enum OptRep : char {
     // A double in a floating point register.
     FLOAT64,
     // A boxed object or inert value in a machine register (see the invariant above).
-    OBJECT,
+    VALUE,
 }
 
 enum OptOp : char {
@@ -83,7 +83,7 @@ enum OptOp : char {
     CONST_I32,
     CONST_F64,
     // The boxed object imm a GETGLOBAL or GETCAP read from a binding the code folded
-    // (OptBuild.fold_binding): an OBJECT node with no register and no home, as the numeric constants
+    // (OptBuild.fold_binding): a VALUE node with no register and no home, as the numeric constants
     // are. A GUARD_BINDING before it in its stretch of code proves the binding holds it.
     CONST_OBJ,
     // Window slot imm, checked to hold an int32 (exit NOT_INT32) or a number
@@ -91,37 +91,37 @@ enum OptOp : char {
     CHECK_I32,
     CHECK_NUM,
     // A GETCAP (imm its pc) read as a number of the node's rep; exits when the capture is not
-    // one of the plain cases or not that kind of number. In a nested inlined body b is the OBJECT
+    // one of the plain cases or not that kind of number. In a nested inlined body b is the VALUE
     // node holding the callee's closure, when its register lies beyond the caller's frame.
     LOAD_CAP,
     // A GETPROP (imm its pc) of the dense or typed array element at INT32 node a, as a number of
     // the node's rep; exits for any other object, an index out of range, a hole or another value.
     LOAD_ELEM,
-    // A PUTPROP (imm its pc) of node b (a number, or an OBJECT node stored through the barrier) or
+    // A PUTPROP (imm its pc) of node b (a number, or a VALUE node stored through the barrier) or
     // of the window value when b is NO_NODE, to the element at INT32 node a, exiting where LOAD_ELEM
     // would. It defines nothing.
     STORE_ELEM,
     // A GETPROPC, GETPROPC_CACHED or GETTHISC (imm its pc) read of the own data property its
     // cache names, from a non-proxy object of the cache's shapes; exits for any other receiver. The
-    // receiver is the OBJECT node b, or the window register when b is NO_NODE. Of rep NONE it writes
-    // the value to the window, of rep OBJECT it leaves it in a register (exiting when the value is
+    // receiver is the VALUE node b, or the window register when b is NO_NODE. Of rep NONE it writes
+    // the value to the window, of rep VALUE it leaves it in a register (exiting when the value is
     // a string or another counted value, or incremental marking runs), else it is a number of the
     // node's rep.
     LOAD_FIELD,
     // A GETPROPC or GETPROPC_CACHED (imm its pc) of `length` from an array, as an INT32; exits
     // (SLOW_PATH) for any other receiver or a length above the int32 range. The receiver is the
-    // OBJECT node b, or the window register when b is NO_NODE.
+    // VALUE node b, or the window register when b is NO_NODE.
     LOAD_LENGTH,
     // A PUTPROPC or PUTTHISC (imm its pc) overwrite of the own writable data property its cache
     // names, in a plain object of the cache's shape; exits for any other receiver or a value that
-    // needs a barrier. a is the number or OBJECT node stored, the STORE_CONST whose constant the
-    // value's slot holds, or NO_NODE for a value in the window; b the OBJECT node receiver, or
+    // needs a barrier. a is the number or VALUE node stored, the STORE_CONST whose constant the
+    // value's slot holds, or NO_NODE for a value in the window; b the VALUE node receiver, or
     // NO_NODE for the window. It defines nothing.
     STORE_FIELD,
     PHI,
-    // The OBJECT node a, stored to its home window slot imm (the register) and now clean; for the
+    // The VALUE node a, stored to its home window slot imm (the register) and now clean; for the
     // window readers that cannot take a node (a branch, an element access, a call).
-    STORE_OBJ,
+    STORE_VALUE,
     // A new node holding the value of `a`.
     COPY,
     // INT32 operands a, b. These exit (OVERFLOW) on a result out of int32 range;
@@ -153,13 +153,13 @@ enum OptOp : char {
     // method call): exits (CALLEE) before any effect unless the callee register holds a closure of
     // that function, the receiver and the frame a real call would publish are acceptable, and
     // there is room for it. The nodes after it, until the next such node, are the callee's body.
-    // a and b, when not NO_NODE, are OBJECT nodes holding the callee and the receiver (a nested
+    // a and b, when not NO_NODE, are VALUE nodes holding the callee and the receiver (a nested
     // call whose window lies beyond the caller's frame). Before a CALL_REG of a polymorphic call,
     // imm is 0 and poly names the functions any of which passes.
     CHECK_CALLEE,
     // The variable a CALL_VAR (cc nonzero) or CALL_GLOBAL (imm its pc) names, stored in the call's
     // callee register as a published value; exits (SLOW_PATH) when its cache does not hold. Of
-    // rep OBJECT (a callee register beyond the caller's frame) it stays in a register.
+    // rep VALUE (a callee register beyond the caller's frame) it stays in a register.
     LOAD_VAR,
     // A GETGLOBAL of an inlined body (imm its pc) read as a number of the node's rep; exits when
     // its cache does not hold or the value is not that kind of number.
@@ -180,12 +180,12 @@ enum OptOp : char {
     // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG),
     // cc 3 the graph register imm itself (a forwarded argument, OptBuild.forward_window), cc 4 the
     // function's own receiver (its record's this_binding).
-    // Of rep OBJECT the value stays in a register (finish_object), for a home beyond the
+    // Of rep VALUE the value stays in a register (finish_value), for a home beyond the
     // caller's frame.
     COPY_WINDOW,
     // The boxed constant imm (undefined, null or a boolean) stored to the window slot home.
     STORE_CONST,
-    // A TYPEOF of an inlined body: the interned builtin name (heap.strs) of the value in the OBJECT
+    // A TYPEOF of an inlined body: the interned builtin name (heap.strs) of the value in the VALUE
     // node a, or in the window slot imm when a is NO_NODE, stored to the window slot home. cc 1 is a
     // numeric operand, whose name is `number` with no test. The names are the heap's own strings,
     // which no collection reclaims, so slot home may lie beyond the caller's frame (see the header).
@@ -197,23 +197,23 @@ enum OptOp : char {
     // caller's frame. A case the inline allocator does not cover, and a failed allocation, exits
     // (ALLOC_SLOW) with nothing changed to the baseline code at pc.
     ALLOC,
-    // An INIT_SLOT (imm its pc) of an inlined body: the value of the number or OBJECT node a, or of
+    // An INIT_SLOT (imm its pc) of an inlined body: the value of the number or VALUE node a, or of
     // window slot c when a is NO_NODE, stored into prop_values()[b] of the object that node b holds,
     // or of window slot a when b is NO_NODE. It defines nothing and exits (SLOW_PATH) where the
     // store needs a counted or traced path.
     INIT_SLOT,
-    // The boolean (an OBJECT node) of numbers a, b of rep imm compared by the JMP_* row cc (as
+    // The boolean (a VALUE node) of numbers a, b of rep imm compared by the JMP_* row cc (as
     // BRANCH reads it).
     COMPARE,
     // The same for the window slots imm (b | c << 20) by the equality test of BRANCH_WINDOW (cc
     // 0 SEQ, 1 SNEQ, 2 EQ, 3 NEQ, 4 == null, 5 != null, and the constant of WINDOW_CONST); the
     // rare cases exit through the slow path.
     COMPARE_WINDOW,
-    // `!` of the number or boolean node a, a boolean (an OBJECT node); or, when a is NO_NODE, of
+    // `!` of the number or boolean node a, a boolean (a VALUE node); or, when a is NO_NODE, of
     // the window slot imm (the slow path exits), stored to window slot home.
     LNOT,
     // A CALL (pc) of Array.prototype.push, after the CHECK_BUILTIN of its callee: the value a (a
-    // node, or the window slot after the receiver when NO_NODE) appended to the array b (an OBJECT
+    // node, or the window slot after the receiver when NO_NODE) appended to the array b (a VALUE
     // node, or the receiver's window slot), growing its storage without a collection; the new
     // length as an INT32. Exits (SLOW_PATH) before any effect for anything but an extensible plain
     // array with a writable length on the built-in prototype chain.
@@ -238,7 +238,7 @@ enum OptOp : char {
     // a constant the builder stored (WINDOW_CONST in the bits above) compares slot b with it alone.
     BRANCH_WINDOW,
     // The test before a case of a polymorphic call (OptBuild.callee_test): falls to succ[1], the
-    // case's body, when the OBJECT node a, or the window slot of the call's callee register when a
+    // case's body, when the VALUE node a, or the window slot of the call's callee register when a
     // is NO_NODE, holds a closure of the function imm (its CompiledFunction*); else takes succ[0].
     BRANCH_CALLEE,
     // The bytecode instruction at pc, through the baseline emitter.
@@ -249,23 +249,23 @@ enum OptOp : char {
     // callee has no call entry (DECLINED) or declines (DEEP).
     CALL_REG,
     // A NEW_OBJ (pc) of the constructor imm (its CompiledFunction*), after its CHECK_CALLEE: a plain
-    // object with the prototype the instruction's cache reads from the constructor, the OBJECT node
+    // object with the prototype the instruction's cache reads from the constructor, the VALUE node
     // the inlined body takes as `this`. Exits (ALLOC_SLOW) before any effect when the constructor is
     // not constructable, the cache does not hold or the allocation fails. a, when not NO_NODE, is the
-    // OBJECT node holding the constructor. Sunk, it allocates nothing: c is its OptGraph.sinks
+    // VALUE node holding the constructor. Sunk, it allocates nothing: c is its OptGraph.sinks
     // entry, and it exits where the allocation would unless the state its site validated holds.
     NEW_OBJECT,
     // The guard of an inlined forwarding call (`f.apply(x, arguments)`, OptBuild.forward_window):
-    // exits (CALLEE) unless the OBJECT node a, or the window slot home when a is NO_NODE, holds the
+    // exits (CALLEE) unless the VALUE node a, or the window slot home when a is NO_NODE, holds the
     // builtin function numbered imm. It defines nothing.
     CHECK_BUILTIN,
     // Window slot imm moved to window slot home within the caller's frame, as the interpreter moves
     // the registers of a forwarding call: a value the frame already holds, so it only raises the
     // frame's heap-register count. It never exits and defines nothing.
     MOVE_WINDOW,
-    // A PUTTHISC (imm its pc) of an inlined constructor that adds its key to the OBJECT node b through
+    // A PUTTHISC (imm its pc) of an inlined constructor that adds its key to the VALUE node b through
     // the instruction's absent-property cache, as the baseline's put-absent path; a is the number or
-    // OBJECT node stored, or NO_NODE for a value in the window. Exits before any effect when the add
+    // VALUE node stored, or NO_NODE for a value in the window. Exits before any effect when the add
     // is not one the cache describes. It defines nothing. With cc 1 the object is one the code is
     // building (OptFresh) and the add is known: the value goes into the next slot and the object
     // takes the shape `shape`, with only a window value that is neither inert nor an object taking
@@ -340,7 +340,7 @@ struct OptNode {
     char cc;
     uint a;
     uint b;
-    // LOAD_ELEM, STORE_ELEM: the OBJECT node holding the receiver, else NO_NODE for the window.
+    // LOAD_ELEM, STORE_ELEM: the VALUE node holding the receiver, else NO_NODE for the window.
     uint c;
     long imm;
     // The bytecode word the node came from; an exit resumes there.
@@ -624,15 +624,15 @@ fn void OptGraph.free(&self) {
 
 fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64 || self.op == OptOp.CONST_OBJ;
 
-// Whether OBJECT node `n` holds a boolean: a comparison, a `!`, a phi of such (cc 1), or a copy.
+// Whether VALUE node `n` holds a boolean: a comparison, a `!`, a phi of such (cc 1), or a copy.
 fn bool OptGraph.is_boolean(&self, OptNode* n) {
     while (n.op == OptOp.COPY) n = &self.nodes[n.a];
-    if (n.rep != OptRep.OBJECT) return false;
+    if (n.rep != OptRep.VALUE) return false;
     return n.op == OptOp.COMPARE || n.op == OptOp.LNOT || (n.op == OptOp.PHI && n.cc == 1);
 }
 
 // Whether a node of this rep lives in an integer register.
-fn bool OptRep.is_gpr(self) @inline => self == OptRep.INT32 || self == OptRep.OBJECT;
+fn bool OptRep.is_gpr(self) @inline => self == OptRep.INT32 || self == OptRep.VALUE;
 
 // Print the graph to stderr: one line per node, with the register allocation
 // and the moves of each edge.

@@ -289,7 +289,7 @@ fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v, bool trace) {
                 n.b = NO_NODE;
                 n.a = e.val;
                 if (n.rep == OptRep.NONE) {
-                    n.op = OptOp.STORE_OBJ;
+                    n.op = OptOp.STORE_VALUE;
                     n.imm = n.home;
                     // Stored from its machine register (store_node), not its own slot.
                     self.nodes[e.val].held = true;
