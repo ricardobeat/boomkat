@@ -2695,7 +2695,9 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
     self.store_dirty(n.dirty_first, n.dirty_count);
     uint at = (uint)n.imm;
     self.a.direct_called = false;
+    self.a.direct_cf = (CompiledFunction*)n.key;
     self.a.emit_insn(at);
+    self.a.direct_cf = null;
     // The out-of-line paths return here, before the reload.
     self.a.labels[self.a.next] = sljit_emit_label(c);
     // A callee run in this native frame has used the local area the capture records are kept in.

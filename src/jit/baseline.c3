@@ -226,6 +226,8 @@ struct BaselineCode {
     // One native address per instruction word, parallel to the code.
     // The entry a native call site calls directly (baseline_call.c3), or null.
     void* call_entry;
+    // The call entry's label for a call optimized code proved (Asm.emit_direct_call), or null.
+    void* direct_entry;
     // The first shared subroutine, which ends the call entry (--jit-dump-feedback).
     void* subs;
     // Optimized code only: set by every entry, cleared by the eviction sweep (opt_make_room).
@@ -584,6 +586,10 @@ struct Asm {
     // The code reads its frame's function (Activation.func, tv_func), which its call entry then
     // writes.
     bool reads_callee;
+    // The call entry's direct label (emit_call_entry), for Asm.finish.
+    void* direct_label;
+    // The callee optimized code proved for the call being emitted (OptBuild.direct_callee), or null.
+    CompiledFunction* direct_cf;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;
@@ -811,6 +817,7 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     bc.exec_jump = (void*)sljit_shim_label_addr(self.exec_jump);
     bc.code_bytes = sljit_shim_code_size(self.c);
     if (call_entry != null) bc.call_entry = (void*)sljit_shim_label_addr(call_entry);
+    if (call_entry != null) bc.direct_entry = (void*)sljit_shim_label_addr(self.direct_label);
     bc.subs = (void*)sljit_shim_label_addr(subs);
     if (h.jit_stats.dump_feedback) {
         foreach (slot, label : self.sub_labels) {
@@ -1237,7 +1244,8 @@ fn bool Asm.emit_call(&self) {
         && !self.global_callee_trivial();
     if (global || self.w.op == Opcode.CALL_UNDEF_THIS || (self.w.op == Opcode.CALL && self.w.b + 1 < self.f.num_regs)) {
         Jumps generic;
-        if (global) self.load_global_callee(&generic);
+        // A direct call's guard (OptBuild.direct_callee) has read the callee into its register.
+        if (global && self.direct_cf == null) self.load_global_callee(&generic);
         self.emit_direct_call(&generic);
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         generic.bind(sljit_emit_label(c));

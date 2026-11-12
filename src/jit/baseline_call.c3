@@ -53,6 +53,16 @@ fn bool entry_constructs(CompiledFunction* f) {
 // with more takes such calls through the helper.
 const uint ENTRY_MISSING_MAX = 8;
 
+// Whether the call entry of `f` takes a call with `nargs` arguments, plain or of a method on an
+// object, as its tests of the count and the receiver kind would: a site that proved its callee
+// and this enters at the entry's direct label, which skips those tests and the realm's.
+fn bool entry_takes(CompiledFunction* f, uint nargs, bool plain) {
+    uint nf = f.num_formals;
+    if (f.call_flags.rest_length_only ? nargs != nf : (nf > ENTRY_MISSING_MAX && nargs < nf)) return false;
+    if (entry_forwards(f) && nargs > nf + bytecode::FORWARD_ARGS_PAD) return false;
+    return !plain || f.call_flags.lean_plain;
+}
+
 
 struct CallLayout {
     long ds_vm;
@@ -87,6 +97,7 @@ struct CallLayout {
     long[hobject::IC_CALL_TARGETS] ic_call_slot;
     long cf_num_regs;
     long bc_call_entry;
+    long bc_direct_entry;
     long env_flags;
     long fn_mask;
     long fn_want;
@@ -147,6 +158,7 @@ fn CallLayout* call_layout() {
     for (uint t = 1; t < hobject::IC_CALL_TARGETS; t++) l.ic_call_slot[t] = (char*)hobject::ic_call_slot(ice, t) - base;
     l.cf_num_regs = (char*)&cf.num_regs - base;
     l.bc_call_entry = (char*)&bc.call_entry - base;
+    l.bc_direct_entry = (char*)&bc.direct_entry - base;
     l.env_flags = (char*)&e.flags - base;
     // th_lean_target's callable_kind() == COMPILED_FN, narrowed as the
     // inline cache paths narrow objects: a callable, unbound, non-proxy
@@ -202,17 +214,17 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     // R1, the result slot in R2 and the packed count in R3. Its return address,
     // the call site's, is at SUB_RET_OFF: the frame returns there (Activation.native_ret), and
     // so does a decline.
-    void* entry = sljit_emit_label(c);
+    // A call optimized code proved (Asm.emit_direct_call) fast-calls the direct label, past the
+    // tests of the realm, the argument count and the receiver kind (entry_takes).
     self.set_frame();
+    self.direct_label = sljit_emit_label(c);
+    sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM | reg_sp(), SUB_RET_OFF);
     self.mov(bottom, 0, R1, 0);
     self.mov(packed, 0, R3, 0);
-    if (count_opt) {
-        self.mov(R4, 0, SLJIT_IMM, (long)(usz)&f.opt_entries);
-        self.mov(R0, 0, m | R4, 0, SLJIT_MOV_U32);
-        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 1);
-        self.mov(m | R4, 0, R0, 0, SLJIT_MOV_U32);
-        decline.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, OPT_ENTRY_THRESHOLD));
-    }
+    void* proven = sljit_emit_jump(c, SLJIT_JUMP);
+    void* entry = sljit_emit_label(c);
+    self.mov(bottom, 0, R1, 0);
+    self.mov(packed, 0, R3, 0);
 
     // th_lean_target, @lean_gate and the receiver test, before any write.
     self.mov(R1, 0, m | self.heap, k.heap_realm);
@@ -238,6 +250,14 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     if (forbidden != 0) {
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, forbidden);
         decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    }
+    sljit_set_label(proven, sljit_emit_label(c));
+    if (count_opt) {
+        self.mov(R4, 0, SLJIT_IMM, (long)(usz)&f.opt_entries);
+        self.mov(R0, 0, m | R4, 0, SLJIT_MOV_U32);
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 1);
+        self.mov(m | R4, 0, R0, 0, SLJIT_MOV_U32);
+        decline.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, OPT_ENTRY_THRESHOLD));
     }
     // The record after the caller's, which takes the result slot (R2) once there is room for it.
     self.mov(vm, 0, m | ds, k.ds_vm);
@@ -454,7 +474,25 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
     self.mov(R3, 0, SLJIT_IMM, packed);
     self.mov(R4, 0, SLJIT_IMM, (long)(usz)(self.f.code + self.next));
     self.direct_called = true;
+    void* proven = null;
+    if (self.direct_cf != null) {
+        // Optimized code proved the callee and the call's shape (OptBuild.direct_callee): into the
+        // direct label of the callee's code as it stands, which the subroutine would reach after
+        // its tests. Code without one takes the subroutine.
+        CallLayout* k = call_layout();
+        self.mov(SLJIT_MEM | self.la, k.act_curr_pc, R4, 0);
+        self.mov(R0, 0, SLJIT_MEM, (long)(usz)&self.direct_cf.jit_code);
+        void* no_code = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+        self.mov(R0, 0, SLJIT_MEM | R0, k.bc_direct_entry);
+        void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+        sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
+        proven = sljit_emit_jump(c, SLJIT_JUMP);
+        void* sub = sljit_emit_label(c);
+        sljit_set_label(no_code, sub);
+        sljit_set_label(no_entry, sub);
+    }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = CALL_SUB });
+    if (proven != null) sljit_set_label(proven, sljit_emit_label(c));
     // The callee's frame returned here (Activation.native_ret).
     void* returned = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED);
     // A declining call entry has used the window register.

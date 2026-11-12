@@ -239,6 +239,8 @@ struct OptBuild {
     bool no_inline;
     // Calls of builtins built as nodes: ARRAY_PUSH, MATH.
     uint builtin_calls;
+    // Calls entering their callee's direct label (direct_callee).
+    uint direct_calls;
     // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE), and the
     // call it was looking at, for --opt-log: the caller, its call word and the callee once known.
     OptInlineReject rej;
@@ -1316,7 +1318,12 @@ fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* c
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.next_pc - 1];
     hobject::ICChainEpoch* e = opt_epoch_entry(self.h, ic);
     if (e == null) return null;
-    TVal v = e.owner.prop_values()[ic.prop_idx].get();
+    return constant_callee(e.owner.prop_values()[ic.prop_idx].get(), cf);
+}
+
+// `v` when it is a closure of `cf` that CHECK_CALLEE's tests pass, observed so that its death moves
+// the prototype epoch the guard compares; else null.
+fn HObject* constant_callee(TVal v, CompiledFunction* cf) {
     if (!v.is_object()) return null;
     HObject* fo = (HObject*)v.get_heapptr();
     if (fo.callable_kind() != hobject::CallableKind.COMPILED_FN || fo.flags.exotic_proxyobj || fo.flags.obj_class != hobject::ObjClass.FUNCTION) return null;
@@ -1956,6 +1963,59 @@ fn void OptBuild.kill(&self, uint r) {
     self.fact_shape[r] = heap::SHAPE_NONE;
 }
 
+// The function a call the tier runs as a GENERIC enters through its call entry's direct label
+// (Asm.emit_direct_call), or null: the one its feedback names alone, with a call entry whose shape
+// tests the call passes (entry_takes), guarded here by CHECK_CALLEE. A call of a variable reads
+// it for the guard first, as an inlined one does.
+fn CompiledFunction* OptBuild.direct_callee(&self) {
+    Opcode op = self.w.op;
+    bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) || self.wide || self.f.ic_entries == null) return null;
+    if (var_call && self.f.var_ic_entries == null) return null;
+    uint at = self.next_pc - 1;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[at];
+    if ((ic.feedback & hobject::FB_CALL) == 0 || (ic.feedback & (hobject::FB_POLY | hobject::FB_DOTCALL)) != 0
+        || hobject::ic_call_count(ic) != 1 || opt_site_banned(self.f, self.f, at)) return null;
+    CompiledFunction* cf = opt_site_callee(self.h, self.f, at);
+    bool method = op == Opcode.CALL;
+    uint nargs = var_call ? self.w.b : self.w.c;
+    if (cf == null || cf.realm != self.f.realm || !call_entry_eligible(cf) || !entry_takes(cf, nargs, !method)) return null;
+    uint callee_reg = var_call ? self.w.a : self.w.b;
+    uint callee_node = NO_NODE;
+    uint recv_node = NO_NODE;
+    if (var_call) {
+        uint closure;
+        if (!self.body_closure(&closure)) return null;
+        // Into an OBJECT node beyond the caller's frame, else into the callee register.
+        bool beyond = callee_reg >= self.caller_regs;
+        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, closure, (long)self.pc);
+        self.g.nodes[load].cc = op == Opcode.CALL_VAR ? 1 : 0;
+        self.snapshot(load);
+        if (beyond) {
+            self.set(callee_reg, load);
+            callee_node = load;
+        } else {
+            self.kill(callee_reg);
+        }
+    } else {
+        if (!self.call_operand(callee_reg, &callee_node)) return null;
+        if ((method || callee_reg + 1 < self.caller_regs) && !self.call_operand(callee_reg + 1, &recv_node)) return null;
+    }
+    uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)cf);
+    self.g.nodes[chk].cc = method ? 1 : 0;
+    if (method) self.settle_method(chk, callee_reg, cf);
+    // A variable's binding as it stands, which the guard then compares the read with.
+    if (var_call) {
+        hobject::VarICEntry* vic = &((hobject::VarICEntry*)self.f.var_ic_entries)[at];
+        if (vic.slot_ptr != null && vic.recycle_epoch == self.h.shape_recycle_epoch) {
+            self.g.nodes[chk].key = constant_callee(vic.slot_ptr.get(), cf);
+        }
+    }
+    self.snapshot(chk);
+    self.direct_calls++;
+    return cf;
+}
+
 // The instruction as the baseline emitter runs it: the registers it can read
 // stored first, the registers it can write no longer numeric nodes, and the
 // numeric registers live after it reloaded from the window.
@@ -2000,7 +2060,9 @@ fn bool OptBuild.generic(&self) {
                 return self.refuse_op(op);
         }
     }
+    CompiledFunction* direct = self.direct_callee();
     uint n = self.add(OptOp.GENERIC, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.g.nodes[n].key = direct;
     self.forget_facts();
     self.snapshot(n);
     OptNode* node = &self.g.nodes[n];
