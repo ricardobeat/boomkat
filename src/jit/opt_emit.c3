@@ -2837,7 +2837,7 @@ fn void OptCg.emit_compare_window(&self, uint i, OptNode* n) {
 // LNOT: the negated truth of a number or boolean node, or of a window slot, stored as a boolean.
 fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
     void* c = self.a.c;
-    if (n.a != NO_NODE) {
+    if (self.known_truth(n)) {
         void* truthy;
         if (self.g.nodes[n.a].rep == OptRep.VALUE) {
             int x = self.value_reg(n.a, R0);
@@ -2860,15 +2860,39 @@ fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
     }
     Jumps truthy;
     Jumps falsy;
-    self.a.call.len = 0;
-    self.a.truth_test((uint)n.imm, &truthy, &falsy);
+    self.truth_test(n, &truthy, &falsy);
     self.exit_calls(i, OptExit.SLOW_PATH);
+    int dst = n.rep == OptRep.VALUE ? self.int_dst(i, R0) : R0;
     truthy.bind(sljit_emit_label(c));
-    self.a.store(n.home, SLJIT_IMM, K_BOOL);
+    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_BOOL);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     falsy.bind(sljit_emit_label(c));
-    self.a.store(n.home, SLJIT_IMM, K_BOOL | 1);
+    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_BOOL | 1);
     sljit_set_label(done, sljit_emit_label(c));
+    if (n.rep == OptRep.VALUE) {
+        self.def_value(i, dst);
+    } else {
+        self.a.store(n.home, dst, 0);
+    }
+}
+
+// Whether the operand of LNOT or BRANCH_TRUTH `n` is a number or a boolean, whose truth the code
+// reads directly.
+fn bool OptCg.known_truth(&self, OptNode* n) {
+    if (n.a == NO_NODE) return false;
+    OptNode* x = &self.g.nodes[n.a];
+    return x.rep != OptRep.VALUE || self.g.is_boolean(x);
+}
+
+// The baseline's truth test of the operand of `n`: a VALUE node, or window slot `n.imm`.
+fn void OptCg.truth_test(&self, OptNode* n, Jumps* truthy, Jumps* falsy) {
+    if (n.a != NO_NODE) {
+        self.value_to(n.a, R0);
+    } else {
+        self.a.load(R0, (uint)n.imm);
+    }
+    self.a.call.len = 0;
+    self.a.truth_test_r0(truthy, falsy);
 }
 
 fn void OptCg.emit_bitop(&self, uint i, OptNode* n) {
@@ -3024,7 +3048,7 @@ fn uint OptCg.emit_test(&self, uint i, OptNode* n, void** jumps) {
         return 1;
     }
     bool negate = n.cc != 0;
-    if (n.a != NO_NODE) {
+    if (self.known_truth(n)) {
         if (self.g.nodes[n.a].rep == OptRep.VALUE) {
             // A boolean: its low bit.
             int x = self.value_reg(n.a, R0);
@@ -3041,11 +3065,10 @@ fn uint OptCg.emit_test(&self, uint i, OptNode* n, void** jumps) {
         }
         return 1;
     }
-    // A value in the window: the baseline's truth test.
+    // Any other value: the baseline's truth test.
     Jumps truthy;
     Jumps falsy;
-    self.a.call.len = 0;
-    self.a.truth_test((uint)n.imm, &truthy, &falsy);
+    self.truth_test(n, &truthy, &falsy);
     self.exit_calls(i, OptExit.SLOW_PATH);
     Jumps* take = negate ? &falsy : &truthy;
     Jumps* skip = negate ? &truthy : &falsy;

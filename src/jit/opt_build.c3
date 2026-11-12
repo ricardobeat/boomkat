@@ -2323,12 +2323,12 @@ fn bool OptBuild.compare_value(&self) {
     return true;
 }
 
-// `A = !B`: a boolean node when B is a number or a boolean, else stored to the window slot of A.
+// `A = !B`: a boolean node when B is a node, else stored to the window slot of A.
 fn bool OptBuild.not_value(&self) {
     uint ra = self.w.a;
     uint rb = self.w.b;
     if (ra >= self.nregs || rb >= self.nregs) return self.generic();
-    uint node = self.truth_operand(rb);
+    uint node = self.cur[rb].node;
     uint n = self.add(OptOp.LNOT, node == NO_NODE ? OptRep.NONE : OptRep.VALUE, node, NO_NODE, (long)rb);
     // (A known operand cannot exit, but the test hook exits at any LNOT, with the frame it describes.)
     self.snapshot(n);
@@ -2339,15 +2339,6 @@ fn bool OptBuild.not_value(&self) {
         self.set(ra, n);
     }
     return true;
-}
-
-// The node whose truth a test of register `r` reads, a number or a boolean; NO_NODE for a value
-// in the window, where any other VALUE node is stored first.
-fn uint OptBuild.truth_operand(&self, uint r) {
-    uint node = self.cur[r].node;
-    if (!self.holds_value(r) || self.g.is_boolean(&self.g.nodes[node])) return node;
-    self.publish_value(r);
-    return NO_NODE;
 }
 
 // THROW in an inlined body is a cold path: leave for the callee's baseline code, which throws.
@@ -2623,15 +2614,16 @@ fn bool OptBuild.cmp_branch(&self) {
     return self.terminator(OptOp.BRANCH, x, y, (long)rep.ordinal, (char)row);
 }
 
-// IF_TRUE / IF_FALSE over a number or boolean node or the window slot.
+// IF_TRUE / IF_FALSE over a node or the window slot.
 fn bool OptBuild.truth_branch(&self) {
     uint r = self.w.a;
     if (r >= self.nregs) return self.refuse(OptRefuse.BRANCH_OPERANDS);
-    uint node = self.truth_operand(r);
+    uint node = self.cur[r].node;
     bool negate = self.w.op == Opcode.IF_FALSE;
     if (!self.terminator(OptOp.BRANCH_TRUTH, node, NO_NODE, (long)r, negate ? 1 : 0)) return false;
-    // A window value can leave through the slow path.
-    if (node == NO_NODE) self.snapshot((uint)self.g.nodes.len() - 1);
+    // A value of a kind the code does not know can leave through the slow path.
+    bool known = node != NO_NODE && (self.rep_of(node) != OptRep.VALUE || self.g.is_boolean(&self.g.nodes[node]));
+    if (!known) self.snapshot((uint)self.g.nodes.len() - 1);
     return true;
 }
 

@@ -2020,8 +2020,13 @@ fn void Asm.emit_if(&self, bool on_true, uint r, uint target, bool backward) {
 // fastint, double, object, undefined, null or string; anything else takes the
 // slow path. Uses R0 to R2, FR0 and FR1.
 fn void Asm.truth_test(&self, uint r, Jumps* truthy, Jumps* falsy) {
-    void* c = self.c;
     self.load(R0, r);
+    self.truth_test_r0(truthy, falsy);
+}
+
+// truth_test of the value in R0.
+fn void Asm.truth_test_r0(&self, Jumps* truthy, Jumps* falsy) {
+    void* c = self.c;
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_BOOL);
     void* not_bool = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, 2);
     truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
