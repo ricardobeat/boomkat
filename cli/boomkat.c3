@@ -45,6 +45,11 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
     io::eprintf("\n");
 }
 
+// src/jit/pc_sampler.c: the profiling timer of --sample-pcs.
+extern fn CInt sampler_start(CLong after_us, CLong period_us, usz max_samples) @cname("boomkat_sampler_start");
+extern fn CInt sampler_finish(ZString path) @cname("boomkat_sampler_finish");
+const long SAMPLE_PERIOD_US = 1000;
+
 fn int main(String[] args) {
     $if $feat(OP_PROFILE):
         defer vm::opprof_dump();
@@ -69,6 +74,9 @@ fn int main(String[] args) {
     bool jit_count_ops = false;
     bool jit_dump_feedback = false;
     bool jit_dump_code = false;
+    String sample_path;
+    double sample_after = 0;
+    double sample_for = 3600;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
         bool bytecode_input = false;
@@ -170,6 +178,16 @@ fn int main(String[] args) {
         } else if (a == "--jit-dump-code") {
             jit_dump_feedback = true;
             jit_dump_code = true;
+        } else if (a.starts_with("--sample-pcs=")) {
+            sample_path = a[13..];
+        } else if (a.starts_with("--sample-after=")) {
+            double? s = a[15..].to_double();
+            if (catch s) { io::eprintfn("boomkat: bad --sample-after"); return 2; }
+            sample_after = s;
+        } else if (a.starts_with("--sample-for=")) {
+            double? s = a[13..].to_double();
+            if (catch s) { io::eprintfn("boomkat: bad --sample-for"); return 2; }
+            sample_for = s;
         } else if (a == "--jit-count-ops") {
             jit_stats = true;
             jit_count_ops = true;
@@ -305,6 +323,16 @@ fn int main(String[] args) {
 
     $if $feat(SLJIT):
         defer if (jit_dump_feedback) { jit::baseline_dump_feedback(hp); }
+        if (sample_path.len != 0) {
+            usz max = (usz)(sample_for * 1e6 / SAMPLE_PERIOD_US) + 1;
+            if (sampler_start((CLong)(sample_after * 1e6), SAMPLE_PERIOD_US, max) != 0) {
+                io::eprintfn("boomkat: --sample-pcs is not supported here");
+                return 2;
+            }
+        }
+        defer if (sample_path.len != 0) {
+            if (sampler_finish(sample_path.zstr_tcopy()) != 0) io::eprintfn("boomkat: could not write %s", sample_path);
+        }
         defer if (jit_stats) {
             jit::JitStats* st = &hp.jit_stats;
             io::eprintfn("jit: compiled %d (%d from hot loops), code %d bytes for %d instructions, tables %d bytes; excluded: opcode %d, too large %d; failed %d, capped %d",
@@ -409,6 +437,9 @@ fn void print_usage() {
         io::printn("--opt-always compiles on the first call instead of waiting for the hot threshold.");
         io::printn("--opt-log traces each refusal, exit and discard; --opt-dump prints each graph.");
         io::printn("--jit-dump-code prints each optimized body's code, for scripts/jit_disasm.py.");
+        io::printn("--sample-pcs=FILE samples the program counter every millisecond of CPU time, from");
+        io::printn("--sample-after=S seconds on for --sample-for=S, and writes them at exit for");
+        io::printn("scripts/jit_profile.py.");
     $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");

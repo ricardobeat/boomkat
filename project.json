@@ -45,7 +45,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -79,7 +80,8 @@
         ],
         "c-sources": [
           "vendor/sljit/sljit_src/sljitLir.c",
-          "src/jit/sljit_shim.c"
+          "src/jit/sljit_shim.c",
+          "src/jit/pc_sampler.c"
         ],
         "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
         "c-include-dirs": [
@@ -288,7 +290,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -337,7 +340,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -365,7 +369,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -393,7 +398,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -421,7 +427,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -451,7 +458,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -479,7 +487,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -506,7 +515,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -540,7 +550,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -595,7 +606,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -624,7 +636,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -718,7 +731,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -1012,7 +1026,8 @@
       "single-module": true,
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
@@ -1078,7 +1093,8 @@
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
-        "src/jit/sljit_shim.c"
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
       ],
       "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
