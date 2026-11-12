@@ -1,6 +1,6 @@
 # 119: 50K Octane on a two-tier JIT
 
-Status: **ACTIVE** on branch `jit` (worktree `.worktrees/jit`), last revised 2026-11-11 at `e7e0c034`.
+Status: **ACTIVE** on branch `jit` (worktree `.worktrees/jit`), last revised 2026-11-12 at `43f259c4`.
 The composite is about 10,000. The target is 50,000.
 
 This file holds the current state and the work ahead. The history of how the
@@ -497,6 +497,76 @@ publishes its frame and those of the calls around it"). A non-inlined
 callee then costs the inlined guard plus a `bl`, a stack adjust and a
 `ret`. That is the design to write next, reusing the inliner's
 frame-publication machinery rather than the call entry.
+
+**Stage 6: register calls between optimized functions** (the convention the
+targets need; started 2026-11-12 after `43f259c4`, which made proven calls
+from optimized code direct: a constant guard and a `bl` into the callee's
+`direct` entry label, skipping the call subroutine).
+
+What a direct call still pays, traced at `43f259c4` (plain, optimized `run`
+calling `f`): the caller boxes every live value into its window and reloads
+and unboxes them after (about 30), reads the callee's variable (12), the
+callee entry pushes and fills an `Activation`, tests record and value-stack
+room and clears the callee's registers (33), the callee unboxes its
+arguments from the window, and the return pops through flag and result
+tests (25). None of it is the call itself. JSC's 37 to 53 has none of it.
+
+The convention, for a call from optimized code to a proven callee whose
+optimized code is a *register leaf* (every node native, no call into C but
+its exits and its back-edge polls' slow paths):
+
+1. **Register entry.** Such a function gets a second entry, `reg_entry`, and
+   a signature in its `OptCode`: the rep of each formal (from the build's
+   own CHECK_I32/CHECK_NUM of the formal, else OBJECT-or-boxed) and of the
+   result. Formals arrive in fixed argument registers in those reps; the
+   result leaves in R1 in its rep. The entry saves the pool registers the
+   body allocates into its own native frame below the shared one (`sub sp`,
+   `stp` per pair) and restores them before `ret`: the caller's live nodes
+   survive in registers, so the caller spills and reloads nothing.
+2. **No `Activation`.** The callee's frame is virtual, as an inlined body's is.
+   Its window lies in the caller's frame: the caller reserves it like an
+   inlined body's (`room_slots`, `frame_regs`, so the collector scans it as
+   part of the caller's span), and the callee writes it only where an exit
+   needs it. A native stack-depth test (`sp` against a limit in the
+   `Dispatch`, 2 instructions) replaces the record and value-stack room
+   tests; a deep recursion takes the existing call entry.
+3. **Exits in two phases.** A register leaf's exit cannot publish its frame
+   while its caller's live values sit in saved registers the collector does
+   not see. Its exit stub stores its own live values into its window (inside
+   the caller's span), restores the caller's registers and returns to the
+   call site with status `CALLEE_EXIT` and the exit's descriptor in R1. The
+   site takes its own exit (its snapshot stores the caller's values and
+   publishes the caller's frame at the resume point after the call), then a
+   helper pushes the callee's `Activation` from the descriptor (function,
+   window, resume pc, `retval` the call's result slot) and the interpreter
+   or baseline code continues in the callee, returning into the caller
+   through the ordinary path. A back-edge poll's slow path is such an exit.
+4. **Caller node.** `OptOp.CALL_REG`: the guard (constant compare and epoch,
+   or the callee test), argument nodes moved into the argument registers in
+   the signature's reps (a rep mismatch converts or falls back to the direct
+   call), `bl` to the callee's `reg_entry` loaded through `cf.opt_code`
+   (null or a different signature: the direct call path), the result node
+   defined from R1. The builder emits it when `direct_callee` holds and the
+   callee's current optimized code is a register leaf with a matching
+   signature; it does not kill the caller's registers.
+5. **Code lifetime.** A register leaf's code may be retired while a native
+   frame runs in it: the retirement already waits for no native code
+   running (`opt_reap`); verify the sweep also never frees code a register
+   call returns into (the caller's code is live while it runs).
+
+Expected per call: guard 3, argument moves 0 to 2, `bl`, save and restore of
+the registers used (1 to 3 pairs each way), stack test 2, `ret`, status test
+1: about 15 plus the body. Steps, each measured with `call_cost.py`'s
+opt-opt row (which needs callees that tier up by feedback, not
+`--opt-always`, which compiles before the call feedback exists):
+
+- 6.1 Leaf analysis, signature and `reg_entry` with register save/restore;
+  `CALL_REG` with exits not yet allowed in the callee (a callee with any
+  exit stub is not a register leaf), so phase two waits.
+- 6.2 Two-phase exits, so ordinary leaves with guards qualify.
+- 6.3 Back-edge polls as exits; recursion (a register leaf calling itself
+  or another register leaf: the leaf condition widens to "calls only
+  register leaves", which makes the save area per call depth).
 
 ### 2. Collector and allocation
 
