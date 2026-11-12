@@ -560,13 +560,73 @@ the registers used (1 to 3 pairs each way), stack test 2, `ret`, status test
 opt-opt row (which needs callees that tier up by feedback, not
 `--opt-always`, which compiles before the call feedback exists):
 
-- 6.1 Leaf analysis, signature and `reg_entry` with register save/restore;
-  `CALL_REG` with exits not yet allowed in the callee (a callee with any
-  exit stub is not a register leaf), so phase two waits.
-- 6.2 Two-phase exits, so ordinary leaves with guards qualify.
-- 6.3 Back-edge polls as exits; recursion (a register leaf calling itself
-  or another register leaf: the leaf condition widens to "calls only
-  register leaves", which makes the save area per call depth).
+**Stage 6 progress** (2026-11-12, `35e7aa60` to `2c416f85`). Built, in a
+different shape from the design above where the code showed better:
+
+- Register mode is optimized code entered with no record: `reg_entry`
+  (FAST_ENTER, the window in R1 and in `regs`, a native frame of
+  `REG_FRAME_BYTES` = 512 of its own below the shared one, moved by
+  `sljit_shim_adjust_sp`, a two-instruction `op_custom` for arm64 and
+  x86-64, with the return address at `JitFrame.link_off`). Each frame has
+  its own local area, so callers spill to theirs and nothing is shared; no
+  per-register save/restore. `jit_enter` sets `Dispatch.reg_floor`
+  `vm::JIT_REG_DEPTH` (`MAX_CALLS / 16`) frames below each entry from C;
+  the entry declines past it or without value-stack room (`REG_DECLINE`,
+  `OptExit.DEEP`, transient). Mode test where code must know it (returns,
+  exits): `la.bottom == regs`.
+- What may run in register mode is `OptGraph.reg_blocker`: no GENERIC but
+  `RET`, no allocation, no loop, no scoped read of the running record;
+  stores, exits, inlined bodies and `CALL_REG` are fine.
+- Exits in two phases as designed: the exiting body stores its window,
+  records `(oc, reason, pc or inline site)` in the `Dispatch` and returns
+  `REG_EXIT`; each register-mode caller unwinds through `opt_reg_unwind`
+  (its call appended to `vm.reg_calls`), and the first caller with a record
+  publishes the whole chain (`vm::jit_publish_reg_calls`, sharing
+  `jit_publish_call` with inline exits), counts the exit on the exiting
+  code and continues it in its baseline code. A frame that starts register
+  calls reserves `JIT_REG_DEPTH + 1` records at its entry.
+- `CALL_REG` (`OptCg.emit_call_reg`): stores the snapshot, saves live
+  pool registers in its own frame's area, loads `cf.jit_code.reg_entry`
+  at run time (none: `OptExit.DECLINED`, which bans no site), `bl`,
+  `regs -= window`, result from R1.
+- Recursion: self-calls lowered as `CALL_REG` on the guess that the function
+  is register-capable, rebuilt without when not (`OptBuild.self_reg_calls`).
+  Root window moves become `COPY_WINDOW` only when they are all that blocks
+  register mode (`window_moves`; as a default they doubled code size).
+  A build compiles the callees it proves first (`opt_compile_callee`),
+  keeping a feedback-less callee only if it can run in register mode.
+- Tooling: `scripts/jit_report.py` (per-function builds, exits, call
+  lowering, what keeps a body framed); `--jit-stats` counts register exits.
+
+Measured: `call_cost.py` opt row plain/method/fib 165/186/188 to 90/175/141.
+A recursive `fib` call is 112 instructions (traced): argument boxed into the
+window and checked again as int32 by the callee (about 25), the callee guard
+through the global's cache (25), result boxed and reloaded (15), entry
+(floor, room, clearing the window: 20). Minis against r23 (`e7e0c034`):
+Richards -2.5%, Splay -3.7%, the rest within 0.6%. Richards' hot methods
+stay framed: `jit_report.py` shows them blocked by GENERIC `PUTTHISC` and
+`GETPROP`, by calls of framed functions, and by loops.
+
+Next, in order:
+
+- 6.4 **Promotion.** A register-mode body that reaches something needing a
+  record (a GENERIC, a call of framed code, a back-edge poll's slow path)
+  pushes its own record in place first: `jit_publish_call` on its window
+  from its caller's call (the caller's values are already in the window by
+  the call's snapshot; the chain above must publish too, so promotion is
+  the unwind path minus the exit), then continues in the same code as a
+  framed body, and returns to its register-mode caller by popping the
+  record and `REG_RETURN`. Then GENERICs, framed calls and loops leave
+  `reg_blocker`, and register mode covers every proven call.
+- 6.5 **Typed signature.** Formals and result in machine registers in the
+  reps the callee checks (`CHECK_I32`/`CHECK_NUM` of a formal, the `RET`
+  node's rep): no boxing into the window, no recheck. Exits rebox from the
+  registers into the window before publishing.
+- 6.6 **Guards.** A self-call needs no callee guard beyond the variable's
+  epoch; a constant callee's guard is one compare. Entry: clear only
+  the registers an exit can publish before their first write.
+- Zlib lost 3% when root moves went back to GENERICs: the baseline `LDREG`
+  is slower than `COPY_WINDOW`; look at its emission.
 
 ### 2. Collector and allocation
 
