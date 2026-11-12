@@ -3956,7 +3956,9 @@ fn bool OptBuild.callee_test(&self) {
 // Lower instruction `self.insn`.
 fn bool OptBuild.lower(&self) {
     if (self.g.region.end != 0 && self.insn >= self.cfg.exit_first) return self.region_exit();
-    if (self.fl_kind != null && self.fl_kind[self.insn] == 5) return self.callee_test();
+    // A body lowered in place numbers its instructions by its own bytecode, not the spliced graph's.
+    bool spliced = self.cur_fn == 0 || self.sites[self.cur_site].flat;
+    if (spliced && self.fl_kind != null && self.fl_kind[self.insn] == 5) return self.callee_test();
     // The body of a flat site whose call did not enter it this round, which is abandoned.
     if (self.cur_fn == 0 && self.fl_site != null && self.fl_site[self.insn] != 0) return true;
     if (self.cur_fn != 0 && self.sites[self.cur_site].flat) return self.lower_flat();
