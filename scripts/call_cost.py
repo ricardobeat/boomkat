@@ -6,8 +6,10 @@
 Each shape runs a loop of N and of 2N calls, and the same loop with the call replaced by its
 body; the difference of the four runs' retired instructions, over N, is what one call and return
 adds. Shapes: a plain call of a two-argument function, a method call reading `this`, and a
-recursive call (fib). Each runs under `--jit` (baseline code calling baseline code) and under
-`--jit --opt --opt-no-inline` (optimized code making real calls). --jsc adds the system
+recursive call (fib). Each runs under `--jit` (baseline code calling baseline code), under
+`--jit --opt --opt-no-inline` (a baseline caller of optimized callees: `run` is entered too
+rarely, and small integer functions have no feedback to tier up on), and under the same with
+`--opt-always` (optimized code calling optimized code). --jsc adds the system
 JavaScriptCore, whose callees are kept out of line with noInline. Needs /usr/bin/time -l (macOS).
 """
 import argparse, re, subprocess, sys
@@ -32,8 +34,13 @@ SHAPES = {
 
 
 def program(src, n):
-    # A warm-up run compiles every tier first; the measured run follows.
-    return PRELUDE + src + 'run(%d); run(%d);\n' % (min(n, 200000), n)
+    # A warm-up run compiles every tier first; the measured run follows. `run` is entered once per
+    # CHUNK calls, which the inline variant pays alike.
+    drive = 'function drive(n) { var t = 0; for (var r = 0; r < n / %d; r++) t = (t + run(%d)) | 0; return t; }\n' % (CHUNK, CHUNK)
+    return PRELUDE + src + drive + 'drive(%d); drive(%d);\n' % (min(n, 200000), n)
+
+
+CHUNK = 100
 
 
 def fib_program(depth, reps):
@@ -84,7 +91,8 @@ def main():
     parser.add_argument('--n', type=int, default=2000000, help='calls in the shorter run')
     parser.add_argument('binaries', nargs='+')
     args = parser.parse_args()
-    configs = [('jit', ['--jit']), ('opt', ['--jit', '--opt', '--opt-no-inline'])]
+    configs = [('jit', ['--jit']), ('opt', ['--jit', '--opt', '--opt-no-inline']),
+               ('opt-opt', ['--jit', '--opt', '--opt-always', '--opt-no-inline'])]
     rows = [(b.split('/')[-1], name, engine_cmd(b, flags)) for b in args.binaries for name, flags in configs]
     if args.jsc:
         rows.append(('jsc', 'baseline', engine_cmd('jsc', ['--useDFGJIT=false'])))
