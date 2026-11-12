@@ -881,6 +881,8 @@ bitstruct GcBits : uint {
     // Offset of an object's inline property slots, in eight-byte words; see
     // HObject.inline_props_ptr.
     uint inline_words : 11..15;
+    // Optimized code holds this object as a constant; its death moves Heap.folded_epoch.
+    bool folded : 16;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing

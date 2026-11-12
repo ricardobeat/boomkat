@@ -1406,6 +1406,8 @@ struct TypedKind {
     int mov;
 }
 
+fn bool TypedKind.is_float(&self) @inline => self.cls == hobject::ObjClass.FLOAT32ARRAY || self.cls == hobject::ObjClass.FLOAT64ARRAY;
+
 const TypedKind[*] TYPED_KINDS = {
     { hobject::ObjClass.INT32ARRAY, 2, SLJIT_MOV_S32 },
     { hobject::ObjClass.FLOAT64ARRAY, 3, SLJIT_MOV },
@@ -1467,7 +1469,7 @@ $if features::BUFFERS:
     fail.add(sljit_emit_jump(c, SLJIT_JUMP));
     foreach (k, kind : TYPED_KINDS) {
         hobject::ObjClass cls = kind.cls;
-        bool is_float = cls == hobject::ObjClass.FLOAT32ARRAY || cls == hobject::ObjClass.FLOAT64ARRAY;
+        bool is_float = kind.is_float();
         if (put && cls == hobject::ObjClass.UINT8CLAMPEDARRAY) {
             sljit_set_label(kind_at[k], sljit_emit_label(c));
             fail.add(sljit_emit_jump(c, SLJIT_JUMP));

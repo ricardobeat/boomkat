@@ -12,6 +12,7 @@ import boomkat::vm;
 import boomkat::builtins;
 import boomkat::bytecode;
 import boomkat::compiler;
+import boomkat::env;
 import boomkat::features;
 import boomkat::heap;
 import boomkat::hobject;
@@ -256,6 +257,9 @@ struct OptBuild {
     // it is not a proxy, which is all a load needs).
     uint* fact_shape;
     bool* fact_plain;
+    // The OptGraph.globals entries a GUARD_GLOBAL has proven since the last node that runs code
+    // (bit k for entry k), and the guard's layout and epoch tests (OPT_FACT_LAYOUT, OPT_FACT_EPOCH).
+    ulong fact_globals;
     // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
     // this block, or NO_NODE; a numeric use of the register asks for it to be a typed load.
     uint* load_def;
@@ -268,6 +272,7 @@ struct OptBuild {
     // The facts at the end of each block built so far, by position (nregs + 1 each).
     uint* end_shape;
     bool* end_plain;
+    ulong* end_globals;
     // The register states at the end and at the start of each block, by position.
     OptRegState* ends;
     OptRegState* entries;
@@ -526,6 +531,7 @@ fn void OptBuild.free(&self) {
     mem::free(self.fact_plain);
     mem::free(self.end_shape);
     mem::free(self.end_plain);
+    mem::free(self.end_globals);
     mem::free(self.ends);
     mem::free(self.entries);
     self.overrides.free();
@@ -829,6 +835,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
 // block start with more than one way in (begin_block) drops its facts.
 fn void OptBuild.forget_facts(&self) {
     for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
+    self.fact_globals = 0;
 }
 
 // The register a field node reads its receiver from: nregs for `this`.
@@ -1141,6 +1148,7 @@ fn bool OptBuild.body_closure(&self, uint* node) {
 fn bool OptBuild.get_variable(&self, bool scoped) {
     uint ra = self.w.a;
     if (ra >= self.nregs) return false;
+    if (!scoped && self.fold_global()) return true;
     uint closure = NO_NODE;
     if (scoped && !self.body_closure(&closure)) return self.generic();
     uint t = self.typed_load(OptOp.LOAD_GLOBAL, NO_NODE);
@@ -1156,6 +1164,110 @@ fn bool OptBuild.get_variable(&self, bool scoped) {
     self.load_def[ra] = self.pckey();
     if (ra >= self.caller_regs) self.soft_object(ra);
     return true;
+}
+
+// The fact bits of fact_globals beside the OptGraph.globals entries.
+const ulong OPT_FACT_LAYOUT = 1UL << 63;
+const ulong OPT_FACT_EPOCH = 1UL << 62;
+const uint OPT_GLOBALS_MAX = 62;
+
+// GETGLOBAL of a binding the code can fold (OptGlobal): its value as a constant node, after a
+// GUARD_GLOBAL unless one has proven it since the last node that runs code. Folded are numbers and
+// typed arrays, whose elements the code then addresses directly; other objects, often rebound,
+// gain nothing yet. Any other value is read as before, and so is a site that has failed its guard.
+fn bool OptBuild.fold_global(&self) {
+    CompiledFunction* f = self.cur_f();
+    uint pc = self.next_pc - 1;
+    if (f.var_ic_entries == null || opt_site_banned(self.f, f, pc, true)) return false;
+    hobject::VarICEntry* vic = &((hobject::VarICEntry*)f.var_ic_entries)[pc];
+    Heap* h = self.h;
+    // The cache names the binding while its epoch is the heap's; the global environment is the
+    // one with no parent, and its bindings are the global object.
+    if (vic.slot_ptr == null || vic.recycle_epoch != h.shape_recycle_epoch || vic.env == null || opt_unfolded(&h.opt, vic.slot_ptr)) return false;
+    if (((env::EnvRecord*)vic.env).parent != null || vic.prop_flags.is_accessor || vic.prop_flags.configurable) return false;
+    HObject* global = (HObject*)vic.bindings;
+    hobject::Shape* shape = h.get_shape(global.shape_id);
+    if (shape == null) return false;
+    TVal v = vic.slot_ptr.get();
+    OptView view;
+    bool object = v.is_object();
+    if (!v.is_numeric() && !(object && opt_const_view(v.get_raw_bits(), false, &view))) return false;
+    // The entry for this binding, shared by every read of it.
+    // One global object per graph: the layout fact speaks for it.
+    if (self.g.globals.len() != 0 && self.g.globals[0].global != global) return false;
+    ulong bits = v.get_raw_bits();
+    uint k = (uint)self.g.globals.len();
+    foreach (j, &gl : self.g.globals) if (gl.slot == vic.slot_ptr) k = (uint)j;
+    if (k == self.g.globals.len()) {
+        if (k >= OPT_GLOBALS_MAX) return false;
+        self.g.globals.push({ .global = global, .shape = global.shape_id, .gen = shape.generation, .epoch = h.folded_epoch, .slot = vic.slot_ptr, .value = bits });
+    }
+    ulong need = (1UL << k) | OPT_FACT_LAYOUT | (object ? OPT_FACT_EPOCH : 0);
+    if ((self.fact_globals & need) != need) {
+        char cc = 0;
+        if ((self.fact_globals & OPT_FACT_LAYOUT) == 0) cc |= OPT_GUARD_LAYOUT;
+        if (object && (self.fact_globals & OPT_FACT_EPOCH) == 0) cc |= OPT_GUARD_EPOCH;
+        uint g = self.add(OptOp.GUARD_GLOBAL, OptRep.NONE, NO_NODE, NO_NODE, (long)k);
+        self.g.nodes[g].cc = cc;
+        self.snapshot(g);
+        self.fact_globals |= need;
+    }
+    uint n;
+    if (v.is_fastint() && v.get_fastint() >= int::min && v.get_fastint() <= int::max) {
+        n = self.const_i32(v.get_fastint());
+    } else if (v.is_numeric()) {
+        n = self.const_f64(v.get_number_or_fastint());
+    } else {
+        // Its death would let its address name another object: folded, it moves the epoch first.
+        ((HObject*)v.get_heapptr()).gc.folded = true;
+        n = self.add(OptOp.CONST_OBJ, OptRep.OBJECT, NO_NODE, NO_NODE, (long)bits);
+    }
+    self.set(self.w.a, n);
+    return true;
+}
+
+// A typed array whose elements an access can address directly when it is a constant: a
+// fixed-length view of a fixed-length buffer whose store is in place. The GUARD_GLOBAL that proves
+// the value also proves the store in place (a detach clears it, and nothing else moves it). An
+// element store also needs a buffer that is not immutable and a kind that does not clamp.
+struct OptView {
+    // The index into TYPED_KINDS, its shift and load or store move.
+    uint kind;
+    HObject* buffer;
+    char* base;
+    char* data;
+    uint length;
+}
+
+fn bool opt_const_view(ulong bits, bool store, OptView* out) {
+$if features::BUFFERS:
+    TVal v = { .bits = bits };
+    if (!v.is_object()) return false;
+    HObject* o = (HObject*)v.get_heapptr();
+    if (o.flags.exotic_proxyobj || o.flags.has_indexed_named_prop) return false;
+    foreach (k, kind : TYPED_KINDS) {
+        if (o.flags.obj_class != kind.cls) continue;
+        if (store && kind.cls == hobject::ObjClass.UINT8CLAMPEDARRAY) return false;
+        hobject::HObjectBufferView* view = &(*o.extra_ptr()).view;
+        if (view.buffer == null || view.length_tracking) return false;
+        hobject::HObjectArrayBuffer* ab = &(*view.buffer.extra_ptr()).ab;
+        if (ab.data == null || ab.resizable || (store && ab.immutable)) return false;
+        *out = { .kind = (uint)k, .buffer = view.buffer, .base = ab.data, .data = ab.data + view.byte_offset, .length = view.byte_length >> kind.shift };
+        return true;
+    }
+    return false;
+$else
+    return false;
+$endif
+}
+
+// The CONST_OBJ node register `r` holds when its value is a typed array opt_const_view accepts,
+// with the view; else NO_NODE.
+fn uint OptBuild.const_view(&self, uint r, bool store, OptView* view) {
+    if (r >= self.nregs || self.cur[r].node == NO_NODE) return NO_NODE;
+    OptNode* n = &self.g.nodes[self.cur[r].node];
+    if (n.op != OptOp.CONST_OBJ || !opt_const_view((ulong)n.imm, store, view)) return NO_NODE;
+    return self.cur[r].node;
 }
 
 // LDTHIS in an inlined method call: the receiver the call checked to be an object, copied to the
@@ -1213,6 +1325,11 @@ fn bool OptBuild.index_ok(&self, uint r) {
 // A register holding an OBJECT node.
 fn bool OptBuild.is_object(&self, uint r) {
     return r < self.nregs && self.cur[r].node != NO_NODE && self.rep_of(self.cur[r].node) == OptRep.OBJECT;
+}
+
+// Whether register `r` holds a CONST_OBJ node: an object, never a number.
+fn bool OptBuild.const_object(&self, uint r) {
+    return r < self.nregs && self.cur[r].node != NO_NODE && self.g.nodes[self.cur[r].node].op == OptOp.CONST_OBJ;
 }
 
 // Store the OBJECT node of register `r` to its window slot if it is dirty.
@@ -1687,6 +1804,20 @@ fn bool OptBuild.get_elem(&self) {
     uint rnode;
     // A site that has exited repeatedly (a hole, an index past the end) runs the baseline's access.
     if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return self.generic();
+    OptView view;
+    uint cv = self.const_view(self.w.b, false, &view);
+    if (cv != NO_NODE && self.w.a < self.nregs && self.index_ok(self.w.c)) {
+        // An element of a constant typed array, read as the number it is.
+        TypedKind kind = TYPED_KINDS[view.kind];
+        bool wide = kind.is_float() || kind.cls == hobject::ObjClass.UINT32ARRAY;
+        uint idx = self.operand(self.w.c, OptRep.INT32);
+        if (idx == NO_NODE) return self.generic();
+        uint n = self.add(OptOp.LOAD_ELEM, wide ? OptRep.FLOAT64 : OptRep.INT32, idx, NO_NODE, (long)self.pc);
+        self.g.nodes[n].c = cv;
+        self.snapshot(n);
+        self.set(self.w.a, n);
+        return true;
+    }
     if (!self.elem_receiver(self.w.b, &rnode) || !self.index_ok(self.w.c)) return self.generic();
     bool asked = false;
     foreach (c : self.load_reps) asked |= c.block == self.pckey();
@@ -1724,6 +1855,19 @@ fn bool OptBuild.put_elem(&self) {
     uint rnode;
     if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return self.generic();
     if (rv >= self.nregs || !self.index_ok(self.w.b)) return self.generic();
+    OptView view;
+    uint cv = self.const_view(self.w.a, true, &view);
+    if (cv != NO_NODE && !self.is_object(rv)) {
+        // A number stored into a constant typed array: an integer kind takes ToInt32 of it (its low
+        // bits are those of the narrower conversions), a float kind the double.
+        uint idx = self.operand(self.w.b, OptRep.INT32);
+        uint val = self.operand(rv, TYPED_KINDS[view.kind].is_float() ? OptRep.FLOAT64 : OptRep.INT32);
+        if (idx == NO_NODE || val == NO_NODE) return self.generic();
+        uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, val, (long)self.pc);
+        self.g.nodes[n].c = cv;
+        self.snapshot(n);
+        return true;
+    }
     bool numeric = self.cur[rv].node != NO_NODE && !self.is_object(rv);
     if (!numeric && self.cur[rv].node == NO_NODE && self.load_def[rv] != NO_NODE) {
         // A copy between typed arrays (a[i] = b[j]) has no numeric use to ask its read for a
@@ -1799,7 +1943,8 @@ fn bool OptBuild.compare_value(&self) {
     if (ra >= self.nregs || rb >= self.nregs || rc >= self.nregs) return self.generic();
     bool equality = op.ordinal < Opcode.LT.ordinal;
     char fb = self.feedback();
-    bool non_number = (fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0;
+    // A folded constant that is not a number says as much as the feedback.
+    bool non_number = (fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0 || self.const_object(rb) || self.const_object(rc);
     if (equality) {
         if (self.is_object(rb)) self.publish_object(rb);
         if (self.is_object(rc)) self.publish_object(rc);
@@ -3283,6 +3428,7 @@ fn bool OptBuild.try_inline(&self) {
     mem::copy(save_def, self.load_def, (usz)n * uint::size);
     mem::copy(save_shape, self.fact_shape, ((usz)n + 1) * uint::size);
     mem::copy(save_plain, self.fact_plain, (usz)n + 1);
+    ulong save_globals = self.fact_globals;
     sz nodes0 = self.g.nodes.len();
     sz dirty0 = self.g.dirty.len();
     sz fns0 = self.g.fns.len();
@@ -3386,6 +3532,7 @@ fn bool OptBuild.try_inline(&self) {
         mem::copy(self.load_def, save_def, (usz)n * uint::size);
         mem::copy(self.fact_shape, save_shape, ((usz)n + 1) * uint::size);
         mem::copy(self.fact_plain, save_plain, (usz)n + 1);
+        self.fact_globals = save_globals;
         if (parent_fn == 0) self.refused = OptRefuse.NONE;
         return false;
     }
@@ -3817,6 +3964,7 @@ fn void OptBuild.save_ends(&self, uint pos) {
     mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
     mem::copy(&self.end_shape[(sz)pos * w], self.fact_shape, w * uint::size);
     mem::copy(&self.end_plain[(sz)pos * w], self.fact_plain, w);
+    self.end_globals[pos] = self.fact_globals;
 }
 
 // The facts at the start of the block at `pos`: those every built block leading to it ends with.
@@ -3827,6 +3975,7 @@ fn void OptBuild.meet_facts(&self, uint pos) {
         if (p >= pos || self.dead[p]) continue;
         uint* shape = &self.end_shape[(usz)p * w];
         bool* plain = &self.end_plain[(usz)p * w];
+        self.fact_globals = first ? self.end_globals[p] : self.fact_globals & self.end_globals[p];
         for (usz r = 0; r < w; r++) {
             if (first) {
                 self.fact_shape[r] = shape[r];
@@ -4019,6 +4168,7 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.fact_plain = mem::new_array(bool, (usz)n + 1);
     b.end_shape = mem::new_array(uint, (usz)b.nrpo * ((usz)n + 1));
     b.end_plain = mem::new_array(bool, (usz)b.nrpo * ((usz)n + 1));
+    b.end_globals = mem::new_array(ulong, b.nrpo);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
     // A nested site's operands become OBJECT nodes over rounds of their own, each request

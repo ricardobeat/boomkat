@@ -81,6 +81,10 @@ enum OptOp : char {
     // imm is the value: an int32, or the bits of a double.
     CONST_I32,
     CONST_F64,
+    // The boxed object imm a GETGLOBAL read from a binding the code folded (OptBuild.fold_global): an
+    // OBJECT node with no register and no home, as the numeric constants are. A GUARD_GLOBAL before
+    // it in its stretch of code proves the binding holds it.
+    CONST_OBJ,
     // Window slot imm, checked to hold an int32 (exit NOT_INT32) or a number
     // (exit NOT_NUMBER), as an INT32 or FLOAT64.
     CHECK_I32,
@@ -157,6 +161,12 @@ enum OptOp : char {
     // A GETGLOBAL of an inlined body (imm its pc) read as a number of the node's rep; exits when
     // its cache does not hold or the value is not that kind of number.
     LOAD_GLOBAL,
+    // Exits (GLOBAL) before the GETGLOBAL at pc unless the binding OptGraph.globals[imm] still holds
+    // the value the code folded, the backing store of a typed array value included: with cc bit
+    // OPT_GUARD_LAYOUT first the global object's layout, with OPT_GUARD_EPOCH the folded-object
+    // epoch (OptGlobal). While the collector marks, an object value is shaded, as a load of it would be.
+    // It defines nothing.
+    GUARD_GLOBAL,
     // The window slot imm (a callee RET's register) copied to the window slot home (the call's
     // result register) as a published store; exits (SLOW_PATH) where publish does. cc 1 copies
     // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG),
@@ -391,6 +401,25 @@ struct OptPoly {
     uint[OPT_POLY_MAX] idx;
 }
 
+// A global binding whose value the code folds (OptBuild.fold_global): a `var` or function
+// declaration of a script, a non-configurable data property of the global object, which nothing can
+// delete, make an accessor or shadow with a lexical declaration. Its slot is `slot` while the global
+// object's shape is `shape` and that shape's storage `gen`: a property added in place keeps both, and
+// anything that moves or reorders the values changes one. An object value is marked folded, so that
+// its death moves Heap.folded_epoch from `epoch` before its address can name another object.
+struct OptGlobal {
+    HObject* global;
+    uint shape;
+    uint gen;
+    uint epoch;
+    hobject::PropValue* slot;
+    ulong value;
+}
+
+// GUARD_GLOBAL's cc bits.
+const char OPT_GUARD_LAYOUT = 1;
+const char OPT_GUARD_EPOCH = 2;
+
 // A join (block `pos` in reverse postorder) and a register merged there.
 // The function of a MATH node, with the number of arguments its call passes.
 enum OptMath : char (uint args) {
@@ -445,12 +474,14 @@ struct OptGraph {
     List{OptSink} sinks;
     List{OptMat} mats;
     List{uint} mat_vals;
+    List{OptGlobal} globals;
 }
 
 fn void OptGraph.init(&self) {
     self.sinks.init(mem);
     self.mats.init(mem);
     self.mat_vals.init(mem);
+    self.globals.init(mem);
     self.polys.init(mem);
     self.nodes.init(mem);
     self.blocks.init(mem);
@@ -463,6 +494,7 @@ fn void OptGraph.clear(&self) {
     self.sinks.clear();
     self.mats.clear();
     self.mat_vals.clear();
+    self.globals.clear();
     self.polys.clear();
     self.nodes.clear();
     self.blocks.clear();
@@ -474,6 +506,7 @@ fn void OptGraph.free(&self) {
     self.sinks.free();
     self.mats.free();
     self.mat_vals.free();
+    self.globals.free();
     self.polys.free();
     self.nodes.free();
     self.blocks.free();
@@ -482,7 +515,7 @@ fn void OptGraph.free(&self) {
     self.fns.free();
 }
 
-fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64;
+fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64 || self.op == OptOp.CONST_OBJ;
 
 // Whether OBJECT node `n` holds a boolean: a comparison, a `!`, a phi of such (cc 1), or a copy.
 fn bool OptGraph.is_boolean(&self, OptNode* n) {

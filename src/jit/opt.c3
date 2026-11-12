@@ -57,6 +57,9 @@ enum OptExit : char (String label) {
     // A register call's callee declined it for want of native stack, records or value stack: deep
     // recursion, which the baseline continues. Not a failed speculation.
     DEEP {"deep"},
+    // A global binding the code folded no longer holds its value, or the global object's layout
+    // moved (OptOp.GUARD_GLOBAL). The rebuild reads the binding instead.
+    GLOBAL {"global"},
 }
 
 // Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a
@@ -104,6 +107,8 @@ const uint OPT_BAN_MAX = 16;
 // OptBan.pc naming every site of the function.
 const uint OPT_BAN_ALL = 0xFFFFFFFF;
 const uint OPT_HIT_SLOTS = 8;
+// Global bindings remembered as changing (OptPolicy.unfolded).
+const uint OPT_UNFOLD_MAX = 64;
 // Rebuilds that move phis without a machine register to the window before the function is refused.
 const uint OPT_PRESSURE_ROUNDS = 6;
 
@@ -112,6 +117,8 @@ const uint OPT_PRESSURE_ROUNDS = 6;
 struct OptBan {
     CompiledFunction* cf;
     uint pc;
+    // Only the folding of the GETGLOBAL there (OptExit.GLOBAL): the site still reads the binding.
+    bool fold;
 }
 
 struct OptBans {
@@ -125,6 +132,7 @@ struct OptSiteHit {
     uint pc;
     uint count;
     bool call;
+    bool fold;
 }
 
 struct OptCode {
@@ -246,6 +254,11 @@ struct OptPolicy {
     bool dump;
     // Print each exit, discard and refusal with its function (--opt-log).
     bool log;
+    // The slots of global bindings whose folded value a guard found changed (OptExit.GLOBAL): no
+    // build folds them again, so a binding the program writes costs one body's exits, not every
+    // reader's. The oldest give way first.
+    void*[OPT_UNFOLD_MAX] unfolded;
+    uint unfolded_next;
     // Test hook: zero, or one more than the OptExit every optimized body
     // takes `force_count` times at instruction `force_at`.
     uint force_reason;
@@ -540,11 +553,13 @@ fn hobject::Shape* opt_settled_shape(Heap* h, hobject::ICEntry* ic) {
 
 // Whether the instruction at word `pc` of `cf` (the function `root` is optimizing, or a callee
 // inlined into it) exited from optimized code often enough that it is no longer speculated on.
-fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc) {
+// `fold` asks about folding a GETGLOBAL there, which a ban of its fold alone stops too.
+fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc, bool fold = false) {
     OptBans* bans = root.opt_bans;
     if (bans == null) return false;
     for (uint i = 0; i < bans.count; i++) {
-        if (bans.items[i].cf == cf && (bans.items[i].pc == pc || bans.items[i].pc == OPT_BAN_ALL)) return true;
+        OptBan* b = &bans.items[i];
+        if (b.cf == cf && (b.pc == pc || b.pc == OPT_BAN_ALL) && (fold || !b.fold)) return true;
     }
     return false;
 }
@@ -972,6 +987,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         return 0;
     }
     opt_note_exit_op(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base));
+    if (reason == OptExit.GLOBAL.ordinal) opt_note_unfold(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base));
     if (h.opt.log) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
         io::eprintf("opt exit ");
@@ -1041,13 +1057,27 @@ fn uint opt_exit_limit(Heap* h) @inline => h.opt.exit_max != 0 ? h.opt.exit_max 
 // body, whose typed loads it does not re-derive (`inlined`).
 fn bool opt_exit_bannable(long reason, bool inlined = false) {
     switch ((OptExit)reason) {
-        case SHAPE: case RECEIVER: case SLOW_PATH: case CALLEE: case BOUNDS: case HOLE:
+        case SHAPE: case RECEIVER: case SLOW_PATH: case CALLEE: case BOUNDS: case HOLE: case GLOBAL:
             return true;
         case NOT_NUMBER: case NOT_INT32:
             return inlined;
         default:
             return false;
     }
+}
+
+// The guard of the folded GETGLOBAL at word `pc` of `cf` failed: remember its binding as changing.
+fn void opt_note_unfold(OptPolicy* p, CompiledFunction* cf, uint pc) {
+    if (cf.code[pc].op == Opcode.WIDE) pc++;
+    if (cf.var_ic_entries == null) return;
+    void* slot = ((hobject::VarICEntry*)cf.var_ic_entries)[pc].slot_ptr;
+    if (slot == null || opt_unfolded(p, slot)) return;
+    p.unfolded[p.unfolded_next++ % OPT_UNFOLD_MAX] = slot;
+}
+
+fn bool opt_unfolded(OptPolicy* p, void* slot) {
+    foreach (s : p.unfolded) if (s == slot) return true;
+    return false;
 }
 
 // Whether an exit says nothing about the body's speculation: a slow path taken while the collector
@@ -1072,6 +1102,7 @@ fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reas
         hit.pc = pc;
         hit.count = 0;
         hit.call = reason == OptExit.CALLEE.ordinal;
+        hit.fold = reason == OptExit.GLOBAL.ordinal;
     }
     return ++hit.count >= OPT_SITE_EXITS;
 }
@@ -1087,8 +1118,8 @@ fn uint opt_ban_hits(Heap* h, OptCode* oc, uint* hit_sites) {
         sites++;
         // The cache of one site a body exits from is as stale as its neighbours', which the body would
         // exit from next: the second time a body of the function is discarded, none is speculated on.
-        uint pc = root.opt_reopts != 0 && !x.call ? OPT_BAN_ALL : x.pc;
-        if (opt_site_banned(root, x.cf, pc)) continue;
+        uint pc = root.opt_reopts != 0 && !x.call && !x.fold ? OPT_BAN_ALL : x.pc;
+        if (opt_site_banned(root, x.cf, pc, x.fold)) continue;
         OptBans* bans = root.opt_bans;
         if (bans == null) {
             bans = h.alloc_func(h.heap_udata, OptBans::size);
@@ -1097,7 +1128,7 @@ fn uint opt_ban_hits(Heap* h, OptCode* oc, uint* hit_sites) {
             root.opt_bans = bans;
         }
         if (bans.count >= OPT_BAN_MAX) { *hit_sites = sites; return added; }
-        bans.items[bans.count++] = { .cf = x.cf, .pc = pc };
+        bans.items[bans.count++] = { .cf = x.cf, .pc = pc, .fold = x.fold };
         h.opt.bans++;
         added++;
     }
@@ -1120,6 +1151,7 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         return vm::jit_inline_materialize(ds, site);
     }
     opt_note_exit_op(&h.opt, callee, site.pc);
+    if (reason == OptExit.GLOBAL.ordinal) opt_note_unfold(&h.opt, callee, site.pc);
     if (h.opt.log) {
         io::eprintf("opt exit ");
         opt_log_fn(callee);

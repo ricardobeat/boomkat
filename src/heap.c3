@@ -1359,6 +1359,9 @@ struct Heap {
     ulong               prototype_epoch;
     // The collection, counted from one, whose sweep has moved the epoch for the observed objects it frees.
     uint                observed_death_cycle;
+    // Advanced when an object optimized code holds as a constant dies (GcBits.folded), before its
+    // address can name another object.
+    uint                folded_epoch;
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
     // makes back to back advance the epoch once.
@@ -4535,6 +4538,10 @@ fn void Heap.bump_prototype_epoch(&self, HObject* cause) @noinline {
 // The sweep frees an observed object, whose address a read cache may still name as a first link
 // and a later object may take. Every such cache was filled before marking ended, since nothing
 // reaches the object after that, so moving the epoch once per sweep voids them all.
+fn void Heap.folded_object_died(&self) @noinline {
+    self.folded_epoch++;
+}
+
 fn void Heap.observed_object_died(&self) @noinline {
     if (self.observed_death_cycle == self.gc_cycles + 1) return;
     self.observed_death_cycle = self.gc_cycles + 1;

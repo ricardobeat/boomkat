@@ -185,6 +185,10 @@ fn void OptCg.store_flt(&self, uint slot, int fsrc) {
 // OBJECT node `n` in a register: its own, or `tmp` loaded from its home slot.
 fn int OptCg.obj_reg(&self, uint n, int tmp) {
     OptNode* nd = &self.g.nodes[n];
+    if (nd.op == OptOp.CONST_OBJ) {
+        sljit_emit_op1(self.a.c, SLJIT_MOV, tmp, 0, SLJIT_IMM, nd.imm);
+        return tmp;
+    }
     if (nd.reg >= 0) return nd.reg;
     self.a.load(tmp, nd.home);
     return tmp;
@@ -214,6 +218,10 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
         self.a.store(slot, SLJIT_IMM, K_INT | (nd.imm & (PAYLOAD_SPAN - 1)));
     } else if (nd.op == OptOp.CONST_F64) {
         self.a.store(slot, SLJIT_IMM, nd.imm);
+    } else if (nd.op == OptOp.CONST_OBJ) {
+        self.a.store(slot, SLJIT_IMM, nd.imm);
+        TVal v = { .bits = (ulong)nd.imm };
+        if (!v.is_inert()) self.a.track_heap_store(slot, R3, R2);
     } else if (nd.reg < 0) {
         // Lives in its home slot already.
     } else if (nd.rep == OptRep.OBJECT) {
@@ -405,7 +413,9 @@ fn void OptCg.emit_item(&self, OptMoveItem* m) {
     OptNode* s = &self.g.nodes[m.src];
     bool is_const = s.is_const();
     if (d.rep == OptRep.OBJECT) {
-        if (m.src_reg >= 0) {
+        if (is_const) {
+            sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, SLJIT_IMM, s.imm);
+        } else if (m.src_reg >= 0) {
             sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, m.src_reg, 0);
         } else {
             self.a.load(d.reg, s.home);
@@ -833,7 +843,7 @@ fn void OptCg.box_index(&self, uint n) {
 fn void OptCg.box_node(&self, uint n, int dst) {
     void* c = self.a.c;
     OptNode* nd = &self.g.nodes[n];
-    if (nd.op == OptOp.STORE_CONST) {
+    if (nd.op == OptOp.STORE_CONST || nd.op == OptOp.CONST_OBJ) {
         sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, nd.imm);
     } else if (nd.op == OptOp.CONST_I32) {
         sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_INT | (nd.imm & (PAYLOAD_SPAN - 1)));
@@ -884,6 +894,12 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     self.decode(n);
     a.call.len = 0;
+    OptView view;
+    if (self.const_view(n, false, &view)) {
+        int x = self.const_elem(i, n.a, &view);
+        self.emit_typed_load(i, n, TYPED_KINDS[view.kind], x);
+        return;
+    }
     int rr = R0;
     if (n.c != NO_NODE) {
         rr = self.obj_reg(n.c, R0);
@@ -895,7 +911,9 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     bool unseen;
     int k = self.typed_kind(0, &flags, &unseen);
     if (k >= 0) {
-        self.emit_typed_load(i, n, TYPED_KINDS[k], flags);
+        int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, 0, false);
+        self.exit_calls(i, OptExit.SLOW_PATH);
+        self.emit_typed_load(i, n, TYPED_KINDS[k], x);
         return;
     }
     self.box_index(n.a);
@@ -1007,15 +1025,32 @@ fn int OptCg.typed_elem_addr(&self, uint idx, TypedKind kind, long flags, long e
     return x;
 }
 
-// LOAD_ELEM of the typed array kind its site has met (OptCg.typed_kind): the element read in
-// place, without the subroutine's dispatch over kinds; an int32 or double node takes it unboxed.
-fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, long flags) {
+// The CONST_OBJ receiver of element access `n`, when its value is a typed array opt_const_view
+// accepts, as `view`.
+fn bool OptCg.const_view(&self, OptNode* n, bool store, OptView* view) {
+    if (n.c == NO_NODE || self.g.nodes[n.c].op != OptOp.CONST_OBJ) return false;
+    return opt_const_view((ulong)self.g.nodes[n.c].imm, store, view);
+}
+
+// The element at INT32 node `idx` of a constant view, whose store the guard of its binding has
+// proven in place: the index register, checked against the view's length, with R4 the store.
+fn int OptCg.const_elem(&self, uint i, uint idx, OptView* view) {
+    void* c = self.a.c;
+    int x = self.int_reg(idx, R3);
+    // Unsigned, so a negative index fails too.
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, x, 0, SLJIT_IMM, view.length), i, OptExit.BOUNDS);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_IMM, (long)(usz)view.data);
+    return x;
+}
+
+// LOAD_ELEM of a typed array of `kind`, whose store is in R4 and the checked index in `x`
+// (OptCg.typed_elem_addr, OptCg.const_elem): the element read in place, without the subroutine's
+// dispatch over kinds; an int32 or double node takes it unboxed.
+fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, int x) {
     void* c = self.a.c;
     Asm* a = self.a;
-    int x = self.typed_elem_addr(n.a, kind, flags, 0, false);
     int elem = mem_index(R4, x);
-    bool is_float = kind.cls == hobject::ObjClass.FLOAT32ARRAY || kind.cls == hobject::ObjClass.FLOAT64ARRAY;
-    self.exit_calls(i, OptExit.SLOW_PATH);
+    bool is_float = kind.is_float();
     if (n.rep == OptRep.INT32 && !is_float && kind.cls != hobject::ObjClass.UINT32ARRAY) {
         sljit_emit_op1(c, kind.mov, R0, 0, elem, kind.shift);
         self.def_int(i, R0);
@@ -1069,35 +1104,33 @@ fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, long fl
     self.def_from_r0(i, n);
 }
 
-// STORE_ELEM of a numeric node into the typed array kind its site has met: an int32 node stores
-// its low bits to an integer kind, as ta_store_int; a float kind takes the value as a double
-// (narrowed for Float32), as ta_store_scalar.
-fn void OptCg.emit_typed_store(&self, uint i, OptNode* n, TypedKind kind, long flags) {
+// The value of STORE_ELEM `n` as a store to `kind` takes it, before the element's address takes R4:
+// an int32 node in a register, whose low bits an integer kind stores, as ta_store_int; for a float
+// kind the double (narrowed for Float32) in a float register, as ta_store_scalar.
+fn int OptCg.typed_store_value(&self, OptNode* n, TypedKind kind) {
     void* c = self.a.c;
-    int x = self.typed_elem_addr(n.a, kind, flags, self.a.lay.indexed_named_mask, true);
-    self.exit_calls(i, OptExit.SLOW_PATH);
-    int elem = mem_index(R4, x);
-    OptNode* v = &self.g.nodes[n.b];
-    bool is_float = kind.cls == hobject::ObjClass.FLOAT32ARRAY || kind.cls == hobject::ObjClass.FLOAT64ARRAY;
-    if (!is_float) {
-        int r = self.int_reg(n.b, R0);
-        sljit_emit_op1(c, kind.mov, elem, kind.shift, r, 0);
-        return;
-    }
+    if (!kind.is_float()) return self.int_reg(n.b, R0);
     int f32 = kind.cls == hobject::ObjClass.FLOAT32ARRAY ? SLJIT_32 : 0;
-    int fr;
-    if (v.rep == OptRep.INT32) {
+    if (self.g.nodes[n.b].rep == OptRep.INT32) {
         int r = self.int_reg(n.b, R0);
         sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW | f32, FR0, 0, r, 0);
-        fr = FR0;
-    } else {
-        fr = self.flt_reg(n.b, FR0);
-        if (f32 != 0) {
-            sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32 | SLJIT_32, FR0, 0, fr, 0);
-            fr = FR0;
-        }
+        return FR0;
     }
-    sljit_emit_fop1(c, SLJIT_MOV_F64 | f32, elem, kind.shift, fr, 0);
+    int fr = self.flt_reg(n.b, FR0);
+    if (f32 == 0) return fr;
+    sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32 | SLJIT_32, FR0, 0, fr, 0);
+    return FR0;
+}
+
+// STORE_ELEM of the value `v` (OptCg.typed_store_value) into a typed array of `kind`, whose store
+// is in R4 and the checked index in `x`.
+fn void OptCg.emit_typed_store(&self, TypedKind kind, int v, int x) {
+    int elem = mem_index(R4, x);
+    if (!kind.is_float()) {
+        sljit_emit_op1(self.a.c, kind.mov, elem, kind.shift, v, 0);
+    } else {
+        sljit_emit_fop1(self.a.c, SLJIT_MOV_F64 | (kind.cls == hobject::ObjClass.FLOAT32ARRAY ? SLJIT_32 : 0), elem, kind.shift, v, 0);
+    }
 }
 
 // The id `shape` as the second operand of a 32-bit compare, its word in `w`. A shared shape is
@@ -1505,6 +1538,13 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     }
     self.decode(n);
     a.call.len = 0;
+    OptView view;
+    // An int32 value: the builder converts a double to the integer kinds (OptBuild.put_elem).
+    if (self.const_view(n, true, &view) && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[view.kind].is_float())) {
+        int v = self.typed_store_value(n, TYPED_KINDS[view.kind]);
+        self.emit_typed_store(TYPED_KINDS[view.kind], v, self.const_elem(i, n.a, &view));
+        return;
+    }
     int rr = R0;
     if (n.c != NO_NODE) {
         rr = self.obj_reg(n.c, R0);
@@ -1516,8 +1556,11 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     bool unseen;
     int k = self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
     // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
-    if (k >= 0 && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT32ARRAY || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT64ARRAY)) {
-        self.emit_typed_store(i, n, TYPED_KINDS[k], flags);
+    if (k >= 0 && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[k].is_float())) {
+        int v = self.typed_store_value(n, TYPED_KINDS[k]);
+        int x = self.typed_elem_addr(n.a, TYPED_KINDS[k], flags, a.lay.indexed_named_mask, true);
+        self.exit_calls(i, OptExit.SLOW_PATH);
+        self.emit_typed_store(TYPED_KINDS[k], v, x);
         return;
     }
     self.box_index(n.a);
@@ -2070,6 +2113,41 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
     for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
     a.alt.len = 0;
     self.exit_calls(i, OptExit.SLOW_PATH);
+}
+
+// GUARD_GLOBAL (OptGlobal): the global object's layout and the folded-object epoch as the node's cc asks,
+// then the binding's value and a typed array value's store in place. While the collector marks, an
+// object value is shaded, as a load of it would be: the code may store it to the window.
+fn void OptCg.emit_guard_global(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    OptGlobal* gl = &self.g.globals[(usz)n.imm];
+    if ((n.cc & OPT_GUARD_LAYOUT) != 0) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM, (long)(usz)gl.global + l.obj_shape);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, gl.shape), i, OptExit.GLOBAL);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, l.heap_shapes);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)gl.shape * 8);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, l.shape_gen);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, gl.gen), i, OptExit.GLOBAL);
+    }
+    if ((n.cc & OPT_GUARD_EPOCH) != 0) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.folded_epoch - (char*)self.h));
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, gl.epoch), i, OptExit.GLOBAL);
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)gl.slot);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)gl.value), i, OptExit.GLOBAL);
+    OptView view;
+    if (opt_const_view(gl.value, false, &view)) {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM, (long)(usz)view.buffer + l.ab_data);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)view.base), i, OptExit.GLOBAL);
+    }
+    TVal v = { .bits = gl.value };
+    if (!v.is_object()) return;
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, l.heap_gc_phase);
+    void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+    self.shade(i);
+    sljit_set_label(quiet, sljit_emit_label(c));
 }
 
 // A TYPEOF of an inlined body: the interned name for the operand's tag, into the node's home slot.
@@ -2771,7 +2849,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.GUARD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH) {
         if (self.force_here(n)) {
             self.forced_done = true;
             // The hook falls through once its count is spent: an allocation for the exit must not run then.
@@ -2795,6 +2873,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     switch (n.op) {
         case CONST_I32:
         case CONST_F64:
+        case CONST_OBJ:
         case PHI:
         case NOT_I32:
             if (n.op == OptOp.NOT_I32) self.emit_bitop(i, n);
@@ -2820,6 +2899,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_load_var(i, n);
         case LOAD_GLOBAL:
             self.emit_load_global(i, n);
+        case GUARD_GLOBAL:
+            self.emit_guard_global(i, n);
         case COPY_WINDOW:
             self.emit_copy_window(i, n);
         case STORE_CONST:

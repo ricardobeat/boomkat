@@ -2955,6 +2955,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.gc.prototype_observed && hp != null) hp.observed_object_died();
+    if (obj.gc.folded && hp != null) hp.folded_object_died();
     if (obj.gc.weak_target && hp != null) hp.weak_target_died((HeapHeader*)obj);
 
     // Subtype resources are disjoint. Ordinary objects and arrays own only
