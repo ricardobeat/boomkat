@@ -5964,7 +5964,7 @@ fn HString* Heap.str_table_lookup(&self, hstring::Units data, uint hash, bool hi
             HString* entry = self.str_table[idx];
             if (entry.flags.is_hidden == hidden && entry.length == data.len
                 && entry.flags.is_wide == data.wide
-                && mem::equals(entry.data_ptr(), data.ptr, (sz)data.byte_len())) return entry;
+                && hstring::same_bytes(entry.data_ptr(), data.ptr, data.byte_len())) return entry;
         }
         idx = (idx + 1) & mask;
     }
@@ -6393,7 +6393,7 @@ fn HString* Heap.str_slice(&self, HString* s, uint from, uint to) {
     if (u.wide || u.len < 2 || u.len > SLICE_CACHE_MAX_LEN) return self.str_intern_span(u);
     uint ci = slice_cache_index((char*)u.ptr, u.len);
     HString* hit = self.slice_cache[ci];
-    if (hit != null && hit.length == u.len && mem::equals(hit.data_ptr(), u.ptr, (sz)u.len)) return hit;
+    if (hit != null && hit.length == u.len && hstring::same_bytes(hit.data_ptr(), u.ptr, u.len)) return hit;
     HString* r = self.str_intern_units(u);
     if (r != null && r.flags.is_interned && !r.flags.is_wide && r.length == u.len) self.slice_cache[ci] = r;
     return r;

@@ -255,7 +255,7 @@ fn bool HString.equals(&self, char[] text) {
 // The stored characters equal `text`, whatever kind of string this is.
 fn bool HString.equals_chars(&self, char[] text) {
     if (self.flags.is_ascii) {
-        return self.length == text.len && (text.len == 0 || mem::equals(self.data_ptr(), text.ptr, text.len));
+        return self.length == text.len && same_bytes(self.data_ptr(), text.ptr, text.len);
     }
     // Each unit takes at least one byte of text.
     if (text.len < self.length) return false;
@@ -296,8 +296,12 @@ fn bool HString.same_units(&self, HString* other, bool use_hash = false) @inline
     if (self.length != other.length || self.flags.is_wide != other.flags.is_wide) return false;
     if (use_hash && self.hash != other.hash
         && self.hash != HASH_DEFERRED && other.hash != HASH_DEFERRED) return false;
-    return mem::equals(self.data_ptr(), other.data_ptr(), (sz)self.byte_len());
+    return same_bytes(self.data_ptr(), other.data_ptr(), self.byte_len());
 }
+
+// `n` bytes at `a` and `b` are equal. mem::equals of characters compares one at a time; string
+// comparison is hot in interning.
+fn bool same_bytes(void* a, void* b, usz n) @inline => n == 0 || libc::memcmp(a, b, n) == 0;
 
 // Lexicographic comparison of two HStrings by UTF-16 code unit, as the ECMAScript
 // relational operators define it. Returns -1 if a < b, 0 if a == b, 1 if a > b.
@@ -1215,8 +1219,8 @@ fn bool HString.matches_at(&self, uint pos, HString* needle) {
     if ((ulong)pos + needle.length > self.length) return false;
     if (needle.flags.is_wide && !self.flags.is_wide) return false;
     if (self.flags.is_wide == needle.flags.is_wide) {
-        return mem::equals(self.data_ptr() + ((usz)pos << (self.flags.is_wide ? 1 : 0)),
-                           needle.data_ptr(), (sz)needle.byte_len());
+        return same_bytes(self.data_ptr() + ((usz)pos << (self.flags.is_wide ? 1 : 0)),
+                          needle.data_ptr(), needle.byte_len());
     }
     for (uint k = 0; k < needle.length; k++) {
         if (self.unit_at(pos + k) != needle.unit_at(k)) return false;
