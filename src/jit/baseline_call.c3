@@ -60,7 +60,13 @@ fn bool entry_takes(CompiledFunction* f, uint nargs, bool plain) {
     uint nf = f.num_formals;
     if (f.call_flags.rest_length_only ? nargs != nf : (nf > ENTRY_MISSING_MAX && nargs < nf)) return false;
     if (entry_forwards(f) && nargs > nf + bytecode::FORWARD_ARGS_PAD) return false;
-    return !plain || f.call_flags.lean_plain;
+    return !plain || entry_plain(f);
+}
+
+// Whether the call entry of `f` takes a call with an undefined receiver, as a lean call or one
+// that creates the function's scope (CompiledFunction.env_call_ok) would.
+fn bool entry_plain(CompiledFunction* f) @inline {
+    return f.call_flags.lean_plain || f.env_call_ok(true);
 }
 
 
@@ -182,12 +188,15 @@ fn CallLayout* call_layout() {
     return l;
 }
 
-// Whether `f` gets a call entry: a lean callee (classify_lean_call) whose
-// frame the entry can publish with plain stores. An `arguments` register must
-// be the forwarding kind, which holds the count (CallFlags.forward_args).
+// Whether `f` gets a call entry: a lean callee (classify_lean_call), or one that needs only its
+// function scope created (env_call_ok), whose frame the entry can publish with plain stores. An
+// `arguments` register must be the forwarding kind, which holds the count (CallFlags.forward_args).
+// The entry clears the formals a call leaves out by Function.length, so a default value, which
+// makes the parameters outnumber it, leaves the call to vm::jit_call.
 fn bool call_entry_eligible(CompiledFunction* f) {
     f.classify_lean_call();
-    return f.call_flags.lean_call && (!f.arguments_in_reg() || entry_forwards(f)) && f.call_flags.trivial_call == 0
+    return (f.call_flags.lean_call || f.env_call_ok(false)) && (!f.arguments_in_reg() || entry_forwards(f)) && f.call_flags.trivial_call == 0
+        && (f.num_args == f.num_formals || f.call_flags.rest_length_only)
         && f.ic_entries != null && f.var_ic_entries != null && f.num_formals <= f.num_regs
         && !is_top_level(f);
 }
@@ -266,7 +275,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
         decline.add(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, SLJIT_IMM, kept));
     }
-    long forbidden = (f.call_flags.ignores_this ? 0 : CALL_PRIM) | (f.call_flags.lean_plain ? 0 : CALL_PLAIN);
+    long forbidden = (f.call_flags.ignores_this ? 0 : CALL_PRIM) | (entry_plain(f) ? 0 : CALL_PLAIN);
     if (forbidden != 0) {
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, forbidden);
         decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
@@ -282,6 +291,20 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     uint clear_end = f.num_regs + vm::FRAME_SCRATCH_SLOTS;
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)max(clear_end, self.room_slots) * TVal::size);
     decline.add(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | vm, k.vm_valstack_end));
+    // A function that needs a scope of its own gets it in the record now, the last test before
+    // anything the caller would see is written (vm::jit_entry_scope); the call clobbers the
+    // record's and the VM's registers.
+    bool own_env = f.flags.needs_env;
+    if (own_env) {
+        self.mov(R1, 0, m | bottom, -2 * (long)TVal::size);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
+        self.mov(R2, 0, la, 0);
+        self.mov(R0, 0, ds, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_entry_scope);
+        decline.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        self.mov(vm, 0, m | ds, k.ds_vm);
+        sljit_emit_op2(c, SLJIT_ADD, la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
+    }
     // th_publish_lean; the caller has tested the function's scope (emit_scope_test). Constants
     // the stores share are kept in registers once they are free: U (packed) undefined, C (R2)
     // the code.
@@ -311,7 +334,9 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         self.mov(m | la, l.act_tv_func, R3, 0);
         self.mov(m | la, l.act_func, SLJIT_IMM, (long)(usz)f);
     }
-    if (self.reads_env) {
+    if (own_env) {
+        self.mov(m | la, k.act_parent, self.la, 0);
+    } else if (self.reads_env) {
         sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
         self.mov(R2, 0, m | R3, k.fn_var_env);
         self.mov(R1, 0, m | R3, k.fn_lex_env);

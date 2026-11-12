@@ -109,8 +109,11 @@ fn void jit_fill(Vm* vm, Activation* top) @noinline {
         a.tv_func.set_object_borrowed(function);
         a.caller_valstack_top = parent.bottom + ((CompiledFunction*)parent.func).num_regs;
         a.parent = parent;
-        a.var_env = env;
-        a.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+        // A function that needs a scope of its own has it from its call entry (jit_entry_scope).
+        if (!fd.comp_func.flags.needs_env) {
+            a.var_env = env;
+            a.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+        }
         a.cat = null;
         a.forin = null;
         a.async_gen_state = null;
@@ -119,6 +122,26 @@ fn void jit_fill(Vm* vm, Activation* top) @noinline {
         a.serial = ++vm.activation_serial;
         a.flags &= ~ACT_FLAG_LAZY;
     }
+}
+
+// The function scope the call entry of a function that needs one (CompiledFunction.env_call_ok)
+// creates for `la`, the record it is publishing for a call of `function`, placed as th_publish_lean
+// places the scope @lean_publish creates. Allocating only asks the next safepoint to collect, so
+// the frames need not be synced. 1, or 0 with the record untouched when there is no memory.
+fn long jit_entry_scope(Dispatch* ds, HObject* function, Activation* la) {
+    HObjectFunction* fd = &(*function.extra_ptr()).func;
+    CompiledFunction* target = fd.comp_func;
+    Heap* h = ds.heap;
+    EnvRecord* own = env::env_create_function_scope(h, fd.var_env, target.scope_capacity()) ?? null;
+    if (own == null) return 0;
+    EnvRecord* cap = fd.lex_env;
+    bool plain = cap == null || cap == fd.var_env || !cap.flags.is_declarative;
+    EnvRecord* lex = plain && !target.is_namebinding() ? own : resolve_call_lex_env(ds.vm, function, target, own);
+    la.var_env = own;
+    la.lex_env = lex;
+    h.shade_root_env(own);
+    h.shade_root_env(lex);
+    return 1;
 }
 
 // Forget where generated code waits for each live frame (Activation.native_ret), before code a
