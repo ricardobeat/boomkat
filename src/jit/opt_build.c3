@@ -245,6 +245,8 @@ struct OptBuild {
     // register mode (opt_build_graph checks it), and whether that guess is allowed.
     uint self_reg_calls;
     bool self_reg;
+    // The function's own window moves are COPY_WINDOW nodes rather than GENERICs.
+    bool window_moves;
     // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE), and the
     // call it was looking at, for --opt-log: the caller, its call word and the callee once known.
     OptInlineReject rej;
@@ -3478,8 +3480,10 @@ fn bool OptBuild.lower_op(&self) {
             // A property read's result still in the window may be wanted as an object node.
             if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_object(rb);
             // A window value moved, typically an argument of a call, unless the copy exited
-            // repeatedly (a value its publish refuses).
-            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && !opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) {
+            // repeatedly (a value its publish refuses). The function's own moves are GENERICs
+            // unless only they keep it from register mode (opt_build_graph).
+            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && (self.cur_fn != 0 || self.window_moves)
+                && !opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) {
                 if (!self.window_copy(ra, 2)) return false;
                 self.same_facts(ra, rb);
                 return true;
@@ -4002,14 +4006,25 @@ fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild
     uint[16] exclude;
     uint excluded = 0;
     bool self_reg = true;
+    bool window_moves = false;
     while (true) {
-        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded, windowed, self_reg);
-        // A function calling itself in register mode must be able to run in it.
-        if (why == OptRefuse.NONE && b.self_reg_calls != 0 && g.reg_blocker(f).len != 0) {
-            self_reg = false;
-            b.free();
-            g.clear();
-            continue;
+        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded, windowed, self_reg, window_moves);
+        if (why == OptRefuse.NONE) {
+            // Window moves lowered as COPY_WINDOW cost an exit stub each: worth it only when they
+            // are all that keeps the function from register mode.
+            bool retry = !window_moves && g.reg_blocker(f).len != 0 && g.reg_blocker(f, moves: true).len == 0;
+            if (retry) {
+                window_moves = true;
+            } else if (b.self_reg_calls != 0 && g.reg_blocker(f).len != 0) {
+                // A function calling itself in register mode must be able to run in it.
+                self_reg = false;
+                retry = true;
+            }
+            if (retry) {
+                b.free();
+                g.clear();
+                continue;
+            }
         }
         if (why == OptRefuse.NONE || !b.flat_fail || excluded == exclude.len) return why;
         exclude[excluded++] = b.flat_fail_pc;
@@ -4017,9 +4032,10 @@ fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild
     }
 }
 
-fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count, List{OptJoin}* windowed, bool self_reg) {
+fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count, List{OptJoin}* windowed, bool self_reg, bool window_moves) {
     *b = {};
     b.self_reg = self_reg;
+    b.window_moves = window_moves;
     b.windowed = windowed;
     b.exclude = exclude;
     b.exclude_count = exclude_count;

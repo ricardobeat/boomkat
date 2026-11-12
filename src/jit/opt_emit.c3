@@ -2934,8 +2934,9 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
 // or "" when nothing does. Such a body has no record and runs in its caller's: it may read and
 // write its window and the heap and call other register-mode code, but not run a GENERIC (whose
 // baseline code expects its own record), allocate (a collection scans records, not its window),
-// or loop (a back edge polls). Its return and its exits leave register mode themselves.
-fn String OptGraph.reg_blocker(&self, CompiledFunction* f) {
+// or loop (a back edge polls). Its return and its exits leave register mode themselves. With
+// `moves`, a GENERIC window move does not count: a rebuild lowers it as COPY_WINDOW.
+fn String OptGraph.reg_blocker(&self, CompiledFunction* f, bool moves = false) {
     if (!REG_CALLS) return "target";
     if (self.region.end != 0) return "region";
     if (f.maps_formals()) return "mapped arguments";
@@ -2955,7 +2956,7 @@ fn String OptGraph.reg_blocker(&self, CompiledFunction* f) {
                 if (nd.fidx == 0 && nd.cc != 0) return "scope";
             case GENERIC:
                 Opcode op = f.code[(uint)nd.imm].op;
-                if (op != Opcode.RET && op != Opcode.RETUNDEF) return Opcode::names[op.ordinal];
+                if (op != Opcode.RET && op != Opcode.RETUNDEF && !(moves && op == Opcode.LDREG)) return Opcode::names[op.ordinal];
             default:
                 return OptOp::names[nd.op.ordinal];
         }

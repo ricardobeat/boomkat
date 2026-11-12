@@ -93,9 +93,6 @@ const uint OPT_FIELD_SITES = 2;
 const uint OPT_INT_WORK = 8;
 // Builds nested by compiling callees first, the outermost included.
 const uint OPT_NEST_MAX = 3;
-// Functions of at most this many words are compiled when hot even without feedback, for the
-// register leaf they may compile to.
-const uint OPT_LEAF_WORDS = 24;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
 // Discards after UNPROFILED exits that do not count as reoptimizations. Each such exit records a
@@ -373,9 +370,7 @@ fn bool opt_has_operand_feedback(CompiledFunction* f) {
 }
 
 fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
-    // A small function may compile to a register leaf (OptGraph.reg_leaf), which its callers enter
-    // without a frame.
-    if (opt_has_operand_feedback(f) || opt_has_int_work(f) || f.code_count <= OPT_LEAF_WORDS) return true;
+    if (opt_has_operand_feedback(f) || opt_has_int_work(f)) return true;
     if (f.ic_entries == null || f.opt_declined >= OPT_DECLINE_MAX) return false;
     if (opt_has_field_feedback(f)) return true;
     hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
@@ -684,21 +679,24 @@ fn bool opt_refuse_build(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op,
 
 // Optimize `f`: the whole function, or for one in OPT_REGION the loop holding the header `osr_pc`
 // that a frame with window `regs` branched back to.
-// Compile a callee a build proved before the build's own function, unless it has optimized code or
-// is being built: a caller compiled first would call it directly for good, not in register mode.
+// Compile a callee a build proved before the build's own function, unless it has optimized code, is
+// being built or was declined: a caller compiled first would call it directly for good, not in
+// register mode.
 fn void opt_compile_callee(Heap* h, CompiledFunction* cf) {
     OptPolicy* p = &h.opt;
-    if (cf.opt_code != null) return;
+    if (cf.opt_code != null || cf.opt_declined != 0) return;
     foreach (b : p.building[:p.build_depth]) if (b == cf) return;
-    opt_try_compile(h, cf);
+    opt_try_compile(h, cf, callee: true);
 }
 
-fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, TVal* regs = null) @noinline {
+// Build optimized code for `f`. A `callee` a build proved is compiled without feedback of its own:
+// its caller's code is worth more calling it in register mode.
+fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, TVal* regs = null, bool callee = false) @noinline {
     OptPolicy* p = &h.opt;
     JitStats* st = &h.jit_stats;
     bool region = f.opt_state == OPT_REGION;
     if (f.jit_code == null || f.opt_code != null || (f.opt_state != OPT_NONE && !region)) return false;
-    if (!p.always && !opt_has_feedback(h, f)) return false;
+    if (!p.always && !callee && !opt_has_feedback(h, f)) return false;
     // Forcing exits from inlined bodies needs bodies that have a callee to inline.
     if (p.force_inline && !opt_has_call_feedback(f)) return false;
     if (p.live_bytes >= opt_code_limit(h) && !opt_make_room(h)) {
@@ -758,6 +756,12 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
     // Call feedback alone is worth optimizing for only when the call was inlined or is entered
     // directly.
     if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && g.reg_blocker(f).len != 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
+        f.opt_declined++;
+        return false;
+    }
+    // A callee compiled for its caller's sake is worth it only in register mode, unless its own
+    // feedback asks for it.
+    if (why == OptRefuse.NONE && callee && !p.always && g.reg_blocker(f).len != 0 && !opt_has_feedback(h, f)) {
         f.opt_declined++;
         return false;
     }
