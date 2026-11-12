@@ -896,8 +896,10 @@ fn void OptBuild.note_fresh(&self, uint node, CompiledFunction* cf) {
 
 // The ADD_FIELD node `n` adds `key` to the object of VALUE node `recv`. When that is an object
 // being built, the add is the shared transition from the shape it has, if there is one and the
-// object has room: the node records the shape it leaves (cc 1), and so does the object.
+// object has room: the node records the shape it leaves (cc 1), and so does the object. Any other
+// receiver may be one of them by another name, whose shape is then no longer known.
 fn void OptBuild.add_known(&self, uint n, uint recv, void* key) {
+    recv = self.copied(recv);
     for (uint k = 0; k < self.fresh_n; k++) {
         OptFresh* fr = &self.fresh[k];
         if (fr.node != recv) continue;
@@ -913,6 +915,7 @@ fn void OptBuild.add_known(&self, uint n, uint recv, void* key) {
         fr.count++;
         return;
     }
+    self.fresh_n = 0;
 }
 
 // Record the dirty registers live into the current instruction on node `node`.
