@@ -1019,15 +1019,8 @@ fn uint OptBuild.operand(&self, uint reg, OptRep want) {
     if (reg >= self.nregs) return NO_NODE;
     OptRegState s = self.cur[reg];
     if (s.node != NO_NODE && self.rep_of(s.node) == OptRep.VALUE) {
-        // A field read of this body kept beyond the caller's frame as a VALUE node only for want
-        // of a use (OptBuild.get_field): the next round reads it as a number.
-        OptNode* ld = &self.g.nodes[s.node];
-        bool load = ld.op == OptOp.LOAD_FIELD || ld.op == OptOp.LOAD_ELEM || ld.op == OptOp.LOAD_GLOBAL;
-        if (self.cur_fn != 0 && reg >= self.caller_regs && load && ld.fidx == self.cur_fn) {
-            self.ask_load(ld.pc | ((self.cur_site + 1) << 24), reg, want);
-        }
-        // A number was asked of a register that holds an object: read it from the window as any other
-        // value there (the guard exits when it is not a number).
+        self.ask_number(reg, want);
+        // Read from the window as any other value there (the guard exits when it is not a number).
         self.publish_value(reg);
         self.kill(reg);
         s = self.cur[reg];
@@ -1184,11 +1177,19 @@ fn bool OptBuild.bitop(&self, OptOp op, uint rb, uint rc, bool imm, long imm_val
 
 fn uint OptBuild.bit_operand(&self, uint reg, bool numbers) {
     if (reg >= self.nregs) return NO_NODE;
-    if (self.cur[reg].node == NO_NODE && numbers) {
+    if ((self.cur[reg].node == NO_NODE || self.holds_value(reg)) && numbers) {
         uint c = self.operand(reg, OptRep.FLOAT64);
         return c == NO_NODE ? c : self.convert(c, OptRep.INT32);
     }
     return self.operand(reg, OptRep.INT32);
+}
+
+// A numeric use of `reg` found it holding the VALUE node of a load of the body being lowered, or a
+// copy of one: have the next round build that load as a number of `want`.
+fn void OptBuild.ask_number(&self, uint reg, OptRep want) {
+    OptNode* ld = &self.g.nodes[self.copied(self.cur[reg].node)];
+    bool load = ld.op == OptOp.LOAD_FIELD || ld.op == OptOp.LOAD_ELEM || ld.op == OptOp.LOAD_GLOBAL || ld.op == OptOp.LOAD_CAP;
+    if (load && ld.fidx == self.cur_fn) self.ask_load(ld.pc | ((self.cur_fn == 0 ? 0 : self.cur_site + 1) << 24), reg, want);
 }
 
 // A numeric use of `reg` found it still in the window, written by the GETCAP or GETPROP at `pc`:
@@ -1587,6 +1588,7 @@ fn bool OptBuild.string_keyed(&self) {
 fn bool OptBuild.index_ok(&self, uint r) {
     if (r >= self.nregs) return false;
     if (self.cur[r].node == NO_NODE) return !self.string_keyed();
+    if (self.holds_value(r) && !self.string_keyed()) self.ask_number(r, OptRep.INT32);
     return self.rep_of(self.cur[r].node) == OptRep.INT32;
 }
 
@@ -1899,15 +1901,11 @@ fn bool OptBuild.get_field(&self) {
     uint shape = ic.shape_id;
     uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
     if (n == NO_NODE) {
-        n = self.add(OptOp.LOAD_FIELD, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+        // The value stays in a register until something reads the window; a numeric use asks the
+        // next round for a number instead (OptBuild.ask_number).
+        n = self.add(OptOp.LOAD_FIELD, OptRep.VALUE, NO_NODE, NO_NODE, (long)self.pc);
         self.snapshot(n);
-        self.g.nodes[n].home = ra;
-        self.kill(ra);
-        if (ra < self.nregs) self.load_def[ra] = self.pckey();
-        // A value of any kind in a slot beyond the caller's frame would be out of the collector's
-        // sight: the next round builds the read as a VALUE node, which stays in a register, unless
-        // a numeric use asks for a number.
-        if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_value(ra);
+        self.set(ra, n);
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].exact = exact;
