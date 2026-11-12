@@ -120,7 +120,7 @@ Over **500 hours of human effort** have gone into the project.
 
 #### Requirements
 
-- C3 compiler (v0.8.4+): `brew install c3c` | `pacman -S c3c`
+- C3 compiler (v0.8.5+): `brew install c3c` | `pacman -S c3c`
 - Just task runner: `brew install just` | `pacman -S just`
 - `python3` available in your PATH
 
