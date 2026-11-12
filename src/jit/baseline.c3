@@ -199,6 +199,10 @@ struct NewSite {
     ulong epoch;
     // The byte offset of the `prototype` slot in the constructor's values.
     ulong proto_off;
+    // The object's block: its PagePool's offset in the Heap, its GcBits and its inline capacity.
+    ulong pool;
+    uint gc;
+    uint capacity;
     uint ctor_shape;
     uint recycle;
     uint proto_shape;
@@ -880,10 +884,22 @@ fn BaselineCode* baseline_alloc(Heap* h, uint count, uint sites = 0) {
     return bc;
 }
 
+// The NEW_OBJ instructions of `f`, each of which may get a NewSite.
+fn uint new_site_count(CompiledFunction* f) {
+    uint news = 0;
+    for (uint i = 0; i < f.code_count; i++) if (f.code[i].op == Opcode.NEW_OBJ) news++;
+    return news;
+}
+
+// Give `a` the NewSites of `bc`, which baseline_alloc made for `news` of them.
+fn void Asm.use_new_sites(&self, BaselineCode* bc, uint news) {
+    self.new_sites = (NewSite*)((char*)bc + BaselineCode::size + (usz)self.f.code_count * void*::size);
+    self.new_site_count = news;
+}
+
 fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = null) {
     uint count = f.code_count;
-    uint news = 0;
-    for (uint i = 0; i < count; i++) if (f.code[i].op == Opcode.NEW_OBJ) news++;
+    uint news = new_site_count(f);
     BaselineCode* bc = baseline_alloc(h, count, news);
     if (bc == null) return null;
     void* c = sljit_create_compiler(null);
@@ -891,8 +907,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     defer sljit_free_compiler(c);
     Asm a = asm_new(c, h, f);
     defer a.release();
-    a.new_sites = (NewSite*)((char*)bc + BaselineCode::size + (usz)count * void*::size);
-    a.new_site_count = news;
+    a.use_new_sites(bc, news);
     void* dispatch = a.emit_dispatch(bc, count);
     a.emit_nonzero_exit(dispatch);
 
@@ -1317,12 +1332,19 @@ fn bool Asm.emit_call(&self) {
         done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
         generic.bind(sljit_emit_label(c));
     }
-    bool global = self.w.op == Opcode.CALL_GLOBAL && self.f.ic_entries != null && self.f.var_ic_entries != null
-        && !self.global_callee_trivial();
-    if (global || self.w.op == Opcode.CALL_UNDEF_THIS || (self.w.op == Opcode.CALL && self.w.b + 1 < self.f.num_regs)) {
+    if (self.forward_site()) {
+        Jumps generic;
+        self.emit_forward_call(&generic);
+        generic.bind(sljit_emit_label(c));
+    }
+    bool tables = self.f.ic_entries != null && self.f.var_ic_entries != null;
+    bool global = self.w.op == Opcode.CALL_GLOBAL && tables && !self.global_callee_trivial();
+    bool scoped = self.w.op == Opcode.CALL_VAR && tables;
+    if (global || scoped || self.w.op == Opcode.CALL_UNDEF_THIS || (self.w.op == Opcode.CALL && self.w.b + 1 < self.f.num_regs)) {
         Jumps generic;
         // A direct call's guard (OptBuild.direct_callee) has read the callee into its register.
         if (global && self.direct_cf == null) self.load_global_callee(&generic);
+        if (scoped && self.direct_cf == null) self.load_var_callee(&generic);
         self.emit_direct_call(&generic);
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         generic.bind(sljit_emit_label(c));

@@ -299,6 +299,19 @@ fn CompiledFunction* jit_compiled_callee(TVal callee) @inline {
     return (*fn_obj.extra_ptr()).func.comp_func;
 }
 
+// The notes @apply_args makes for a forwarding call that baseline code makes itself
+// (Asm.emit_forward_call): its callee, on the APPLY_ARGS two instructions before `next`, and on the
+// call that entered the frame `la`. Needs no synced state: it only fills `la` should it be lazy.
+fn void jit_note_forward(Vm* vm, Activation* la, Instruction* next) {
+    if (la.flags & ACT_FLAG_LAZY) jit_fill(vm, la);
+    CompiledFunction* f = (CompiledFunction*)la.func;
+    Instruction* pc = next - 2;
+    CompiledFunction* target = jit_compiled_callee(la.bottom[pc.a + 1]);
+    if (target == null) return;
+    hobject::ic_note_callee(&((hobject::ICEntry*)f.ic_entries)[pc - f.code], target.func_index);
+    @note_forward(la, target);
+}
+
 // APPLY_ARGS (with the CALL_S it is fused with) as th_apply_args runs it: the
 // register `arguments` of the running function spread into the callee's
 // window, whose frame is published for the CALL_S. `nargs` receives the count.
@@ -425,10 +438,9 @@ fn HObject* jit_construct_object(Vm* vm, HObject* ctor, hobject::ICEntry* ic, ui
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return null;
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
     if (!proto.is_object()) return null;
-    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    HObject* obj = alloc_constructor_receiver(vm.heap, want) ?? null;
     if (obj == null) return null;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
-    if (want > hobject::INLINE_PROPS) obj.reserve_props(vm.heap, constructor_reserve_capacity(want));
     return obj;
 }
 
@@ -525,7 +537,7 @@ $endif
 // caller fills the store arguments. False, with the site as it was, for a state that is not
 // covered (another realm, a chain that is not plain or has a dictionary).
 fn bool jit_new_arm(Heap* h, HObject* ctor, CompiledFunction* target, hobject::ICEntry* ic, HObject* proto,
-                    uint count, uint final_shape, jit::NewSite* site) @private {
+                    uint count, uint final_shape, uint capacity, jit::NewSite* site) @private {
 $if types::USE_NANBOX:
     if (h.realms != null) return false;
     for (HObject* cur = proto; cur != null; cur = cur.prototype) {
@@ -536,6 +548,10 @@ $if types::USE_NANBOX:
     value.set_object(proto);
     site.proto_bits = value.bits;
     site.proto_off = (ulong)ic.prop_idx * hobject::PropValue::size;
+    uint shaped = capacity > hobject::INLINE_PROPS ? capacity - hobject::INLINE_PROPS : 0;
+    site.pool = (ulong)((char*)hobject::plain_object_pool(h, false, shaped) - (char*)h);
+    site.gc = (uint)hobject::plain_object_gc(false, shaped);
+    site.capacity = capacity;
     site.ctor_shape = ctor.shape_id;
     site.recycle = h.shape_recycle_epoch;
     site.proto_shape = proto.shape_id;
@@ -573,7 +589,7 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     bool simple = target.call_flags.simple_constructor;
     if (!simple && (site == null || !jit::entry_constructs(target) || target.jit_code == null
                     || ((jit::BaselineCode*)target.jit_code).call_entry == null
-                    || target.call_flags.constructor_capacity > hobject::INLINE_PROPS)) return JIT_CALL_SLOW;
+                    || target.call_flags.constructor_capacity > hobject::SHAPED_INLINE_MAX_PROPS)) return JIT_CALL_SLOW;
     Vm* vm = ds.vm;
     hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
     hobject::ic_note_constructor(ic, target.func_index);
@@ -583,7 +599,8 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
     if (!proto.is_object()) return JIT_CALL_SLOW;
     if (!simple) {
-        jit_new_arm(vm.heap, ctor, target, ic, (HObject*)proto.get_heapptr(), jit::NEW_SITE_CALLS, 0, site);
+        jit_new_arm(vm.heap, ctor, target, ic, (HObject*)proto.get_heapptr(), jit::NEW_SITE_CALLS, 0,
+                    constructor_inline_capacity(target.call_flags.constructor_capacity), site);
         return JIT_CALL_SLOW;
     }
     ds.curr_pc = next;
@@ -592,7 +609,7 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return JIT_CALL_SLOW;
     if (site != null && obj.prop_count <= hobject::INLINE_PROPS && obj.prop_alloc == null && obj.prop_hash == null
-        && jit_new_arm(vm.heap, ctor, target, ic, obj.prototype, obj.prop_count, obj.shape_id, site)) {
+        && jit_new_arm(vm.heap, ctor, target, ic, obj.prototype, obj.prop_count, obj.shape_id, hobject::INLINE_PROPS, site)) {
         for (uint j = 0; j < obj.prop_count; j++) {
             site.arg[j] = target.code[j].a < insn.c ? target.code[j].a : jit::NEW_ARG_UNDEF;
         }

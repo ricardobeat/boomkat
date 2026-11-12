@@ -1698,7 +1698,8 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         || is_derived_target) {
         this_tv.set_undefined();
     } else {
-        HObject*? new_this_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        uint want = new_target_obj == ctor ? target.call_flags.constructor_capacity : 0;
+        HObject*? new_this_raw = alloc_constructor_receiver(heap, want);
         if (catch err_t = new_this_raw) return undef;
         HObject* new_this = new_this_raw;
         new_this.prototype = heap.object_proto;
@@ -1722,9 +1723,6 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                     return undef;
                 }
             }
-        }
-        if (new_target_obj == ctor && target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
-            new_this.reserve_props(heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
         }
         this_tv.set_object(new_this);
     }

@@ -505,7 +505,7 @@ fn void Asm.store_pair(&self, int base, long off1, int r1, long off2, int r2) {
 // collects the path that takes the helper call (vm::jit_call) instead.
 fn void Asm.emit_direct_call(&self, Jumps* generic) {
     void* c = self.c;
-    bool global = self.w.op == Opcode.CALL_GLOBAL;
+    bool global = self.w.op == Opcode.CALL_GLOBAL || self.w.op == Opcode.CALL_VAR;
     bool construct = self.w.op == Opcode.NEW_OBJ;
     uint callee = global ? self.w.a : self.w.b;
     uint nargs = global ? self.w.b : self.w.c;
@@ -519,10 +519,19 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
     }
     // A plain call's receiver is undefined, as th_publish_lean's clear_this makes it.
     if ((packed & CALL_PLAIN) != 0) self.store(callee + 1, SLJIT_IMM, K_UNDEF);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
-    sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)self.w.a * TVal::size);
     self.mov(R3, 0, SLJIT_IMM, packed);
-    self.mov(R4, 0, SLJIT_IMM, (long)(usz)(self.f.code + self.next));
+    self.emit_call_sub(callee, self.w.a, self.next, generic);
+}
+
+// The call of the function in register `callee`, R3 its packed count and kind, through the shared
+// call subroutine, or the direct label of the callee optimized code proved (direct_cf): the result
+// into register `result`, the frame resuming at instruction `resume`. `generic` collects a call
+// the callee did not take, which has done nothing.
+fn void Asm.emit_call_sub(&self, uint callee, uint result, uint resume, Jumps* generic) {
+    void* c = self.c;
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)result * TVal::size);
+    self.mov(R4, 0, SLJIT_IMM, (long)(usz)(self.f.code + resume));
     self.direct_called = true;
     void* proven = null;
     if (self.direct_cf != null) {
@@ -557,10 +566,106 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
     // store the subroutine has cleared as Asm.publish would.
     sljit_set_label(returned, sljit_emit_label(c));
     self.mov(self.regs, 0, SLJIT_MEM | self.la, call_layout().act_bottom);
-    self.store(self.w.a, R1);
-    self.track_heap_store(self.w.a);
+    self.store(result, R1);
+    self.track_heap_store(result);
     sljit_set_label(done, sljit_emit_label(c));
     self.count(&self.stats.fast_hits[0], self.w.op);
+}
+
+// Whether the APPLY_ARGS being emitted is the `f.apply(x, arguments)` of a forwarding function,
+// fused with the CALL_S after it as OptBuild's forward_pair reads them, for emit_forward_call.
+// Baseline code only, which can continue past the CALL_S.
+fn bool Asm.forward_site(&self) {
+    CompiledFunction* f = self.f;
+    if (self.opt || self.w.op != Opcode.APPLY_ARGS || !f.call_flags.forward_args || !f.arguments_in_reg()
+        || f.ic_entries == null || self.next >= f.code_count) return false;
+    Instruction call = f.code[self.next];
+    return self.w.b == self.w.a && call.op == Opcode.CALL_S && (uint)call.a == self.w.a
+        && (uint)call.b == self.w.a && (uint)call.c == self.w.c;
+}
+
+// The forwarding call of a forward_site, as @apply_args makes it: the function above `apply`'s
+// register called as a method of the object above that, with the arguments the frame keeps in its
+// first registers (vm::bind_register_arguments) and their count in the CALL_S's count register,
+// through the shared call subroutine; then on past the CALL_S. What @apply_args refuses takes
+// `generic` with nothing changed. A callee the subroutine does not enter leaves the registers as
+// the CALL_S takes them, and continues there.
+fn void Asm.emit_forward_call(&self, Jumps* generic) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    uint callee = self.w.a;
+    uint kept = (uint)self.f.num_args + bytecode::FORWARD_ARGS_PAD;
+    long apply = (long)builtins::Builtin.FUNCTION_PROTO_APPLY.ordinal;
+    // Function.prototype.apply, a lightfunc or a builtin function object (builtins::is_intrinsic_apply).
+    self.load(R0, callee);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
+    void* not_light = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    generic.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, apply));
+    void* is_apply = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_light, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    generic.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    generic.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    self.mov(R1, 0, m | R0, 0, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, k.fn_mask);
+    generic.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, k.fn_want));
+    self.mov(R1, 0, m | R0, k.fn_builtin, SLJIT_MOV_S32);
+    generic.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, apply));
+    sljit_set_label(is_apply, sljit_emit_label(c));
+    // The count the arguments register holds in place of an arguments object, at most `kept`.
+    self.load(R0, self.f.arguments_reg);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+    generic.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, kept));
+    // The receiver, an object: one @apply_args drops for a callee that ignores it takes `generic`.
+    self.load(R0, callee + 2);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    generic.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    generic.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    // The moves are plain stores, as @apply_args makes them, with nothing to mark (th_can_publish).
+    self.mov(R0, 0, m | self.heap, l.heap_gc_phase, SLJIT_MOV_U8);
+    generic.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
+    // The window the arguments move to, inside the value stack.
+    self.mov(R1, 0, m | self.ds, k.ds_vm);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, self.regs, 0, SLJIT_IMM, (long)(callee + 2 + kept) * TVal::size);
+    generic.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, m | R1, k.vm_valstack_end));
+    // The callee notes for the optimizing tier (vm::jit_note_forward).
+    self.mov(R0, 0, m | self.ds, k.ds_vm);
+    self.mov(R1, 0, self.la, 0);
+    self.mov(R2, 0, SLJIT_IMM, (long)(usz)(self.f.code + self.next + 1));
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_note_forward);
+    // The function and the receiver one register down, the arguments into the window above them
+    // (its first slot undefined when there are none), and the count where the CALL_S reads it.
+    self.load(R0, callee + 1);
+    self.store(callee, R0);
+    self.load(R0, callee + 2);
+    self.store(callee + 1, R0);
+    self.store(callee + 2, SLJIT_IMM, K_UNDEF);
+    self.load(R4, self.f.arguments_reg);
+    sljit_emit_op2(c, SLJIT_XOR, R4, 0, R4, 0, SLJIT_IMM, K_INT);
+    Jumps moved;
+    for (uint i = 0; i < kept; i++) {
+        moved.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R4, 0, SLJIT_IMM, i));
+        self.load(R0, i);
+        self.store(callee + 2 + i, R0);
+    }
+    moved.bind(sljit_emit_label(c));
+    if (callee + 2 + kept > self.frame_regs) {
+        // The frame's heap-register watermark covers the window, as track_heap_store raises it.
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R4, 0, SLJIT_IMM, (long)(callee + 2));
+        self.mov(R1, 0, m | self.la, l.act_hrc, SLJIT_MOV_U32);
+        void* covered = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, R0, 0);
+        self.mov(m | self.la, l.act_hrc, R0, 0, SLJIT_MOV_U32);
+        sljit_set_label(covered, sljit_emit_label(c));
+    }
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R4, 0, SLJIT_IMM, K_INT);
+    self.store(self.w.c, R0);
+    sljit_emit_op2(c, SLJIT_OR, R3, 0, R4, 0, SLJIT_IMM, CALL_METHOD);
+    Jumps declined;
+    self.emit_call_sub(callee, callee, self.next + 1, &declined);
+    self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next + 1);
+    for (uint j = 0; j < declined.len; j++) self.go(declined.at[j], self.next);
 }
 
 // Whether the CALL being emitted reads as `x.charCodeAt(i)`: one argument and
@@ -1000,6 +1105,27 @@ fn void Asm.load_global_callee(&self, Jumps* generic) {
     for (uint k = 0; k < self.call.len; k++) generic.add(self.call.at[k]);
     self.call.len = 0;
     self.store(self.w.a, R0);
+}
+
+// The callee of a CALL_VAR into its register, as lean_call_var reads it: a data binding the
+// entry caches, not in its TDZ. A binding that is not permanent can be reassigned during the
+// call, so the register is tracked and the frame keeps its own reference. Anything else, a moved
+// entry included, takes `generic`.
+fn void Asm.load_var_callee(&self, Jumps* generic) {
+    void* c = self.c;
+    long vic = (long)(usz)&((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
+    self.var_slot(vic, true);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, self.lay.vic_flags);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, self.lay.accessor_mask);
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    self.guard_not_tdz();
+    for (uint k = 0; k < self.call.len; k++) generic.add(self.call.at[k]);
+    for (uint k = 0; k < self.alt.len; k++) generic.add(self.alt.at[k]);
+    self.call.len = 0;
+    self.alt.len = 0;
+    self.store(self.w.a, R0);
+    self.track_heap_store(self.w.a);
 }
 
 // Whether the global the CALL_GLOBAL's entry caches is a trivial function,

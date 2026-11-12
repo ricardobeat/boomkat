@@ -656,6 +656,20 @@ fn uint constructor_reserve_capacity(uint count) {
     return max(count, hobject::PROPS_INITIAL_CAPACITY);
 }
 
+// The inline capacity of a base constructor's receiver that is to hold `want` properties
+// (CompiledFunction constructor_capacity): the plain block, or a shaped one up to
+// SHAPED_INLINE_MAX_PROPS. More than that go to a reserved block (alloc_constructor_receiver).
+fn uint constructor_inline_capacity(uint want) @inline {
+    return want > hobject::INLINE_PROPS && want <= hobject::SHAPED_INLINE_MAX_PROPS ? want : hobject::INLINE_PROPS;
+}
+
+// A plain object with room for the `want` properties a base constructor leaves on its receiver.
+fn HObject*? alloc_constructor_receiver(Heap* h, uint want) {
+    HObject* obj = h.alloc_plain_object(constructor_inline_capacity(want))!;
+    if (want > hobject::SHAPED_INLINE_MAX_PROPS) obj.reserve_props(h, constructor_reserve_capacity(want));
+    return obj;
+}
+
 // Observe the original receiver, even if the constructor returned another
 // object. A throw never enters these return hooks. Derived/super and alternate
 // newTarget calls keep their existing allocation policy.
@@ -3944,7 +3958,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 this_tval = env::tdz_sentinel();
             } else {
                 // Base constructor: allocate the new object now.
-                HObject*? new_obj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+                HObject*? new_obj_raw = alloc_constructor_receiver(vm.heap, target.call_flags.constructor_capacity);
                 if (catch err = new_obj_raw) {
                     ds.regs_base[result_reg].set_undefined();
                     return (TVal){};
@@ -3960,9 +3974,6 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (pv.is_object() && pv.get_heapptr() != null) {
                         vm.heap.set_prototype(new_obj, (HObject*)pv.get_heapptr());
                     }
-                }
-                if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
-                    new_obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
                 }
                 this_tval.set_object(new_obj);
 

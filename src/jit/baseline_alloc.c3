@@ -44,18 +44,23 @@ struct InlineAlloc {
     long proto_off;      // the Heap field holding the prototype, or NEW_OBJECT_PROTO
     long fill_off;       // where the undefined slots start
     uint fill_count;
+    NewSite* site;       // an armed site whose pool, gc and prop_capacity replace those above
 }
 
 // The prototype is in the frame's SUB_VALUE_OFF slot, saved across the pool subroutine.
 const long PROTO_ON_STACK = -1;
 
 // The allocation the current instruction makes, or false for one the helper keeps.
-// The plain object an inlined constructor builds (heap.alloc_plain_object).
-fn InlineAlloc Asm.plain_object_plan(&self) {
+// The plain object an inlined constructor builds (heap.alloc_plain_object), with room for
+// `capacity` properties (vm::constructor_inline_capacity).
+fn InlineAlloc Asm.plain_object_plan(&self, uint capacity = hobject::INLINE_PROPS) {
+    Layout* l = self.lay;
     hobject::ObjFlags flags = hobject::plain_object_flags(true);
     flags.temproot = true;
-    return { .pool = self.lay.heap_pool_plain, .flags = (uint)flags, .gc = (uint)hobject::plain_object_gc(false, 0),
-             .prop_capacity = hobject::INLINE_PROPS, .proto_off = PROTO_ON_STACK };
+    uint shaped = capacity > hobject::INLINE_PROPS ? capacity - hobject::INLINE_PROPS : 0;
+    long pool = shaped != 0 ? l.heap_pool_shaped + (long)(shaped - 1) * l.pool_size : l.heap_pool_plain;
+    return { .pool = pool, .flags = (uint)flags, .gc = (uint)hobject::plain_object_gc(false, shaped),
+             .prop_capacity = capacity, .proto_off = PROTO_ON_STACK };
 }
 
 fn bool Asm.inline_alloc_plan(&self, InlineAlloc* p) {
@@ -112,12 +117,25 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     void* c = self.c;
     Layout* l = self.lay;
     int m = SLJIT_MEM;
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.heap, 0, SLJIT_IMM, p.pool);
+    if (p.site != null) {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM, (long)(usz)&p.site.pool);
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, self.heap, 0);
+    } else {
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.heap, 0, SLJIT_IMM, p.pool);
+    }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = ALLOC_SUB });
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     // HObject.init_header, then the prototype and the fill the caller's allocator adds.
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, 0, SLJIT_IMM, (long)p.flags);
-    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, SLJIT_IMM, (long)p.gc);
+    if (p.site != null) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&p.site.gc);
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, R1, 0);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&p.site.capacity);
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_capacity, R1, 0);
+    } else {
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, SLJIT_IMM, (long)p.gc);
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_capacity, SLJIT_IMM, (long)p.prop_capacity);
+    }
     if (p.proto_off == PROTO_ON_STACK) {
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | reg_sp(), SUB_VALUE_OFF);
     } else {
@@ -125,7 +143,6 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     }
     sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_proto, R1, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_shape, SLJIT_IMM, (long)p.shape_id);
-    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_capacity, SLJIT_IMM, (long)p.prop_capacity);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_count, SLJIT_IMM, (long)p.prop_count);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_size, SLJIT_IMM, (long)p.array_size);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_used, SLJIT_IMM, (long)p.array_used);
@@ -336,6 +353,7 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
         sljit_set_label(skip, sljit_emit_label(c));
     }
     InlineAlloc plan = self.plain_object_plan();
+    plan.site = site;
     self.emit_inline_alloc(&plan, miss);
     void* replays = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM, (long)(usz)&site.count, SLJIT_IMM, (long)NEW_SITE_CALLS);
     sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);

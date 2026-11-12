@@ -1814,7 +1814,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     // no values of the optimized code, so nothing is saved around it.
     Jumps slow;
     void* done = null;
-    if (inline_alloc_ok() && want <= hobject::INLINE_PROPS) {
+    if (inline_alloc_ok() && want <= hobject::SHAPED_INLINE_MAX_PROPS) {
         Layout* l = a.lay;
         int m = SLJIT_MEM;
         // jit_opt_new_object's guards: a constructor, and the cache's own `prototype` data property.
@@ -1846,7 +1846,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
         // Heap.set_prototype also walks the other realms when there are any.
         slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | a.heap, l.heap_realms, SLJIT_IMM, 0));
         sljit_emit_op1(c, SLJIT_MOV, m | reg_sp(), SUB_VALUE_OFF, R2, 0);
-        InlineAlloc plan = a.plain_object_plan();
+        InlineAlloc plan = a.plain_object_plan(vm::constructor_inline_capacity(want));
         a.emit_inline_alloc(&plan, &slow);
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
         done = sljit_emit_jump(c, SLJIT_JUMP);
@@ -2933,7 +2933,9 @@ fn void opt_dump_nodes(CompiledFunction* f, OptGraph* g, BaselineCode* bc, void*
 // Generate native code for the graph. Null when code generation fails.
 fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc, OptPools pools) {
     uint count = f.code_count;
-    BaselineCode* bc = baseline_alloc(h, count);
+    // A NEW_OBJ left GENERIC allocates and enters its constructor through a site, as in baseline code.
+    uint news = new_site_count(f);
+    BaselineCode* bc = baseline_alloc(h, count, news);
     if (bc == null) return null;
     void* c = sljit_create_compiler(null);
     if (c == null) { h.free_func(h.heap_udata, bc); return null; }
@@ -2941,6 +2943,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     Asm a = asm_new(c, h, f);
     defer a.release();
     a.opt = true;
+    a.use_new_sites(bc, news);
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;
     foreach (&nd : g.nodes) {
