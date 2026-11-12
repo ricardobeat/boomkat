@@ -1638,16 +1638,12 @@ fn bool OptBuild.put_field(&self) {
         rnode = self.cur[recv].node;
     }
     uint rv = this_op ? self.w.a : self.w.b;
-    // A value in the window may be a heap value, which needs the counted and traced store: the
-    // baseline's, with the registers stored and reloaded around it, not an exit on every store.
-    // A constant is stored as one; a property read that defined the value is built as an OBJECT
-    // node in the next round.
+    // A constant is stored as one. A value with no node is stored from the window, through the
+    // counted and traced store when it is a heap value (OptCg.store_slot_value); a property read
+    // that defined it is built as an OBJECT node in the next round.
     if (rv >= self.nregs) return self.generic();
     uint value = self.cur[rv].node != NO_NODE ? self.cur[rv].node : self.const_def[rv];
-    if (value == NO_NODE) {
-        self.ask_object(rv);
-        return self.generic();
-    }
+    if (value == NO_NODE) self.ask_object(rv);
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, value, rnode, (long)self.pc);
     self.snapshot(n);
     self.g.nodes[n].key = (void*)ic.key.borrow();

@@ -1396,7 +1396,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
-            a.load_this(R0);
+            self.load_own_this(R0);
         }
     } else if (n.b != NO_NODE) {
         rr = self.obj_reg(n.b, R0);
@@ -1593,6 +1593,23 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
 // PUTPROPC or PUTTHISC of an own writable data property, as emit_put does for a hit: a plain
 // object of the cache's shape, an old value that needs no count, and a value that needs no
 // barrier. Everything else leaves for the baseline code before anything is written.
+// The function's own `this` into `reg`: its record's, or in register mode the receiver its caller
+// stored below the window, which the object guard that follows exits for unless it is an object
+// (a receiver that needs coercing). Clobbers R2.
+fn void OptCg.load_own_this(&self, int reg) {
+    Asm* a = self.a;
+    if (!a.reg_leaf) {
+        a.load_this(reg);
+        return;
+    }
+    void* framed = a.emit_framed_test();
+    sljit_emit_op1(a.c, SLJIT_MOV, reg, 0, SLJIT_MEM | a.regs, -(long)TVal::size);
+    void* done = sljit_emit_jump(a.c, SLJIT_JUMP);
+    sljit_set_label(framed, sljit_emit_label(a.c));
+    a.load_this(reg);
+    sljit_set_label(done, sljit_emit_label(a.c));
+}
+
 fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -1608,7 +1625,7 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
-            a.load_this(R0);
+            self.load_own_this(R0);
         }
     } else if (n.b != NO_NODE) {
         rr = self.obj_reg(n.b, R0);
@@ -2749,6 +2766,9 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     a.room_acts = max(a.room_acts, vm::JIT_REG_DEPTH + 1);
     a.room_slots = max(a.room_slots, (uint)(window / TVal::size) + cf.num_regs + REG_ROOM_EXTRA);
     self.spill_live(i, true);
+    // The callee takes its `this` from the receiver slot (OptCg.load_own_this), which a call
+    // without a receiver may have left holding anything.
+    if (a.w.op != Opcode.CALL) a.store(var_call ? a.w.a + 1 : a.w.b + 1, SLJIT_IMM, K_UNDEF);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
     void* no_code = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, call_layout().bc_reg_entry);
