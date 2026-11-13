@@ -2068,8 +2068,11 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
 
     // Literal compilation is cached on first use; functions without a
     // regexp instruction need no table, even when they have other constants.
+    // RETEST reads the same table: without one it creates a RegExp and calls
+    // `test` on it every time.
     for (uint i = 0; i < func.code_count; i++) {
-        if (func.code[i].op != Opcode.NEWREGEXP) continue;
+        Opcode op = func.code[i].op;
+        if (op != Opcode.NEWREGEXP && op != Opcode.RETEST) continue;
         usz bytes = (usz)func.const_count * void*::size;
         func.regexp_cache = (void**)h.alloc_func(h.heap_udata, bytes);
         if (func.regexp_cache != null) {
