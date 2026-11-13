@@ -849,6 +849,12 @@ Where Richards' optimized code goes now: `LOAD_FIELD` 32%, `STORE_FIELD` 13%,
 reads are about 60% of DeltaBlue's `LOAD_FIELD` samples (shape, class, epoch
 and prototype tests, then `CHECK_CALLEE` again: 3.0's table), and the inline
 rejections are callees holding a call or a NEW_OBJ (3.3).
+Gate g34 (`fbff012a`, three runs alternating with g33 = `a01c9aba`): **16,563**
+against 15,217 (+8.8%): NavierStokes +31%, Box2D +30%, Splay +24%, Crypto
++18%, DeltaBlue +15%, TypeScript +12%, Richards +6%. PdfJS reads -16% there,
+but inside the bundle it is bimodal (about 9,600 or 11,600 from run to run,
+both binaries hit both); alone, and in steady instructions, the two are equal.
+Which mode a run lands in is collector timing (step 2).
 
 **3.2 Calls as nodes.** A call that is not inlined is `GENERIC`: the baseline
 site with its feedback recording, generic guards and view reload.
