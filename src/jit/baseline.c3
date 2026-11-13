@@ -1217,11 +1217,14 @@ fn void Asm.emit_leave(&self, int src, long srcw) {
 // the routine generated code fast-calls to run vm::jit_sync, keeping R0 to R4.
 // `reg_ret` is where the record of a register call returns (its native_ret):
 // it pops the call's native frame and returns to the call, keeping R0 and R1.
+// `shade` is the routine optimized code fast-calls to mark the value at
+// SUB_VALUE_OFF (vm::jit_opt_shade), keeping R0 to R4 and its register pools.
 struct Trampoline {
     void* code;
     void* ret;
     void* sync;
     void* reg_ret;
+    void* shade;
 }
 
 Trampoline trampoline_data @private;
@@ -1273,6 +1276,19 @@ fn void init_trampoline() @noinline @private {
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_sync);
     for (int r = 0; r < SYNC_WORDS - 1; r++) sljit_emit_op1(c, SLJIT_MOV, R0 + r, 0, sp, fr.sync_off + 8 * ((long)r + 1));
     sljit_emit_op_src(c, SLJIT_FAST_RETURN, sp, fr.sync_off);
+    void* shade = sljit_emit_label(c);
+    sljit_emit_op_dst(c, SLJIT_FAST_ENTER, sp, fr.sync_off);
+    for (int r = 0; r < SYNC_WORDS - 1; r++) sljit_emit_op1(c, SLJIT_MOV, sp, fr.sync_off + 8 * ((long)r + 1), R0 + r, 0);
+    OptPools p = opt_pools();
+    for (int r = 0; r < p.int_count; r++) sljit_emit_op1(c, SLJIT_MOV, sp, CALL_FRAME_BYTES + 8 * (long)r, p.int_first + r, 0);
+    for (int r = 0; r < p.flt_count; r++) sljit_emit_fop1(c, SLJIT_MOV_F64, sp, CALL_FRAME_BYTES + 8 * (long)(p.int_count + r), p.flt_first + r, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, reg_s(5), 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, sp, SUB_VALUE_OFF);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_shade);
+    for (int r = 0; r < p.flt_count; r++) sljit_emit_fop1(c, SLJIT_MOV_F64, p.flt_first + r, 0, sp, CALL_FRAME_BYTES + 8 * (long)(p.int_count + r));
+    for (int r = 0; r < p.int_count; r++) sljit_emit_op1(c, SLJIT_MOV, p.int_first + r, 0, sp, CALL_FRAME_BYTES + 8 * (long)r);
+    for (int r = 0; r < SYNC_WORDS - 1; r++) sljit_emit_op1(c, SLJIT_MOV, R0 + r, 0, sp, fr.sync_off + 8 * ((long)r + 1));
+    sljit_emit_op_src(c, SLJIT_FAST_RETURN, sp, fr.sync_off);
     void* reg_ret = sljit_emit_label(c);
     if (REG_CALLS) {
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, fr.link_off);
@@ -1283,6 +1299,7 @@ fn void init_trampoline() @noinline @private {
     assert(code != null, "no code for the trampoline");
     trampoline_data.ret = (void*)sljit_shim_label_addr(ret);
     trampoline_data.sync = (void*)sljit_shim_label_addr(sync);
+    trampoline_data.shade = (void*)sljit_shim_label_addr(shade);
     trampoline_data.reg_ret = REG_CALLS ? (void*)sljit_shim_label_addr(reg_ret) : null;
     sljit_free_compiler(c);
     trampoline_data.code = code;

@@ -201,17 +201,24 @@ fn void OptCg.store_object(&self, uint slot, int src) {
     self.a.track_heap_store(slot);
 }
 
-// The value of VALUE node `nd`, in `src`, stored to window slot `slot`: plainly when a boolean.
-fn void OptCg.store_value_node(&self, OptNode* nd, uint slot, int src) {
+// The value of VALUE node `nd`, in `src`, stored to window slot `slot`: plainly when a boolean,
+// and marked while the collector is marking when it may be a value the collector has not seen
+// (OptGraph.unshaded), unless `shade` is false and the caller does that. Uses R2 and R3.
+fn void OptCg.store_value_node(&self, OptNode* nd, uint slot, int src, bool shade = true) {
     if (self.g.is_boolean(nd)) {
         self.a.store(slot, src);
-    } else {
-        self.store_object(slot, src);
+        return;
     }
+    self.store_object(slot, src);
+    if (!shade || !self.g.unshaded(nd)) return;
+    assert(src != R3);
+    void* quiet = self.not_marking();
+    self.shade(src);
+    sljit_set_label(quiet, sljit_emit_label(self.a.c));
 }
 
-// The value of node `n` stored to window slot `slot`, boxed.
-fn void OptCg.store_node(&self, uint n, uint slot) {
+// The value of node `n` stored to window slot `slot`, boxed; `shade` as store_value_node has it.
+fn void OptCg.store_node(&self, uint n, uint slot, bool shade = true) {
     void* c = self.a.c;
     OptNode* nd = &self.g.nodes[n];
     if (nd.op == OptOp.CONST_I32) {
@@ -225,7 +232,7 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
     } else if (nd.reg < 0) {
         // Lives in its home slot already.
     } else if (nd.rep == OptRep.VALUE) {
-        self.store_value_node(nd, slot, nd.reg);
+        self.store_value_node(nd, slot, nd.reg, shade);
     } else if (nd.rep == OptRep.INT32) {
         sljit_emit_op2(c, SLJIT_AND, R0, 0, nd.reg, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
@@ -235,11 +242,23 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
     }
 }
 
+// The dirty registers `first`..+`count` stored, with one test of the collector's mark for the
+// VALUE nodes among them that store_value_node would mark.
 fn void OptCg.store_dirty(&self, uint first, uint count) {
+    uint unshaded = 0;
     for (uint k = 0; k < count; k++) {
         OptDirty d = self.g.dirty[(sz)(first + k)];
-        self.store_node(d.node, d.reg);
+        self.store_node(d.node, d.reg, false);
+        OptNode* nd = &self.g.nodes[d.node];
+        if (nd.reg >= 0 && self.g.unshaded(nd)) unshaded++;
     }
+    if (unshaded == 0) return;
+    void* quiet = self.not_marking();
+    for (uint k = 0; k < count; k++) {
+        OptNode* nd = &self.g.nodes[self.g.dirty[(sz)(first + k)].node];
+        if (nd.reg >= 0 && self.g.unshaded(nd)) self.shade(nd.reg);
+    }
+    sljit_set_label(quiet, sljit_emit_label(self.a.c));
 }
 
 // The result of INT32 node `n`, computed into register `src`.
@@ -1268,15 +1287,18 @@ fn void OptCg.select_slot(&self, OptPoly* p) {
     }
 }
 
-// Mark the value in R0 for the collector (vm::jit_opt_shade), with the registers in use saved
-// around the call. R0 keeps the value.
-fn void OptCg.shade(&self, uint i) {
+// Mark the value in `src` for the collector (Trampoline.shade), keeping every register.
+fn void OptCg.shade(&self, int src) {
     void* c = self.a.c;
-    self.spill_live(i, true);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.heap, 0);
-    self.a.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_shade);
-    self.spill_live(i, false);
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF, src, 0);
+    sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM, (long)(usz)trampoline().shade);
+}
+
+// The jump taken while the collector is not marking. Uses R3.
+fn void* OptCg.not_marking(&self) {
+    void* c = self.a.c;
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.a.heap, self.a.lay.heap_gc_phase);
+    return sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
 }
 
 // Publish R0 into window slot `slot` as the baseline's store does, leaving for the baseline code
@@ -1294,38 +1316,22 @@ fn void OptCg.publish(&self, uint i, uint slot) {
     a.call.len = 0;
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
     self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w()), i, OptExit.SLOW_PATH);
-    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal), i, OptExit.SLOW_PATH);
-    self.shade(i);
+    self.exit_at(self.not_marking(), i, OptExit.SLOW_PATH);
+    self.shade(R0);
     a.store(slot, R0);
     a.track_heap_store(slot);
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// The VALUE result of a load, in R0: an object or an inert value, else leave for the baseline code.
+// The VALUE result of a load, in R0: an object, an inert value or (from a counted holder) a
+// string, the invariant of OptRep.VALUE; else leave for the baseline code. The object is tested
+// first, as what such a node mostly holds; the tags above the object's are the other counted values.
 fn void OptCg.finish_value(&self, uint i, OptNode* n) {
     void* c = self.a.c;
-    Asm* a = self.a;
-    // An object, an inert value or (from a counted holder) a string, while the collector is not
-    // marking: the invariant of OptRep.VALUE. The object is tested first, as what such a node
-    // mostly holds; the tags above the object's are the other counted values.
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
     void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w());
     self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, n.counted ? K_OBJ : K_STRING_START), i, OptExit.SLOW_PATH);
-    void* inert = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(object, sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
-    void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
-    // While marking the object is marked, and published at once unless its slot is beyond the
-    // caller's frame, which the collector does not scan.
-    self.shade(i);
-    if (!self.g.pinned(n)) {
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)n.home);
-        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUBLISH_SUB });
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
-    }
-    sljit_set_label(quiet, sljit_emit_label(c));
-    sljit_set_label(inert, sljit_emit_label(c));
     self.def_value(i, R0);
 }
 
@@ -2391,10 +2397,9 @@ fn void OptCg.shade_bindings(&self, ulong bits, uint i) {
         if ((bits & (1UL << k)) == 0) continue;
         TVal v = { .bits = self.g.bindings[k].value };
         if (!v.is_object()) continue;
-        sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.a.heap, self.a.lay.heap_gc_phase);
-        void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+        void* quiet = self.not_marking();
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)v.bits);
-        self.shade(i);
+        self.shade(R0);
         sljit_set_label(quiet, sljit_emit_label(c));
     }
 }

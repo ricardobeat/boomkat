@@ -385,9 +385,9 @@ fn LeanCall jit_apply_lean(Instruction* pc, TVal* regs, ColdCtx* cold, Vm* vm, u
                            this_valid ? this_arg : th_undefined(), this_valid, null) ? ENTERED_ARGS : ENTERED;
 }
 
-// Mark `value`, an object the optimized code read into a machine register while the collector is
-// marking (a callee register beyond the caller's frame, which the collector does not scan). Allocates
-// nothing for the collector and runs no code. Returns `value`.
+// Mark `value`, which the optimized code stores to the window from a machine register while the
+// collector is marking (Trampoline.shade). Allocates nothing for the collector and runs no code.
+// Returns `value`.
 fn ulong jit_opt_shade(Heap* h, ulong value) {
 $if types::USE_NANBOX:
     h.shade_root_tval({ .bits = value });

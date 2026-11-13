@@ -19,14 +19,14 @@
 // would have to queue. A string a counted holder lets go of is queued then (Heap.decref), and only
 // a safepoint frees queued strings, so the window slot it is stored to before one keeps it. The
 // collector reads only the window, so the invariant that keeps it sound is: a VALUE node is
-// created only while incremental marking is off (else the load leaves for the baseline code,
-// which shades what it publishes), and it is stored to its home slot, raising the frame's
-// heap_reg_count as Asm.publish does, before anything that can collect or inspect the window
-// runs: a GENERIC node, an exit, a back edge's poll (a loop header holds no VALUE node: the
-// registers that reach one are stored on the edge; a forward join gives the nodes that differ a
-// phi) and any node that reads the window slot (STORE_VALUE). Marking cannot begin in between, as only those points can allocate or call. A
-// node that finds no machine register lives in its home slot from its definition on, as the
-// numeric ones do.
+// stored to its home slot, raising the frame's heap_reg_count as Asm.publish does and marked if
+// the collector is marking (OptGraph.unshaded, Trampoline.shade), before anything that can collect
+// or inspect the window runs: a GENERIC node, an exit, a back edge's poll (a loop header holds no
+// VALUE node: the registers that reach one are stored on the edge; a forward join gives the nodes
+// that differ a phi) and any node that reads the window slot (STORE_VALUE). Marking cannot begin
+// or end in between, as only those points can allocate or call, so a value whose holder lost it
+// meanwhile is marked by that store; a store into an object takes its barrier. A node that finds
+// no machine register lives in its home slot from its definition on, as the numeric ones do.
 //
 // The exception is a VALUE node of an inlined body whose home slot lies beyond the caller's
 // frame (slot >= the caller's num_regs): the collector does not scan it, and no pop sweeps it,
@@ -36,9 +36,8 @@
 // the frames covering the slot. The callee and receiver of a nested call, register copies and
 // returns into such slots are VALUE nodes of this kind too. Such a
 // node therefore lives in a machine register only: it is never stored in the normal flow. The
-// builder refuses the inline for a STORE_VALUE of it or an edge store of it, the allocator never
-// spills it (the function is then built without inlining), and its load exits instead of
-// publishing while the collector is marking.
+// builder refuses the inline for a STORE_VALUE of it or an edge store of it, and the allocator
+// never spills it (the function is then built without inlining).
 //
 // A boolean a comparison or `!` computes is a VALUE node as well (OptGraph.is_boolean). No
 // collector reads it and no store counts it, so none of the above binds it: it is stored to any
@@ -636,6 +635,15 @@ fn bool OptGraph.is_boolean(&self, OptNode* n) {
     while (n.op == OptOp.COPY) n = &self.nodes[n.a];
     if (n.rep != OptRep.VALUE) return false;
     return n.op == OptOp.COMPARE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || (n.op == OptOp.PHI && n.cc == 1);
+}
+
+// Whether VALUE node `n` may hold a value the collector has not seen while it marks: anything but a
+// boolean, a constant (held by the code) or a new object (shaded when allocated). Its stores to
+// the window mark it then (OptCg.store_value_node).
+fn bool OptGraph.unshaded(&self, OptNode* n) {
+    while (n.op == OptOp.COPY) n = &self.nodes[n.a];
+    if (n.rep != OptRep.VALUE || n.is_const() || n.op == OptOp.NEW_OBJECT) return false;
+    return !self.is_boolean(n);
 }
 
 // Whether a node of this rep lives in an integer register.
