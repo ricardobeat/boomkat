@@ -678,6 +678,10 @@ fn uint slice_cache_index(char* p, uint len) @inline {
     return (h ^ (h >> 15)) & (SLICE_CACHE_SIZE - 1);
 }
 
+// Match-array shapes kept at once: one per capture count and unmatched set a
+// program's regexps produce, up to this many before they evict each other.
+const uint MATCH_SHAPES = 16;
+
 struct MatchShape {
     ulong unmatched;
     uint  ncaps;
@@ -842,7 +846,7 @@ struct RealmState {
     uint                fn_proto_shape;
     uint[5]             args_shapes;
     RegExpGuard         regexp_guard;
-    MatchShape[4]       match_shapes;
+    MatchShape[MATCH_SHAPES] match_shapes;
     // The shape of a fresh RegExp, whose only property is lastIndex, and the
     // shape-recycle epoch it was read in; 0 until one has been built.
     uint                regexp_shape;

@@ -740,9 +740,18 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     return arr;
 }
 
+// The entry for one capture count and unmatched set: whichever of its two
+// candidate slots holds it, else an empty one, else the first, which the shape
+// built next replaces. Two candidates keep a pair of alternating shapes from
+// evicting each other.
 fn MatchShape* match_shape_slot(Heap* heap, uint ncaps, ulong unmatched) @inline {
-    uint h = ncaps * 0x9E37_79B1 ^ (uint)(unmatched * (ulong)0x9E3779B97F4A7C15 >> 40);
-    return &heap.match_shapes[(h >> 7) & 3];
+    ulong h = (unmatched + (ulong)ncaps * 0xD6E8_FEB8_6659_FD93) * 0x9E37_79B9_7F4A_7C15;
+    uint i = (uint)(h >> 60) & (heap::MATCH_SHAPES - 1);
+    MatchShape* a = &heap.match_shapes[i];
+    if (a.shape_id == 0 || (a.ncaps == ncaps && a.unmatched == unmatched)) return a;
+    MatchShape* b = &heap.match_shapes[(i + 1) & (heap::MATCH_SHAPES - 1)];
+    if (b.shape_id == 0 || (b.ncaps == ncaps && b.unmatched == unmatched)) return b;
+    return a;
 }
 
 // Gives a freshly allocated RegExp its one own property, lastIndex = 0
