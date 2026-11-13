@@ -182,11 +182,16 @@ fn void OptCg.store_flt(&self, uint slot, int fsrc) {
     self.a.store(slot, R0);
 }
 
-// VALUE node `n` in a register: its own, or `tmp` loaded from its home slot.
+// VALUE node `n` in a register: its own, or `tmp` loaded from its home slot (or for `this`, from
+// the record).
 fn int OptCg.value_reg(&self, uint n, int tmp) {
     OptNode* nd = &self.g.nodes[n];
     if (nd.op == OptOp.CONST_OBJ) {
         sljit_emit_op1(self.a.c, SLJIT_MOV, tmp, 0, SLJIT_IMM, nd.imm);
+        return tmp;
+    }
+    if (nd.op == OptOp.THIS) {
+        self.a.load_this(tmp);
         return tmp;
     }
     if (nd.reg >= 0) return nd.reg;
@@ -229,6 +234,8 @@ fn void OptCg.store_node(&self, uint n, uint slot, bool shade = true) {
         self.a.store(slot, SLJIT_IMM, nd.imm);
         TVal v = { .bits = (ulong)nd.imm };
         if (!v.is_inert()) self.a.track_heap_store(slot);
+    } else if (nd.op == OptOp.THIS) {
+        self.store_value_node(nd, slot, self.value_reg(n, R0), shade);
     } else if (nd.reg < 0) {
         // Lives in its home slot already.
     } else if (nd.rep == OptRep.VALUE) {
@@ -243,22 +250,27 @@ fn void OptCg.store_node(&self, uint n, uint slot, bool shade = true) {
 }
 
 // The dirty registers `first`..+`count` stored, with one test of the collector's mark for the
-// VALUE nodes among them that store_value_node would mark.
+// VALUE nodes among them that store_value_node would mark: those in a machine register, and `this`.
 fn void OptCg.store_dirty(&self, uint first, uint count) {
     uint unshaded = 0;
     for (uint k = 0; k < count; k++) {
         OptDirty d = self.g.dirty[(sz)(first + k)];
         self.store_node(d.node, d.reg, false);
-        OptNode* nd = &self.g.nodes[d.node];
-        if (nd.reg >= 0 && self.g.unshaded(nd)) unshaded++;
+        if (self.batch_shaded(d.node)) unshaded++;
     }
     if (unshaded == 0) return;
     void* quiet = self.not_marking();
     for (uint k = 0; k < count; k++) {
-        OptNode* nd = &self.g.nodes[self.g.dirty[(sz)(first + k)].node];
-        if (nd.reg >= 0 && self.g.unshaded(nd)) self.shade(nd.reg);
+        uint n = self.g.dirty[(sz)(first + k)].node;
+        if (self.batch_shaded(n)) self.shade(self.value_reg(n, R0));
     }
     sljit_set_label(quiet, sljit_emit_label(self.a.c));
+}
+
+// Whether store_dirty marks node `n` after storing it (store_value_node with no `shade`).
+fn bool OptCg.batch_shaded(&self, uint n) {
+    OptNode* nd = &self.g.nodes[n];
+    return (nd.reg >= 0 || nd.op == OptOp.THIS) && self.g.unshaded(nd);
 }
 
 // The result of INT32 node `n`, computed into register `src`.
@@ -440,7 +452,8 @@ fn void OptCg.emit_item(&self, OptMoveItem* m) {
     bool is_const = s.is_const();
     if (d.rep == OptRep.VALUE) {
         if (is_const) {
-            sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, SLJIT_IMM, s.imm);
+            int r = self.value_reg(m.src, d.reg);
+            if (r != d.reg) sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, r, 0);
         } else if (m.src_reg >= 0) {
             sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, m.src_reg, 0);
         } else {
@@ -3222,6 +3235,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case CONST_I32:
         case CONST_F64:
         case CONST_OBJ:
+        case THIS:
         case PHI:
         case NOT_I32:
             if (n.op == OptOp.NOT_I32) self.emit_bitop(i, n);

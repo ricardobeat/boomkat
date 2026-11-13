@@ -874,7 +874,7 @@ fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_
 // and does not end the block.
 fn bool keeps_fresh(OptOp op) {
     switch (op) {
-        case CONST_I32: case CONST_F64: case CONST_OBJ: case CHECK_I32: case CHECK_NUM: case LOAD_CAP:
+        case CONST_I32: case CONST_F64: case CONST_OBJ: case THIS: case CHECK_I32: case CHECK_NUM: case LOAD_CAP:
         case LOAD_FIELD: case LOAD_LENGTH: case STORE_FIELD: case STORE_VALUE: case COPY:
         case ADD_I32: case SUB_I32: case MUL_I32: case AND_I32: case OR_I32: case XOR_I32: case NOT_I32:
         case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32: case I32_TO_F64: case F64_TO_I32:
@@ -4139,8 +4139,17 @@ fn bool OptBuild.lower_op(&self) {
             return self.get_scoped();
         case LDTHIS:
             if (self.cur_fn == 0) {
-                if (opt_site_banned(self.f, self.f, self.next_pc - 1)) return self.generic();
-                return self.window_copy(self.w.a, 4);
+                if (self.w.a >= self.nregs) return false;
+                // A sloppy function's `this` is an object (the call coerces it), which a THIS node
+                // reads from the record where it is used: nothing runs here. Any other may be a
+                // primitive a VALUE node cannot hold, so it is published.
+                if (self.f.flags.is_strict || self.f.is_arrow()) {
+                    if (opt_site_banned(self.f, self.f, self.next_pc - 1)) return self.generic();
+                    return self.window_copy(self.w.a, 4);
+                }
+                self.set(self.w.a, self.add(OptOp.THIS, OptRep.VALUE, NO_NODE, NO_NODE, 0));
+                self.same_facts(self.w.a, self.nregs);
+                return true;
             }
             return self.load_this();
         case GETPROP:

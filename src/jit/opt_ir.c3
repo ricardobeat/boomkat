@@ -87,6 +87,10 @@ enum OptOp : char {
     // (OptBuild.fold_binding): a VALUE node with no register and no home, as the numeric constants
     // are. A GUARD_BINDING before it in its stretch of code proves the binding holds it.
     CONST_OBJ,
+    // The running function's `this` (the outermost function's, an LDTHIS of a sloppy function, so
+    // an object): a VALUE node with no register and no home, as the constants are, read from the
+    // record wherever it is used (OptCg.value_reg). The record holds it for the frame's life.
+    THIS,
     // Window slot imm, checked to hold an int32 (exit NOT_INT32) or a number
     // (exit NOT_NUMBER), as an INT32 or FLOAT64.
     CHECK_I32,
@@ -180,7 +184,7 @@ enum OptOp : char {
     // result register) as a published store; exits (SLOW_PATH) where publish does. cc 1 copies
     // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG),
     // cc 3 the graph register imm itself (a forwarded argument, OptBuild.forward_window), cc 4 the
-    // function's own receiver (its record's this_binding).
+    // function's own receiver (its record's this_binding) where a THIS node cannot hold it.
     // Of rep VALUE the value stays in a register (finish_value), for a home beyond the
     // caller's frame.
     COPY_WINDOW,
@@ -631,7 +635,7 @@ fn void OptGraph.free(&self) {
     self.fns.free();
 }
 
-fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64 || self.op == OptOp.CONST_OBJ;
+fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64 || self.op == OptOp.CONST_OBJ || self.op == OptOp.THIS;
 
 // Whether VALUE node `n` holds a boolean: a comparison, a `!`, a phi of such (cc 1), or a copy.
 fn bool OptGraph.is_boolean(&self, OptNode* n) {
@@ -645,6 +649,7 @@ fn bool OptGraph.is_boolean(&self, OptNode* n) {
 // the window mark it then (OptCg.store_value_node).
 fn bool OptGraph.unshaded(&self, OptNode* n) {
     while (n.op == OptOp.COPY) n = &self.nodes[n.a];
+    if (n.op == OptOp.THIS) return true;
     if (n.rep != OptRep.VALUE || n.is_const() || n.op == OptOp.NEW_OBJECT) return false;
     return !self.is_boolean(n);
 }
