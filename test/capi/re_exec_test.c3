@@ -330,6 +330,10 @@ fn void cases() {
     check("a*$", (ushort[]){'a', 'b', 'a', 'a'}, 0, true);
     check("a*$", (ushort[]){'a', '\n', 'a'}, re_bindings::RE_FLAG_MULTILINE, true);
     check("[a-c]+B", (ushort[]){'a', 'b', 'B'}, re_bindings::RE_FLAG_IGNORECASE, true);
+    // A group a failed attempt set must read unset in a later attempt's match.
+    check("(?:a|b(c))x", (ushort[]){'b', 'c', 'z', ' ', 'a', 'x'}, 0, true);
+    check("(?:a|b(c)d)x", (ushort[]){'b', 'c', 'd', 'z', 'a', 'x'}, 0, true);
+    check("(b)?(?:a|b(c))x", (ushort[]){'b', 'b', 'c', 'z', 'b', 'a', 'x'}, 0, true);
     // Counted repeats: the loop, split and advance registers the decoder added.
     check("a{2,4}", (ushort[]){'a', 'a', 'a', 'a', 'a', 'b'}, 0, true);
     check("a{2,4}", (ushort[]){'a', 'b'}, 0, true);

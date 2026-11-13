@@ -624,6 +624,10 @@ fn void ReAsm.emit_write(&self, uint slot, int value) {
     uint captures = self.prog.capture_count * 2;
     long array = slot < captures ? self.lay.capture : self.lay.regs;
     long off = (long)(slot < captures ? slot : slot - captures) * 4;
+    // With no frame behind it, nothing can resume to before this write, and the
+    // next attempt resets the captures itself: there is nothing to record.
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
+    void* bare = self.cmp(jit::SLJIT_EQUAL, self.t1, 0, jit::SLJIT_IMM, 0);
     // Room for one more record; the growth is rare, so it stays a call.
     self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_len);
     self.mov_u32(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_cap);
@@ -649,6 +653,7 @@ fn void ReAsm.emit_write(&self, uint slot, int value) {
     self.op2(jit::SLJIT_ADD, self.t1, 0, self.t1, 0, jit::SLJIT_IMM, 1);
     self.store_u32(self.s_e, self.lay.undo_len, self.t1);
     // The value itself.
+    self.bind(bare, self.label());
     self.mov(self.t1, 0, jit::SLJIT_MEM | self.s_e, array);
     self.mov_u32(jit::SLJIT_MEM | self.t1, off, value, 0);
 }
@@ -1083,14 +1088,17 @@ fn void ReAsm.emit_attempt(&self) {
     self.leave(re_native::RE_TIMEOUT);
     self.bind(no_timeout, self.label());
     self.bind(counting, self.label());
-    // Only an attempt that wrote something has anything to restore, and a fresh
-    // attempt has no frames behind it either.
-    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_len);
-    void* clean = self.cmp(jit::SLJIT_EQUAL, self.t1, 0, jit::SLJIT_IMM, 0);
+    // No frame survives a failed attempt, and the writes it made with none
+    // behind them were never recorded: its records are dropped and its groups
+    // reset outright. Group 0 is written before it is read, as is every
+    // register.
     self.mov(self.t1, 0, jit::SLJIT_IMM, 0);
-    self.emit_unwind();
-    self.store_u32(self.s_e, self.lay.depth, self.t1);
-    self.bind(clean, self.label());
+    self.store_u32(self.s_e, self.lay.undo_len, self.t1);
+    if (self.prog.capture_count > 1) {
+        self.mov(self.t0, 0, jit::SLJIT_MEM | self.s_e, self.lay.capture);
+        self.mov(self.t1, 0, jit::SLJIT_IMM, (long)re_native::RE_UNSET);
+        for (uint i = 2; i < self.prog.capture_count * 2; i++) self.store_u32(self.t0, (long)i * 4, self.t1);
+    }
     self.mov(jit::SLJIT_MEM | jit::reg_sp(), 0, self.s_pos, 0);
     self.go(self.first_pc, FIX_INSN);
 }
