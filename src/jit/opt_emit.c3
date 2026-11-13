@@ -2365,27 +2365,26 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
             closure = n.b != NO_NODE ? self.value_reg(n.b, R3) : -1;
         }
     }
-    if (n.rep == OptRep.VALUE) {
-        // A callee register beyond the caller's frame: the value stays in a register.
-        a.var_slot(vic, n.cc != 0, creg, closure);
-        if (n.cc != 0) {
-            sljit_emit_op1(self.a.c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, a.lay.vic_flags);
-            sljit_emit_op2(self.a.c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, a.lay.accessor_mask);
-            a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
-        }
-        sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-        a.guard_not_tdz();
-        for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
-        a.alt.len = 0;
-        self.exit_calls(i, OptExit.SLOW_PATH);
-        self.finish_value(i, n);
-        return;
+    a.var_slot(vic, n.cc != 0, creg, closure);
+    if (n.cc != 0) {
+        sljit_emit_op1(self.a.c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, a.lay.vic_flags);
+        sljit_emit_op2(self.a.c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, a.lay.accessor_mask);
+        a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     }
-    a.emit_get_var(ra, vic, n.cc != 0, creg, closure);
+    sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    a.guard_not_tdz();
     // A moved entry re-arms in the baseline code.
     for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
     a.alt.len = 0;
     self.exit_calls(i, OptExit.SLOW_PATH);
+    // A callee register beyond the caller's frame: the value stays in a register.
+    if (n.rep == OptRep.VALUE) {
+        self.finish_value(i, n);
+        return;
+    }
+    // Into the window as Asm.emit_get_var publishes it, with an object the collector's mark has not
+    // reached marked here rather than left to the baseline code.
+    self.publish(i, ra);
 }
 
 // GUARD_BINDING (OptBinding): its holder's layout and the folded-object epoch as the node's cc asks,
