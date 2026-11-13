@@ -821,6 +821,35 @@ type unknown or partly known.
   `--opt-dump` before and after (Richards' scheduler loop was 48 `GENERIC`
   against 27 `LOAD_FIELD`).
 
+*Progress (2026-11-13, `jit` at `fbff012a`; last gate g33 = 15,119, ungated
+since).* Built: the rep, renamed from `OBJECT` (`05a61708`); strings read
+from counted holders (`df86688a`, `OptNode.counted`); field, element, global
+and capture reads as `VALUE` by default, a numeric use asking the next round
+for a typed load (`fdad95f5`, `ask_number`); truth tests and `!` on any
+`VALUE` in its register (`c7577776`); `COMPARE_WINDOW` and `BRANCH_WINDOW` as
+node forms (`a65b6e8e`); the mark-phase test moved from every load to the
+stores into the window, through a register-keeping `Trampoline.shade`
+(`1aaab5d8`); a plain-object fact per register that survives calls, so a
+receiver proven plain once is tested only for its shape after (`9ae11798`);
+a sloppy function's `this` as a `THIS` node read from the record where it is
+used, which removes LDTHIS's publish (`fbff012a`). Call arguments reach
+`CALL_REG` as `VALUE` nodes through the dirty stores; `STORE_FIELD` and
+`ADD_FIELD` take them; stores into old objects while marking go through
+`jit_opt_store_slot` rather than exiting. Two older builder bugs surfaced and
+were fixed: an inlined body's case test read the flattened graph's table
+(`9a2ce946`, an infinite loop) and a base constructor's adds through a copy of
+the object were missed (`9cfdc661`, TypeScript lost `tokenId`; the mini
+suite caught it, `jit_check` did not). Steady instructions per iteration,
+`a65b6e8e`'s predecessor to `fbff012a`: Richards 9.91M to 9.29M, DeltaBlue
+21.5M to 19.0M, Box2D 513M to 481M, TypeScript about -5%. Left: the type
+folds (`typeof`, `=== undefined`), which no hot profile shows yet; RET and
+`STORE_ELEM` taking a `VALUE` (RET's cost is the return protocol, 1.4).
+Where Richards' optimized code goes now: `LOAD_FIELD` 32%, `STORE_FIELD` 13%,
+`CHECK_CALLEE` and `GUARD_BINDING` 6% each, `CALL_REG` 4%; inherited method
+reads are about 60% of DeltaBlue's `LOAD_FIELD` samples (shape, class, epoch
+and prototype tests, then `CHECK_CALLEE` again: 3.0's table), and the inline
+rejections are callees holding a call or a NEW_OBJ (3.3).
+
 **3.2 Calls as nodes.** A call that is not inlined is `GENERIC`: the baseline
 site with its feedback recording, generic guards and view reload.
 
