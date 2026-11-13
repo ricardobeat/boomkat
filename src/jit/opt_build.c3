@@ -2551,7 +2551,26 @@ fn bool OptBuild.reg_call(&self, CompiledFunction* cf) {
     for (uint k = 0; k < node.dirty_count; k++) self.cur[self.g.dirty[(sz)(node.dirty_first + k)].reg].dirty = false;
     for (uint r = callee_reg; r < self.nregs; r++) self.kill(r);
     self.kill(self.w.a);
+    if (self.cur_fn != 0 && self.w.a >= self.caller_regs && self.w.a < self.nregs) self.call_result_value(self.w.a);
     return true;
+}
+
+// The result of a call an inlined body made, in register `ra` beyond the caller's frame, read into a
+// VALUE node as the call returns: its slot already holds it, and a join with the inlined cases of the
+// same call (OptBuild.poly_children), which leave VALUE nodes there, takes a phi of them. The node
+// belongs to the instruction after the call, where an exit from it resumes.
+fn void OptBuild.call_result_value(&self, uint ra) {
+    OptInlineSite* s = &self.sites[self.cur_site];
+    uint after = s.flat ? self.cfg.nodes[self.insn].successors[0] : s.cfg.nodes[self.insn].successors[0];
+    uint n = self.add(OptOp.COPY_WINDOW, OptRep.VALUE, NO_NODE, NO_NODE, (long)ra);
+    self.g.nodes[n].home = ra;
+    self.g.nodes[n].cc = 3;
+    self.g.nodes[n].pc = self.next_pc;
+    uint at = self.insn;
+    self.insn = after;
+    self.snapshot(n);
+    self.insn = at;
+    self.set(ra, n, false);
 }
 
 // Add register `r`'s dirty node to the stores of node `n`, the last snapshot taken, unless it is there.
@@ -3155,7 +3174,7 @@ fn void OptBuild.find_sites(&self) {
             ok = self.splice_ok(t);
             t.remap = uint::max;
             t.head_pc = self.cfg.nodes[i].view.pc;
-            size += t.cfg.instruction_count;
+            size += t.cfg.instruction_count + (t.poly ? 2 : 0);
         }
         bool skip = !ok || i + 1 >= count || flat_total + size + count > compiler::DEFAULT_CFG_BUDGET.max_instructions;
         for (uint e = 0; e < self.exclude_count; e++) skip = skip || self.exclude[e] == self.cfg.nodes[i].view.pc;
@@ -3233,7 +3252,7 @@ fn bool OptBuild.poly_sites(&self, uint i, uint* flat_total) {
             ok = self.splice_ok(t);
             t.remap = uint::max;
             t.head_pc = view.pc;
-            tree += t.cfg.instruction_count;
+            tree += t.cfg.instruction_count + (t.poly && j != si ? 2 : 0);
         }
         if (!ok) {
             if (self.rej == OptInlineReject.BUILD) self.count_reject(OptInlineReject.OPCODE, Opcode.CALL);
@@ -3289,6 +3308,8 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
         self.rej = OptInlineReject.BUILD;
         Opcode cop = self.sites[si].cfg.nodes[k].view.insn.op;
         if (!self.inline_candidate(k, &c, si + 1)) {
+            // A polymorphic call whose cases the body inlines (OptBuild.poly_children).
+            if (self.poly_children(si, k, words)) continue;
             // A constructor's own reason is worth its count too: the parent's names only the opcode.
             bool real = self.nested_call_ok(si, k);
             if ((cop == Opcode.NEW_OBJ || real) && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
@@ -3333,6 +3354,81 @@ fn bool OptBuild.nested_call_ok(&self, uint si, uint k) {
     OptCallees set;
     uint at = view.next_pc - 1;
     return self.records_ok(si) && !opt_site_banned(self.f, s.cf, at) && opt_direct_targets(self.h, s.cf, at, &set);
+}
+
+// Whether the call at instruction `k` of the body of site `si` is a polymorphic one some of whose
+// callees the body inlines, as poly_sites does for the function's own calls: each such callee is a
+// flat site, child_of[k] names the first, and a callee none of them names takes the call, which the
+// body makes as a register call (nested_call_ok). The cases' trees count towards `words`; a case
+// whose tree does not fit is left to the call.
+fn bool OptBuild.poly_children(&self, uint si, uint k, uint* words) {
+    OptInlineSite* s = &self.sites[si];
+    DecodedBytecode view = s.cfg.nodes[k].view;
+    Opcode op = view.insn.op;
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS) || view.wide || s.cf.ic_entries == null) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)s.cf.ic_entries)[view.next_pc - 1];
+    uint n = hobject::ic_call_count(ic);
+    if (n < 2 || (ic.feedback & hobject::FB_DOTCALL) != 0 || !self.nested_call_ok(si, k)) return false;
+    uint prev = 0;
+    uint words_all = 0;
+    for (uint t = 0; t < n; t++) {
+        uint index = hobject::ic_call_target(ic, t);
+        if (index >= self.h.compiled_func_count || self.h.compiled_funcs[index] == null) continue;
+        OptInlineSite c;
+        self.rej = OptInlineReject.BUILD;
+        if (!self.inline_candidate(k, &c, si + 1, (CompiledFunction*)self.h.compiled_funcs[index])) {
+            if (self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
+            continue;
+        }
+        uint ci = (uint)self.sites.len();
+        uint nregs0 = self.nregs;
+        self.sites.push(c);
+        uint need = c.base + c.cf.num_regs;
+        if (need > self.nregs) self.nregs = need;
+        uint case_words = c.cf.code_count;
+        // A case whose calls are not all inlined would make, at this depth, calls its own code
+        // inlines: left to the call.
+        if (!self.add_children(ci, &case_words) || words_all + case_words > POLY_WORDS_MAX
+            || *words + case_words > INLINE_TREE_WORDS_MAX || self.makes_calls(ci)) {
+            for (sz j = self.sites.len(); j > ci; j--) self.sites[j - 1].free_site();
+            self.sites.size = ci;
+            self.nregs = nregs0;
+            continue;
+        }
+        *words += case_words;
+        words_all += case_words;
+        self.sites[ci].flat = true;
+        self.sites[ci].poly = true;
+        if (prev == 0) {
+            self.sites[si].child_of[k] = ci + 1;
+        } else {
+            self.sites[(sz)prev - 1].poly_next = ci + 1;
+        }
+        prev = ci + 1;
+    }
+    return prev != 0;
+}
+
+// Whether a body of the tree from site `si` (the sites from si on) makes a call for real.
+fn bool OptBuild.makes_calls(&self, uint si) {
+    for (uint j = si; j < (uint)self.sites.len(); j++) {
+        OptInlineSite* t = &self.sites[j];
+        if (!t.has_calls) continue;
+        for (uint k = 0; k < t.cfg.instruction_count; k++) {
+            DecodedBytecode view = t.cfg.nodes[k].view;
+            if (inline_call_op(view.insn.op) && t.child_of[k] == 0 && !opt_push_site(self.h, t.cf, view.pc)) return true;
+        }
+    }
+    return false;
+}
+
+// The instructions the call of child site `c1 - 1` adds to the spliced graph besides its own: its
+// cases (poly_size) or its body (splice_size); nothing for a body lowered in place.
+fn uint OptBuild.child_size(&self, uint c1) {
+    if (c1 == 0) return 0;
+    OptInlineSite* c = &self.sites[(sz)c1 - 1];
+    if (c.poly) return self.poly_size(c1) - 1;
+    return c.flat ? self.splice_size(c1 - 1) : 0;
 }
 
 // Splice the bodies of the flat sites into the caller's control flow graph: each call stays as the
@@ -3444,10 +3540,7 @@ fn uint OptBuild.splice_size(&self, uint si) {
     OptInlineSite* s = &self.sites[si];
     uint n = s.cfg.instruction_count;
     if (s.child_of == null) return n;
-    for (uint k = 0; k < s.cfg.instruction_count; k++) {
-        uint c = self.sites[si].child_of[k];
-        if (c != 0 && self.sites[(sz)c - 1].flat) n += self.splice_size(c - 1);
-    }
+    for (uint k = 0; k < s.cfg.instruction_count; k++) n += self.child_size(self.sites[si].child_of[k]);
     return n;
 }
 
@@ -3466,7 +3559,7 @@ fn void OptBuild.splice(&self, uint si, uint off, uint join, uint result, Decode
     uint at = off;
     for (uint j = 0; j < count; j++) {
         lmap[j] = at++;
-        if (child_of != null && child_of[j] != 0 && self.sites[(sz)child_of[j] - 1].flat) at += self.splice_size(child_of[j] - 1);
+        if (child_of != null) at += self.child_size(child_of[j]);
     }
     self.sites[si].flat_off = off;
     for (uint j = 0; j < count; j++) {
@@ -3482,6 +3575,39 @@ fn void OptBuild.splice(&self, uint si, uint off, uint join, uint result, Decode
         self.fl_local[g] = j;
         Opcode op = cn.view.insn.op;
         uint c1 = child_of == null ? 0 : child_of[j];
+        if (c1 != 0 && self.sites[(sz)c1 - 1].poly) {
+            // A polymorphic call's cases, as flatten lays out the function's own; then the call.
+            uint at_case = g;
+            for (uint c = c1; c != 0; c = self.sites[(sz)c - 1].poly_next) {
+                uint enter = at_case + 1;
+                uint next = enter + 1 + self.splice_size(c - 1);
+                DecodedCfgNode t = cn;
+                t.successors[0] = next;
+                t.successors[1] = enter;
+                t.successor_count = 2;
+                t.branch_target = next;
+                flat.nodes[at_case] = t;
+                self.fl_kind[at_case] = 5;
+                flat_site_of[at_case] = c;
+                DecodedCfgNode e = cn;
+                e.successors[0] = enter + 1;
+                e.successor_count = 1;
+                e.branch_target = compiler::CFG_NO_INSTRUCTION;
+                flat.nodes[enter] = e;
+                flat_site_of[enter] = c;
+                foreach (x : (uint[2]){ at_case, enter }) {
+                    self.fl_site[x] = si + 1;
+                    self.fl_local[x] = j;
+                }
+                self.sites[(sz)c - 1].insn = enter;
+                self.splice(c - 1, enter + 1, lmap[j + 1], cn.view.insn.a, flat, flat_site_of);
+                at_case = next;
+            }
+            self.fl_site[at_case] = si + 1;
+            self.fl_local[at_case] = j;
+            flat.nodes[at_case] = cn;
+            continue;
+        }
         if (c1 != 0) {
             self.sites[(sz)c1 - 1].insn = g;
             flat_site_of[g] = c1;
