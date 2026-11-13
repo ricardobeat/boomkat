@@ -1104,6 +1104,65 @@ fn bool jit_builtin_leaf(Dispatch* ds, LeafKind kind, uint builtin, TVal this_va
     }
 }
 
+// A method CALL of a builtin function object that is no leaf, run as th_call_native
+// runs it without the generic path's classification of every callee and call
+// shape: the frame is published, the builtin runs, and its value lands in the
+// call's register. A throw or re-dispatch completes through the generic
+// handoffs. Returns false, having run nothing, for every other call.
+fn bool jit_call_builtin_method(Dispatch* ds, Instruction* next, OpStatus* status, long* raw) @inline {
+    Instruction* pc = next - 1;
+    if (pc.op != Opcode.CALL || ds.ic_base == null) return false;
+    TVal* regs = ds.regs_base;
+    uint callee = pc.b;
+    TVal cv = regs[callee];
+    if (!cv.is_object()) return false;
+    HObject* function = (HObject*)cv.get_heapptr();
+    if (function == null || !function.is_callable()
+        || function.callable_kind() != hobject::CallableKind.BUILTIN_FN) return false;
+    int idx = (*function.extra_ptr()).func.builtin_fn_index;
+    // Leaves, and charCodeAt, which th_call_native answers inline, keep the generic path.
+    if (idx < 0 || (idx < jit_leaf_kinds.len && jit_leaf_kinds[idx] != NONE)
+        || idx == (int)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal) return false;
+    Heap* heap = ds.heap;
+    if (heap.gc_safepoint_due(true)) return false;
+    if (idx != (int)builtins::Builtin.FUNCTION_PROTO_CALL.ordinal) {
+        hobject::ic_note_callee((hobject::ICEntry*)ds.ic_base + (pc - ds.code_base), hobject::IC_BUILTIN_TARGET | (uint)idx);
+    }
+    Vm* vm = ds.vm;
+    Activation* act = ds.act;
+    act.curr_pc = next;
+    TVal* top = act.bottom + vm.current_func.num_regs + FRAME_SCRATCH_SLOTS;
+    if (top > vm.valstack_top) vm.valstack_top = top;
+    TVal result;
+    result.set_undefined();
+    builtins::BuiltinContext ctx = call_context(&ds.cold, callee, pc.c, &result,
+                                                this_val: &regs[callee + 1], callee: function);
+    builtins::dispatch_builtin((uint)idx, &ctx);
+    // The builtin may have moved the value stack.
+    regs = act.bottom;
+    ds.regs_base = regs;
+    heap.jit_stats.calls_builtin++;
+    heap.jit_stats.calls_builtin_direct++;
+    if (@unlikely(ctx.should_throw)) {
+        vm.threaded_throw = ctx.throw_value;
+        vm.threaded_handoff = ThreadedHandoff.THROW;
+        return jit_builtin_handoff(ds, next, next, status, raw);
+    }
+    if (@unlikely(ctx.needs_re_dispatch)) {
+        th_bind_ic_bias(&ds.cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+        Instruction* r = th_call_redispatched(pc, &jit_stop_table, regs, &ds.cold, callee, pc.a, ctx.re_nargs,
+                                              idx == (int)builtins::Builtin.FUNCTION_PROTO_CALL.ordinal);
+        // A decline leaves the call to the site's slow path, as th_call_native's does.
+        if (!jit_builtin_handoff(ds, next, r, status, raw)) *raw = JIT_CALL_SLOW;
+        return true;
+    }
+    heap.store_builtin_result(regs + pc.a, &result);
+    track_heap_store(act, regs + pc.a, pc.a);
+    ds.curr_pc = next;
+    *status = NEXT;
+    return true;
+}
+
 // A CALL, CALL_UNDEF_THIS or CALL_GLOBAL whose callee is a builtin, through th_call_native
 // as the threaded burst runs it (identity fast paths such as charCodeAt, then
 // the builtin's own dispatch) instead of op_call. False when it declined before
@@ -1140,6 +1199,14 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
         return true;
     }
     Instruction* r = th_call_native(pc, &jit_stop_table, regs, cold, callee, pc.a, nargs) @inline;
+    return jit_builtin_handoff(ds, next, r, status, raw);
+}
+
+// The end of a builtin call th_call_native or th_call_redispatched ran, which
+// returned `r`: the throw or call the builtin handed off completes as
+// vm_dispatch completes it. False when the call declined before running.
+fn bool jit_builtin_handoff(Dispatch* ds, Instruction* next, Instruction* r, OpStatus* status, long* raw) {
+    Vm* vm = ds.vm;
     ThreadedHandoff handoff = vm.threaded_handoff;
     vm.threaded_handoff = ThreadedHandoff.NONE;
     switch (handoff) {
@@ -1164,7 +1231,7 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
         case NONE:
             break;
     }
-    if (r == pc) return false;
+    if (r == next - 1) return false;
     ds.curr_pc = r;
     *status = NEXT;
     return true;
@@ -1183,6 +1250,13 @@ fn long jit_call_builtin_native(Dispatch* ds, Instruction* next) {
     ds.curr_pc = next;
     long raw = JIT_NO_RAW;
     OpStatus status;
+    if (jit_call_builtin_method(ds, next, &status, &raw)) {
+        if (raw != JIT_NO_RAW) return raw;
+        // The builtin returned to this frame, as nearly every call does.
+        if (status == NEXT && !ds.needs_restart && ds.act == act && ds.vm.current_func == func
+            && ds.curr_pc == next) return 0;
+        return jit::jit_call_status(ds, next, act, func, count_before, status);
+    }
     if (!jit_call_builtin(ds, next, &status, &raw) @inline) return JIT_CALL_SLOW;
     jit::JitStats* st = &ds.heap.jit_stats;
     st.calls_builtin++;
