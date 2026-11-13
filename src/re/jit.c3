@@ -26,6 +26,7 @@ module boomkat::re_jit @feat(SLJIT);
 import boomkat::jit;
 import boomkat::re_bindings;
 import boomkat::re_native;
+import libc;
 import std::core::mem;
 import std::io;
 
@@ -63,6 +64,9 @@ struct ReJitClass {
 // instruction. Owned by the program and freed with it.
 struct ReJitData {
     char[RE_JIT_BITS] space_bits;
+    // Nonzero at each Latin-1 unit a match can begin with: the scan between
+    // attempts reads one byte per subject unit.
+    char[256] first_units;
     ReJitClass[] classes;
     // Class index per instruction, RE_NONE for the instructions that are not
     // class tests.
@@ -144,6 +148,7 @@ struct ReAsm {
     int s_len;    // the subject length in code units
     int s_polls;  // dispatches left before the interrupt is polled
     int s_n;      // the program's ReNative
+    re_native::ReNative* native;
     int t0;
     int t1;
     int t2;
@@ -1092,15 +1097,75 @@ fn void ReAsm.emit_exhausted(&self) {
         self.leave(re_native::RE_NO_MATCH);
         return;
     }
-    self.mov(self.t0, 0, self.s_n, 0);
-    self.mov(self.t1, 0, self.s_e, 0);
-    self.mov_u32(self.t2, 0, jit::SLJIT_MEM | jit::reg_sp(), 0);
-    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
-                     jit::SLJIT_IMM, (long)(usz)&re_jit_scan_next);
-    void* none = self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, -1);
-    self.mov(self.s_pos, 0, self.t0, 0);
-    self.go(0, FIX_ATTEMPT);
-    self.bind(none, self.label());
+    if (self.wide) {
+        self.mov(self.t0, 0, self.s_n, 0);
+        self.mov(self.t1, 0, self.s_e, 0);
+        self.mov_u32(self.t2, 0, jit::SLJIT_MEM | jit::reg_sp(), 0);
+        jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
+                         jit::SLJIT_IMM, (long)(usz)&re_jit_scan_next);
+        void* none = self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, -1);
+        self.mov(self.s_pos, 0, self.t0, 0);
+        self.go(0, FIX_ATTEMPT);
+        self.bind(none, self.label());
+        self.leave(re_native::RE_NO_MATCH);
+        return;
+    }
+    // A Latin-1 unit is a code point: the next candidate is one unit on.
+    self.mov_u32(self.s_pos, 0, jit::SLJIT_MEM | jit::reg_sp(), 0);
+    void* last = self.cmp(jit::SLJIT_GREATER_EQUAL, self.s_pos, 0, self.s_len, 0);
+    self.op2(jit::SLJIT_ADD, self.s_pos, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+    self.emit_scan();
+    self.bind(last, self.label());
+    self.leave(re_native::RE_NO_MATCH);
+}
+
+// The next position at or after s_pos where a match can begin, as re_scan_first
+// finds it, and an attempt there; with none, the run ends without a match. A
+// Latin-1 subject is scanned here: a single first unit by memchr, a set of them
+// through its bitmap, one unit per step. A wide subject's code points take the
+// walk's scan.
+fn void ReAsm.emit_scan(&self) {
+    re_native::ReNative* n = self.native;
+    if (self.wide) {
+        self.mov(self.t0, 0, self.s_n, 0);
+        self.mov(self.t1, 0, self.s_e, 0);
+        self.mov(self.t2, 0, self.s_pos, 0);
+        jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
+                         jit::SLJIT_IMM, (long)(usz)&re_jit_scan_first);
+        void* none = self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, -1);
+        self.mov(self.s_pos, 0, self.t0, 0);
+        self.go(0, FIX_ATTEMPT);
+        self.bind(none, self.label());
+        self.leave(re_native::RE_NO_MATCH);
+        return;
+    }
+    void* past = self.cmp(jit::SLJIT_GREATER, self.s_pos, 0, self.s_len, 0);
+    if (n.fs_at_start) self.add_fix(self.cmp(jit::SLJIT_EQUAL, self.s_pos, 0, jit::SLJIT_IMM, 0), 0, FIX_ATTEMPT);
+    if (n.fs_single >= 0) {
+        self.op2(jit::SLJIT_ADD, self.t0, 0, self.s_data, 0, self.s_pos, 0);
+        self.mov(self.t1, 0, jit::SLJIT_IMM, n.fs_single);
+        self.op2(jit::SLJIT_SUB, self.t2, 0, self.s_len, 0, self.s_pos, 0);
+        jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
+                         jit::SLJIT_IMM, (long)(usz)&libc::memchr);
+        void* miss = self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0);
+        self.op2(jit::SLJIT_SUB, self.s_pos, 0, self.t0, 0, self.s_data, 0);
+        self.go(0, FIX_ATTEMPT);
+        self.bind(miss, self.label());
+        self.mov(self.s_pos, 0, self.s_len, 0);
+    } else {
+        self.mov(self.t1, 0, jit::SLJIT_IMM, (long)(usz)&self.data.first_units);
+        void* loop = self.label();
+        void* end = self.cmp(jit::SLJIT_GREATER_EQUAL, self.s_pos, 0, self.s_len, 0);
+        self.mov_u8(self.t0, 0, jit::mem_index(self.s_data, self.s_pos), 0);
+        self.mov_u8(self.t0, 0, jit::mem_index(self.t1, self.t0), 0);
+        self.add_fix(self.cmp(jit::SLJIT_NOT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0), 0, FIX_ATTEMPT);
+        self.op2(jit::SLJIT_ADD, self.s_pos, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+        self.bind(self.jump(), loop);
+        self.bind(end, self.label());
+    }
+    // The scan ran off the end, where an empty match may still sit.
+    if (n.fs_at_end) self.go(0, FIX_ATTEMPT);
+    self.bind(past, self.label());
     self.leave(re_native::RE_NO_MATCH);
 }
 
@@ -1124,6 +1189,7 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     a.s_len = jit::reg_s(3);
     a.s_polls = jit::reg_s(4);
     a.s_n = jit::reg_s(5);
+    a.native = n;
     a.t0 = jit::reg_r(0);
     a.t1 = jit::reg_r(1);
     a.t2 = jit::reg_r(2);
@@ -1158,16 +1224,7 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     a.mov_u32(a.s_len, 0, jit::SLJIT_MEM | a.s_e, a.lay.in_len);
     a.mov(a.s_polls, 0, jit::SLJIT_IMM, re_native::RE_POLL_INTERVAL);
     if (a.scanning) {
-        a.mov(a.t0, 0, a.s_n, 0);
-        a.mov(a.t1, 0, a.s_e, 0);
-        a.mov(a.t2, 0, a.s_pos, 0);
-        jit::sljit_emit_icall(c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
-                         jit::SLJIT_IMM, (long)(usz)&re_jit_scan_first);
-        void* none = a.cmp(jit::SLJIT_EQUAL, a.t0, 0, jit::SLJIT_IMM, -1);
-        a.mov(a.s_pos, 0, a.t0, 0);
-        a.go(0, FIX_ATTEMPT);
-        a.bind(none, a.label());
-        a.leave(re_native::RE_NO_MATCH);
+        a.emit_scan();
     } else {
         a.go(0, FIX_ATTEMPT);
     }
@@ -1290,10 +1347,12 @@ fn bool re_jit_program_ok(re_native::ReNative* n, uint first_pc) {
 }
 
 // The bitmaps and class descriptors the compiled code addresses.
-fn ReJitData* re_jit_data_build(re_native::ReProgram* prog) {
+fn ReJitData* re_jit_data_build(re_native::ReNative* n) {
+    re_native::ReProgram* prog = &n.prog;
     ReJitData* data = mem::new(ReJitData);
     for (uint unit = 0; unit < 256; unit++) {
         if (re_bindings::re_is_space(unit)) re_jit_bit(&data.space_bits, unit);
+        if (n.has_first_set && re_native::re_fs_test(n, unit)) data.first_units[unit] = 1;
     }
     uint classes = 0;
     foreach (insn : prog.insns) if (re_jit_class_op(insn.op)) classes++;
@@ -1335,7 +1394,7 @@ fn void re_jit_compile(re_native::ReNative* n) {
     n.jit_data = null;
     uint first_pc = n.scanning && n.has_first_set ? n.body_pc : 0;
     if (!re_jit_program_ok(n, first_pc)) return;
-    ReJitData* data = re_jit_data_build(&n.prog);
+    ReJitData* data = re_jit_data_build(n);
     n.code_narrow = re_jit_emit(n, data, false);
     n.code_wide = re_jit_emit(n, data, true);
     if (n.code_narrow == null && n.code_wide == null) {
