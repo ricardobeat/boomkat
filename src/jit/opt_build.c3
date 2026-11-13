@@ -1648,9 +1648,6 @@ fn char OptBuild.equality_cc(&self, uint kind, uint rb, uint rc, long* imm, uint
 // Store the VALUE node of register `r` to its window slot if it is dirty.
 fn void OptBuild.publish_value(&self, uint r) {
     if (!self.cur[r].dirty) return;
-    // A VALUE node of an inlined body's slot beyond the caller's frame is never stored in the
-    // normal flow, unless a boolean (see the header of opt_ir.c3): the site stays a call.
-    if (self.cur_fn != 0 && r >= self.caller_regs && !self.g.is_boolean(&self.g.nodes[self.cur[r].node])) self.inline_unsafe = true;
     self.add(OptOp.STORE_VALUE, OptRep.NONE, self.cur[r].node, NO_NODE, (long)r);
     self.cur[r].dirty = false;
 }
@@ -1698,11 +1695,7 @@ fn void OptBuild.ask_value(&self, uint reg) {
     self.load_changed = true;
 }
 
-// The node `n` is a copy of, through any number of copies.
-fn uint OptBuild.copied(&self, uint n) {
-    while (n != NO_NODE && self.g.nodes[n].op == OptOp.COPY) n = self.g.nodes[n].a;
-    return n;
-}
+fn uint OptBuild.copied(&self, uint n) @inline => self.g.copied(n);
 
 // Give the guard `chk` of an inlined method call at `callee_reg` the function object its method
 // read names (method_constant), and note a receiver that read already proved an object (bit 3). A
@@ -2130,8 +2123,7 @@ fn bool OptBuild.add_field(&self) {
     hobject::ICEntry* ic = self.absent_field();
     if (ic == null || !self.holds_value(recv) || rv >= self.nregs) return self.generic();
     uint value = self.cur[rv].node;
-    // A window value is read from its slot, which lies in the caller's frame (beyond it there are
-    // only nodes, see OptBuild.inline_unsafe).
+    // A window value is read from its slot, which lies in the caller's frame.
     if (value == NO_NODE && rv >= self.caller_regs) return self.generic();
     uint n = self.add(OptOp.ADD_FIELD, OptRep.NONE, value, self.cur[recv].node, (long)self.pc);
     self.snapshot(n);
@@ -2143,8 +2135,8 @@ fn bool OptBuild.add_field(&self) {
 }
 
 // The receiver register `r` of an element access: a window value, or in an inlined body a VALUE
-// node of a slot beyond the caller's frame, which `node` receives (it is never stored, so the access
-// takes it from its machine register). Any other VALUE node is stored first.
+// node of a slot beyond the caller's frame, which `node` receives. Any other VALUE node is stored
+// first.
 fn bool OptBuild.elem_receiver(&self, uint r, uint* node) {
     *node = NO_NODE;
     if (self.cur_fn != 0 && r >= self.caller_regs && self.holds_value(r)) {
@@ -4725,19 +4717,6 @@ fn bool OptBuild.compute_edges(&self) {
                         self.g.moves.push({ .dst = sn.node, .src = pn.node, .slot = r });
                     }
                 } else if (pn.node != NO_NODE && pn.dirty) {
-                    // A VALUE node of an inlined body that must be stored beyond the caller's
-                    // frame on this edge: the site is built as a call instead.
-                    if (self.g.nodes[pn.node].rep == OptRep.VALUE && r >= self.caller_regs && !self.g.is_boolean(&self.g.nodes[pn.node])) {
-                        uint fi = self.g.nodes[pn.node].fidx;
-                        for (uint si = 0; si < (uint)self.sites.len(); si++) {
-                            if (self.site_fn[si] != fi || !self.sites[si].flat) continue;
-                            if (!self.sites[si].counted) self.count_reject(OptInlineReject.UNSAFE, Opcode.NOP);
-                            self.sites[si].counted = true;
-                            self.flat_fail = true;
-                            self.flat_fail_pc = self.sites[si].head_pc;
-                            return false;
-                        }
-                    }
                     self.g.moves.push({ .dst = NO_NODE, .src = pn.node, .slot = r });
                 }
             }

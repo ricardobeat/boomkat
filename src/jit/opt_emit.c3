@@ -2113,7 +2113,8 @@ fn OptSinkSite* OptCg.known_adds_site(&self, uint i, OptNode* n, CompiledFunctio
     uint count = 0;
     for (uint j = i + 1; j < self.g.nodes.len(); j++) {
         OptNode* m = &self.g.nodes[j];
-        if (m.op != OptOp.ADD_FIELD || m.cc != 1 || m.b != i) continue;
+        // A known add names the object by any copy of it (OptBuild.add_known).
+        if (m.op != OptOp.ADD_FIELD || m.cc != 1 || self.g.copied(m.b) != i) continue;
         if (count == OPT_SINK_FIELDS) return null;
         keys[count++] = m.key;
     }

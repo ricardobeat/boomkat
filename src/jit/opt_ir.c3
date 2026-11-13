@@ -31,14 +31,12 @@
 // The exception is a VALUE node of an inlined body whose home slot lies beyond the caller's
 // frame (slot >= the caller's num_regs): the collector does not scan it, and no pop sweeps it,
 // until an exit publishes the callee's frame. The body has no GENERIC, no allocation and no loop;
-// its calls are inlined bodies in turn or CALL_REG nodes. An exit stub stores the live nodes and
-// calls jit_inline_materialize at once, which publishes the frames covering the slot; a CALL_REG
-// stores them as any call does and pushes lazy records of the bodies' frames first, so that what
-// the callee does (collect, throw, exit) sees those frames. The callee and receiver of a nested call, register copies and
-// returns into such slots are VALUE nodes of this kind too. Such a
-// node therefore lives in a machine register only: it is never stored in the normal flow. The
-// builder refuses the inline for a STORE_VALUE of it or an edge store of it, and the allocator
-// never spills it (the function is then built without inlining).
+// its calls are inlined bodies in turn or CALL_REG nodes. Those are the only points in it that can
+// collect: an exit stub stores the live nodes and calls jit_inline_materialize at once, which
+// publishes the frames covering the slot; a CALL_REG stores them as any call does, clears the dead
+// slots of the bodies' frames (OptBuild.dead_slots) and pushes lazy records of them first, so that
+// what the callee does (collect, throw, exit) sees those frames. Such a node may be stored, spilled
+// or moved on an edge like any other in between, where nothing reads the slot.
 //
 // A boolean a comparison or `!` computes is a VALUE node as well (OptGraph.is_boolean). No
 // collector reads it and no store counts it, so none of the above binds it: it is stored to any
@@ -641,6 +639,12 @@ fn void OptGraph.free(&self) {
 }
 
 fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64 || self.op == OptOp.CONST_OBJ || self.op == OptOp.THIS;
+
+// The node `n` is a copy of, through any number of copies.
+fn uint OptGraph.copied(&self, uint n) {
+    while (n != NO_NODE && self.nodes[n].op == OptOp.COPY) n = self.nodes[n].a;
+    return n;
+}
 
 // Whether VALUE node `n` holds a boolean: a comparison, a `!`, a phi of such (cc 1), or a copy.
 fn bool OptGraph.is_boolean(&self, OptNode* n) {
