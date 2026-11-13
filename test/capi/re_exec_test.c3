@@ -311,6 +311,25 @@ fn void cases() {
     check("(a)*b", (ushort[]){'a', 'a', 'b'}, 0, true);
     check("(a)*b", (ushort[]){'b'}, 0, true);
     check("(?:ab)+", (ushort[]){'x', 'a', 'b', 'a', 'b'}, 0, true);
+    // Greedy runs that give nothing back, and their near misses that must.
+    check("(\\w+):\\/\\/", (ushort[]){'a', 'b', ' ', 'c', 'd', ':', '/', '/', 'x'}, 0, true);
+    check("([^/]+)/", (ushort[]){'a', 'b', '/', 'c', 'd'}, 0, true);
+    check("\\d+$", (ushort[]){'1', '2', 'a', '3', '4'}, 0, true);
+    check(".*$", (ushort[]){'a', 'b', '\n', 'c', 'd'}, 0, true);
+    check("\\s*x", (ushort[]){' ', 'a', ' ', ' ', 'x'}, 0, true);
+    check("\\S+\\s", (ushort[]){'a', 'b', ' ', 'c'}, 0, true);
+    check("a+a", (ushort[]){'a', 'a', 'a'}, 0, true);
+    check("[a-c]+[c-e]", (ushort[]){'a', 'b', 'c', 'd'}, 0, true);
+    check("[a-c]+[d-e]", (ushort[]){'a', 'b', 'c', 'd'}, 0, true);
+    check("a*b*c", (ushort[]){'a', 'a', 'b', 'b', 'c'}, 0, true);
+    check("a+b+c", (ushort[]){'a', 'a', 'b', 'b', 'd', 'a', 'b', 'c'}, 0, true);
+    check("[a-z]+[a-z]{2}", (ushort[]){'a', 'b', 'c', 'd'}, 0, true);
+    check("(?:x[a-c]*)+y", (ushort[]){'x', 'a', 'x', 'b', 'c', 'y'}, 0, true);
+    check(".+\\.", (ushort[]){'a', '.', 'b', '.', 'c'}, 0, true);
+    check("[^.]+\\.", (ushort[]){'a', '.', 'b', '.', 'c'}, 0, true);
+    check("a*$", (ushort[]){'a', 'b', 'a', 'a'}, 0, true);
+    check("a*$", (ushort[]){'a', '\n', 'a'}, re_bindings::RE_FLAG_MULTILINE, true);
+    check("[a-c]+B", (ushort[]){'a', 'b', 'B'}, re_bindings::RE_FLAG_IGNORECASE, true);
     // Counted repeats: the loop, split and advance registers the decoder added.
     check("a{2,4}", (ushort[]){'a', 'a', 'a', 'a', 'a', 'b'}, 0, true);
     check("a{2,4}", (ushort[]){'a', 'b'}, 0, true);

@@ -824,6 +824,10 @@ fn void ReAsm.emit_star(&self, uint pc) {
         self.fail();
         self.bind(enough, self.label());
     }
+    if (insn.possessive) {
+        self.go(insn.after, FIX_INSN);
+        return;
+    }
     // The position the minimum ends at is kept where a give-back reads it, and
     // across the write, which returns through registers the emitted code does
     // not own.

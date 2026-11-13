@@ -8,6 +8,7 @@
 // the interpreter: the native path may only decline, never guess.
 module boomkat::re_native @feat(!NO_REGEXP);
 
+import boomkat::re_bindings;
 import std::core::mem;
 
 // No instruction, target or pair index.
@@ -105,6 +106,9 @@ fn bool re_op_compilable(ReOp op) {
 struct ReInsn {
     // The opcode.
     ReOp op;
+    // STAR only: no position a run gives back can let the match continue, so the
+    // run keeps everything it took and leaves nothing to backtrack into.
+    bool possessive;
     // Byte offset in the program: the identity a backtracking frame records.
     uint at;
     // Branch target as an index into ReProgram.insns; RE_NONE when the instruction does not
@@ -354,6 +358,7 @@ fn bool re_prog_decode(ReProgram* prog, char* bc, uint bc_len) {
         insn.a = 0;
         insn.b = 0;
         insn.reg = 0;
+        insn.possessive = false;
         switch (insn.op) {
             case CHAR: case CHAR_I:
                 insn.a = (long)re_get_u16(bc, at + 1);
@@ -426,5 +431,76 @@ fn bool re_prog_decode(ReProgram* prog, char* bc, uint bc_len) {
             }
         }
     }
+    foreach (&insn : prog.insns) {
+        if (insn.op == STAR) insn.possessive = prog.gives_nothing_back(insn);
+    }
     return true;
+}
+
+// Whether a greedy run never profits from giving a code point back. Every
+// position it gives back to is followed by a code point its atom accepted, and
+// sits before the subject's end; the continuation is followed to its first test
+// of the subject, and when that test rejects every such code point, or cannot
+// pass before the end, each give-back fails. Reaching MATCH first, the run's own
+// end already succeeds.
+fn bool ReProgram.gives_nothing_back(&self, ReInsn* star) {
+    ReInsn* body = &self.insns[star.target];
+    uint pc = star.after;
+    for (uint steps = 0; steps < 16 && pc < self.insns.len; steps++) {
+        ReInsn* next = &self.insns[pc];
+        switch (next.op) {
+            case SAVE_START: case SAVE_END: case SAVE_RESET:
+                pc++;
+            case GOTO:
+                pc = next.target;
+            case MATCH: case LINE_END:
+                return true;
+            case STAR:
+                return next.a > 0 && self.disjoint(body, &self.insns[next.target]);
+            case CHAR: case CHAR32: case DOT: case ANY: case SPACE: case NOT_SPACE:
+            case RANGE: case RANGE32:
+                return self.disjoint(body, next);
+            default:
+                return false;
+        }
+    }
+    return false;
+}
+
+// Whether no code point passes both single-character tests. The case-folding
+// forms are left out and answer no.
+fn bool ReProgram.disjoint(&self, ReInsn* x, ReInsn* y) {
+    if (y.op == CHAR || y.op == CHAR32) return !self.may_accept(x, (uint)y.a);
+    if (x.op == CHAR || x.op == CHAR32) return !self.may_accept(y, (uint)x.a);
+    if ((x.op != RANGE && x.op != RANGE32) || (y.op != RANGE && y.op != RANGE32)) return false;
+    for (uint i = 0; i < x.pair_count; i++) {
+        uint xl = self.ranges[x.ranges + i * 2];
+        uint xh = self.ranges[x.ranges + i * 2 + 1];
+        for (uint k = 0; k < y.pair_count; k++) {
+            if (xl <= self.ranges[y.ranges + k * 2 + 1] && self.ranges[y.ranges + k * 2] <= xh) return false;
+        }
+    }
+    return true;
+}
+
+// Whether a single-character test can pass on code point `c`; true whenever the
+// answer is not certain, as for the case-folding forms.
+fn bool ReProgram.may_accept(&self, ReInsn* insn, uint c) {
+    switch (insn.op) {
+        case CHAR: case CHAR32:
+            return c == (uint)insn.a;
+        case DOT:
+            return !re_is_line_terminator(c);
+        case SPACE:
+            return re_bindings::re_is_space(c);
+        case NOT_SPACE:
+            return !re_bindings::re_is_space(c);
+        case RANGE: case RANGE32:
+            for (uint k = 0; k < insn.pair_count; k++) {
+                if (self.ranges[insn.ranges + k * 2] <= c && c <= self.ranges[insn.ranges + k * 2 + 1]) return true;
+            }
+            return false;
+        default:
+            return true;
+    }
 }

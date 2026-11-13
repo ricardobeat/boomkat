@@ -588,7 +588,7 @@ fn int re_walk(ReExec* e, ReNative* n, ReInput* in, uint start, ReInterrupt* int
                     failed = true;
                 } else {
                     uint min_end = pos;
-                    e.write(reg_base + insn.reg, min_end);
+                    if (!insn.possessive) e.write(reg_base + insn.reg, min_end);
                     if (body.op == ANY) {
                         // The common case: the run takes the rest of the subject.
                         pos = len;
@@ -596,7 +596,7 @@ fn int re_walk(ReExec* e, ReNative* n, ReInput* in, uint start, ReInterrupt* int
                         re_run_chars(prog, data, len, wide, unicode,
                                      body, &pos, RE_NONE);
                     }
-                    if (pos != min_end) e.push(pc, pos, true);
+                    if (pos != min_end && !insn.possessive) e.push(pc, pos, true);
                     pc = insn.after;
                 }
             case SET_I32:
