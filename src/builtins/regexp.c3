@@ -2696,8 +2696,28 @@ fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
 //   - Validates the returned value (must be Object or null)
 //   - Falls back to RegExpBuiltinExec (re_run) for built-in regexps
 //   - Sets ctx.should_throw on error; returns false in that case
+// Whether `rx` is a RegExp whose `exec` is the intrinsic, read without a lookup:
+// its only own property is lastIndex (the plain RegExp shape) and it inherits
+// RegExp.prototype, whose `exec` slot the guard has located. Get(R, "exec")
+// then reads a data property, which nothing can observe.
+fn bool regexp_inherits_exec(Heap* heap, HObject* rx) @inline {
+    if (rx == null || rx.shape_id != heap.regexp_shape || heap.regexp_shape == 0
+        || heap.regexp_shape_epoch != heap.shape_recycle_epoch || rx.prototype != heap.regexp_proto
+        || rx.get_class() != hobject::ObjClass.REGEXP || rx.is_proxy()
+        || (*rx.extra_ptr()).regexp.regexp_data == null) return false;
+    HObject* proto = heap.regexp_proto;
+    RegExpGuard* g = &heap.regexp_guard;
+    if ((proto.shape_id != g.shape_id || g.epoch != heap.shape_recycle_epoch)
+        && !regexp_guard_refresh(heap)) return false;
+    return regexp_is_builtin(proto.prop_values()[g.slots[0]].get(), Builtin.REGEXP_PROTO_EXEC.ordinal);
+}
+
 fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
                          bool boolean_result = false) {
+    if (regexp_inherits_exec(ctx.heap, rx)) {
+        regexp_builtin_exec(ctx, rx, input_str_tv, boolean_result);
+        return !ctx.should_throw;
+    }
     // 3. Let exec be ? Get(R, "exec").
     HString* exec_key = ctx.heap.str(heap::BuiltinStr.EXEC);
     TVal? exec_opt = builtins_generic_get(rx, exec_key, ctx);
