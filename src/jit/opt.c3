@@ -208,8 +208,9 @@ struct OptSinkSite {
     OptSinkSite* next;
 }
 
-// Calls an optimized body inlines into each other at most, the outermost included.
-const uint OPT_INLINE_DEPTH = 3;
+// Calls an optimized body inlines into each other at most, the outermost included (JSC's DFG
+// allows 5 too).
+const uint OPT_INLINE_DEPTH = 5;
 
 // One frame an exit from inside an inlined body publishes: the call it replaced, as that call
 // would have entered `callee`.
@@ -231,11 +232,12 @@ struct OptInlineFrame {
 // Where an exit from inside an inlined callee's body goes: the frames of the calls it is nested
 // in are published, outermost first, and the innermost callee's baseline code continues at `pc`.
 struct OptInlineExit {
-    OptInlineFrame[OPT_INLINE_DEPTH] frames;
     uint depth;
     // The innermost callee's word the exit resumes at.
     uint pc;
     OptInlineExit* next;
+    // `depth` of them.
+    OptInlineFrame[*] frames;
 }
 
 struct OptPolicy {
@@ -1301,13 +1303,13 @@ fn bool opt_parse_force(OptPolicy* p, String spec) {
     if (parts.len == 0 || parts.len > 3) return false;
     bool found = false;
     String name = parts[0];
-    // `inline/REASON` leaves only from a node of an inlined body; `inline2/` and `inline3/` from
+    // `inline/REASON` leaves only from a node of an inlined body; `inline2/` to `inline5/` from
     // one nested in that many inlined calls.
     p.force_depth = 1;
     if (name.starts_with("inline/")) {
         p.force_inline = true;
         name = name[7..];
-    } else if (name.len > 8 && name.starts_with("inline") && name[7] == '/' && name[6] >= '2' && name[6] <= '3') {
+    } else if (name.len > 8 && name.starts_with("inline") && name[7] == '/' && name[6] >= '2' && name[6] <= '0' + OPT_INLINE_DEPTH) {
         p.force_inline = true;
         p.force_depth = name[6] - '0';
         name = name[8..];

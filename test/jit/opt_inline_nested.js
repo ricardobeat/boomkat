@@ -1,8 +1,8 @@
-// Calls inside inlined bodies inlined in turn, up to three deep: static methods reached through a
+// Calls inside inlined bodies inlined in turn, up to five deep: static methods reached through a
 // captured object (GETCAP + GETPROPC + CALL) and receivers' methods held as own fields. Callee and
 // receiver registers of the inner calls often lie beyond the caller's frame, where they live in
-// machine registers only. scripts/opt_exit_check.sh forces an exit at every point of the outer,
-// middle and inner bodies (inline/, inline2/, inline3/), which publishes every enclosing frame.
+// machine registers only. scripts/opt_exit_check.sh forces an exit at every point of the bodies
+// at each depth (inline/ to inline5/), which publishes every enclosing frame.
 var out = [];
 function show(label, v) { out.push(label + "=" + v); }
 
@@ -29,8 +29,7 @@ M.deeper(a, b); M.deep(a, b); M.mix(a, b); M.len2(a);
 function two(p, n) { var s = 0; for (var i = 0; i < n; i++) s += M.len2(p) + i; return s; }
 // Three deep: mix -> len2 -> dot, and mix -> cross.
 function three(p, q, n) { var s = 0; for (var i = 0; i < n; i++) s += M.mix(p, q); return s; }
-// Four and five deep: deep -> mix -> len2 -> dot is one level too many, and deeper -> deep more;
-// the bodies themselves still inline what fits.
+// Four and five deep: deep -> mix -> len2 -> dot, and deeper -> deep -> ... at the depth limit.
 function four(p, q, n) { var s = 0; for (var i = 0; i < n; i++) s += M.deep(p, q) + M.deeper(q, p); return s; }
 // A caller with few registers: every window of the chain lies beyond its frame.
 function few(p) { return M.mix(p, p); }

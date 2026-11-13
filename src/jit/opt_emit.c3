@@ -417,9 +417,9 @@ fn void OptCg.emit_exit_stubs(&self) {
 // it is the test hook, which takes the exit `oc.forced` times and then falls through.
 fn void OptCg.emit_inline_exit(&self, uint fidx, uint pc, uint mask, uint reason, bool counted) {
     void* c = self.a.c;
-    OptInlineExit* site = self.h.alloc_func(self.h.heap_udata, OptInlineExit::size);
     // The frames from the innermost out: each one's caller is its entry's parent.
     uint depth = self.g.fns[fidx].depth;
+    OptInlineExit* site = self.h.alloc_func(self.h.heap_udata, OptInlineExit::size + depth * OptInlineFrame::size);
     site.depth = depth;
     site.pc = pc;
     uint keep = mask;
