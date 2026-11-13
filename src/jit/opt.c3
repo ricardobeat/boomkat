@@ -483,8 +483,12 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 
     for (uint k = 0; k < cf.code_count; k++) {
         Opcode kop = cf.code[k].op;
         if (!inline_op_ok(kop)) return false;
-        // A call in the body must be one to inline in turn (OptBuild.add_children).
-        if (inline_call_op(kop) && !opt_push_site(h, cf, k) && (depth >= OPT_INLINE_DEPTH || cf.ic_entries == null || !opt_inline_plausible(h, cf, k, depth + 1))) return false;
+        // A call in the body must be one to inline in turn, or one to make from the body as a
+        // register call (OptBuild.add_children).
+        if (!inline_call_op(kop) || opt_push_site(h, cf, k)) continue;
+        if (cf.ic_entries == null) return false;
+        OptCallees set;
+        if ((depth >= OPT_INLINE_DEPTH || !opt_inline_plausible(h, cf, k, depth + 1)) && !opt_direct_targets(h, cf, k, &set)) return false;
     }
     return true;
 }

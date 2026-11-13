@@ -30,10 +30,11 @@
 //
 // The exception is a VALUE node of an inlined body whose home slot lies beyond the caller's
 // frame (slot >= the caller's num_regs): the collector does not scan it, and no pop sweeps it,
-// until an exit publishes the callee's frame. The body is a leaf (no GENERIC, no allocation, no
-// loop; its calls are inlined bodies in turn), so its exits are the only points that can collect,
-// and an exit stub stores the live nodes and calls jit_inline_materialize at once, which publishes
-// the frames covering the slot. The callee and receiver of a nested call, register copies and
+// until an exit publishes the callee's frame. The body has no GENERIC, no allocation and no loop;
+// its calls are inlined bodies in turn or CALL_REG nodes. An exit stub stores the live nodes and
+// calls jit_inline_materialize at once, which publishes the frames covering the slot; a CALL_REG
+// stores them as any call does and pushes lazy records of the bodies' frames first, so that what
+// the callee does (collect, throw, exit) sees those frames. The callee and receiver of a nested call, register copies and
 // returns into such slots are VALUE nodes of this kind too. Such a
 // node therefore lives in a machine register only: it is never stored in the normal flow. The
 // builder refuses the inline for a STORE_VALUE of it or an edge store of it, and the allocator
@@ -252,8 +253,10 @@ enum OptOp : char {
     GENERIC,
     // The call at pc of key (its CompiledFunction), CHECK_CALLEE before it: the window stored as a
     // GENERIC's, the callee entered through its register label (OptCg.emit_call_reg), its result
-    // stored to the window. A null key is a polymorphic call, of the function the callee holds. The caller's registers survive the call; it exits at the call when the
-    // callee has no call entry (DECLINED) or declines (DEEP).
+    // stored to the window. A null key is a polymorphic call, of the function the callee holds. The
+    // caller's registers survive the call; it exits at the call when the callee has no call entry
+    // (DECLINED) or declines (DEEP). Made from an inlined body, it runs from lazy records of the
+    // bodies' frames, which it pushes before the call and pops after (OptCg.push_records).
     CALL_REG,
     // A NEW_OBJ (pc) of the constructor imm (its CompiledFunction*), after its CHECK_CALLEE: a plain
     // object with the prototype the instruction's cache reads from the constructor, the VALUE node
@@ -358,7 +361,9 @@ struct OptNode {
     // stores them before it runs.
     uint dirty_first;
     uint dirty_count;
-    // GENERIC: the numeric registers live after it, reloaded from the window.
+    // GENERIC: the numeric registers live after it, reloaded from the window. CALL_REG of an inlined
+    // body: the slots above the caller's frame that the records it pushes expose and nothing live
+    // holds, cleared before the call (OptBuild.dead_slots).
     uint reload_first;
     uint reload_count;
     // Inside an inlined callee: the callee registers (bit r for callee register r) live at the

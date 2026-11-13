@@ -364,6 +364,13 @@ fn void OptCg.exit_clean(&self, void* jump, uint pc, OptExit reason) {
     self.exits.push({ .jump = jump, .pc = pc, .dirty_first = 0, .dirty_count = 0, .reason = (uint)reason.ordinal, .node = NO_NODE });
 }
 
+// An exit at node `i` with nothing to store: the window holds every value. From an inlined body it
+// publishes the frames the node is nested in.
+fn void OptCg.exit_stored(&self, void* jump, uint i, OptExit reason) {
+    OptNode* n = &self.g.nodes[i];
+    self.exits.push({ .jump = jump, .pc = n.pc, .fidx = n.fidx, .reason = (uint)reason.ordinal, .mask = n.live_mask, .node = NO_NODE });
+}
+
 // Every jump the helpers collected in `call` leaves for the baseline code at `pc`, with nothing to
 // store.
 fn void OptCg.exit_calls_clean(&self, uint pc, OptExit reason) {
@@ -3161,12 +3168,18 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
 // point in this frame's record let the baseline code continue this frame from its window should
 // the native frames be abandoned (jit_enter). A callee that declines (no native stack, record or
 // value stack left) did nothing, and the baseline code makes the call (OptExit.DEEP).
+//
+// A call from an inlined body runs from records of the bodies' frames (push_records), which exist
+// for its length only: what the callee does sees the frames the inlined calls would have made, and
+// a callee that leaves rather than returns leaves them to continue in their baseline code. The
+// slots those records expose to the collector that hold nothing live are cleared first
+// (OptBuild.dead_slots). A decline leaves from the innermost body (opt_inline_exit).
 fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     void* c = a.c;
     CallLayout* k = call_layout();
     self.store_dirty(n.dirty_first, n.dirty_count);
-    a.decode((uint)n.imm);
+    self.decode(n);
     bool var_call = a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL;
     bool method = a.w.op == Opcode.CALL;
     uint callee = var_call ? a.w.a : a.w.b;
@@ -3186,13 +3199,27 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     void* no_code = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     a.mov(R0, 0, SLJIT_MEM | R0, k.bc_reg_entry);
     void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    uint records = self.g.fns[n.fidx].depth;
+    if (records != 0) {
+        for (uint d = 0; d < n.reload_count; d++) a.store(self.g.dirty[(sz)(n.reload_first + d)].reg, SLJIT_IMM, K_UNDEF);
+        self.push_records(n.fidx);
+    }
     a.mov(R4, 0, SLJIT_IMM, (long)(usz)(a.f.code + (uint)n.imm + 1));
     a.mov(SLJIT_MEM | a.la, k.act_curr_pc, R4, 0);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, a.regs, 0, SLJIT_IMM, (long)a.w.a * TVal::size);
     a.mov(R3, 0, SLJIT_IMM, (long)nargs | (method ? CALL_METHOD : CALL_PLAIN));
     sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
-    // The entry used the window register; the return left this frame's record in its register.
+    // The entry used the window register; the return left this frame's record in its register,
+    // above which the records of the bodies' frames end with the call. A callee that returned
+    // through vm::jit_ret leaves the VM's frame state synced for the innermost: that describes it
+    // no more, and the next frame pushed there must not pass for it (as Asm.emit_return_body pops).
+    if (records != 0) {
+        sljit_emit_op2(c, SLJIT_SUB, a.la, 0, a.la, 0, SLJIT_IMM, (long)records * Activation::size);
+        void* below = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, SLJIT_MEM | a.ds, a.lay.ds_act, a.la, 0);
+        a.mov(SLJIT_MEM | a.ds, a.lay.ds_act, SLJIT_IMM, 0);
+        sljit_set_label(below, sljit_emit_label(c));
+    }
     a.mov(a.regs, 0, SLJIT_MEM | a.la, k.act_bottom);
     void* declined = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW);
     a.store(a.w.a, R1);
@@ -3203,10 +3230,67 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     // the entry uses them before it declines.
     sljit_set_label(declined, sljit_emit_label(c));
     self.spill_live(i, false);
-    self.exit_clean(sljit_emit_jump(c, SLJIT_JUMP), n.pc, OptExit.DEEP);
-    self.exit_clean(no_code, n.pc, OptExit.DECLINED);
-    self.exit_clean(no_entry, n.pc, OptExit.DECLINED);
+    self.exit_stored(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.DEEP);
+    self.exit_stored(no_code, i, OptExit.DECLINED);
+    self.exit_stored(no_entry, i, OptExit.DECLINED);
     sljit_set_label(done, sljit_emit_label(c));
+}
+
+// The records of the frames of the inlined calls that the body of OptGraph.fns entry `fidx` is
+// nested in, for a call made from it (emit_call_reg), and the record register moved to the innermost.
+// Each is the lazy record a register call's entry pushes (Asm.emit_call_entry): no native return
+// (a frame nothing in generated code waits for), the frame's registers tracked, its result slot,
+// window, `this`, and the word after its own inlined call; vm::jit_fill completes it should anything
+// read it. The innermost's resume word is the call's (emit_call_reg), the caller's frame's that
+// after the outermost inlined call. Each call's callee slot holds the function (OptBuild.live_in_at).
+// Uses R1 to R4.
+fn void OptCg.push_records(&self, uint fidx) {
+    Asm* a = self.a;
+    void* c = a.c;
+    CallLayout* k = call_layout();
+    Layout* l = a.lay;
+    int m = SLJIT_MEM;
+    uint depth = self.g.fns[fidx].depth;
+    uint[OPT_INLINE_DEPTH] chain;
+    uint at = fidx;
+    for (uint level = depth; level > 0; level--) {
+        chain[level - 1] = at;
+        at = self.g.fns[at].parent;
+    }
+    a.mov(R4, 0, SLJIT_IMM, (long)(usz)(self.g.fns[0].f.code + self.g.fns[chain[0]].resume_pc));
+    a.mov(m | a.la, k.act_curr_pc, R4, 0);
+    for (uint level = 0; level < depth; level++) {
+        OptFn* fn_ = &self.g.fns[chain[level]];
+        OptFn* parent = &self.g.fns[fn_.parent];
+        Instruction call = parent.f.code[fn_.resume_pc - 1];
+        bool construct = call.op == Opcode.NEW_OBJ;
+        bool takes_this = construct || (call.op == Opcode.CALL && !fn_.f.call_flags.ignores_this);
+        long rec = (long)(level + 1) * Activation::size;
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)(parent.reg_base + call.a) * TVal::size);
+        a.mov(m | a.la, rec + k.act_retval, R1, 0);
+        a.mov(m | a.la, rec + k.act_native_ret, SLJIT_IMM, 0);
+        uint flags = vm::ACT_FLAG_LAZY | (takes_this ? vm::ACT_FLAG_THIS_VALID : 0) | (construct ? vm::ACT_FLAG_CONSTRUCT : 0);
+        if (!std::core::env::BIG_ENDIAN && l.act_hrc == k.act_flags + 4) {
+            a.mov(m | a.la, rec + k.act_flags, SLJIT_IMM, (long)((ulong)fn_.f.num_regs << 32 | flags));
+        } else {
+            a.mov(m | a.la, rec + k.act_flags, SLJIT_IMM, flags, SLJIT_MOV_U32);
+            a.mov(m | a.la, rec + l.act_hrc, SLJIT_IMM, fn_.f.num_regs, SLJIT_MOV_U32);
+        }
+        sljit_emit_op2(c, SLJIT_ADD, R2, 0, a.regs, 0, SLJIT_IMM, (long)fn_.reg_base * TVal::size);
+        if (level + 1 < depth) {
+            a.mov(R1, 0, SLJIT_IMM, (long)(usz)(fn_.f.code + self.g.fns[chain[level + 1]].resume_pc));
+            a.store_pair(a.la, rec + k.act_curr_pc, R1, rec + k.act_bottom, R2);
+        } else {
+            a.mov(m | a.la, rec + k.act_bottom, R2, 0);
+        }
+        if (takes_this) {
+            a.load(R3, fn_.reg_base - 1);
+            a.mov(m | a.la, rec + l.act_this, R3, 0);
+        } else {
+            a.mov(m | a.la, rec + l.act_this, SLJIT_IMM, K_UNDEF);
+        }
+    }
+    sljit_emit_op2(c, SLJIT_ADD, a.la, 0, a.la, 0, SLJIT_IMM, (long)depth * Activation::size);
 }
 
 fn void OptCg.emit_node(&self, uint i, uint pos) {

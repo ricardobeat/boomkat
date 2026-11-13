@@ -2475,12 +2475,13 @@ fn void OptBuild.kill(&self, uint r) {
 // reads it for the guard first, as an inlined one does.
 fn bool OptBuild.direct_callee(&self, CompiledFunction** one) {
     Opcode op = self.w.op;
+    CompiledFunction* f = self.cur_f();
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
-    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) || self.wide || self.f.ic_entries == null) return false;
-    if (var_call && self.f.var_ic_entries == null) return false;
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) || self.wide || f.ic_entries == null) return false;
+    if (var_call && f.var_ic_entries == null) return false;
     uint at = self.next_pc - 1;
     OptCallees set;
-    if (opt_site_banned(self.f, self.f, at) || !opt_direct_targets(self.h, self.f, at, &set)) return false;
+    if (opt_site_banned(self.f, f, at) || !opt_direct_targets(self.h, f, at, &set)) return false;
     bool method = op == Opcode.CALL;
     CompiledFunction* cf = set.count == 1 ? set.fns[0] : null;
     uint callee_reg = var_call ? self.w.a : self.w.b;
@@ -2514,7 +2515,7 @@ fn bool OptBuild.direct_callee(&self, CompiledFunction** one) {
     }
     // A variable's binding as it stands, which the guard then compares the read with.
     if (var_call && cf != null) {
-        hobject::VarICEntry* vic = &((hobject::VarICEntry*)self.f.var_ic_entries)[at];
+        hobject::VarICEntry* vic = &((hobject::VarICEntry*)f.var_ic_entries)[at];
         if (vic.slot_ptr != null && vic.recycle_epoch == self.h.shape_recycle_epoch) {
             self.g.nodes[chk].key = constant_callee(vic.slot_ptr.get(), cf);
         }
@@ -2536,6 +2537,14 @@ fn bool OptBuild.reg_call(&self, CompiledFunction* cf) {
     self.g.nodes[n].key = cf;
     self.forget_facts();
     self.snapshot(n);
+    if (self.cur_fn != 0) {
+        // The callee's entry reads the function and receiver from the window, as liveness does not
+        // know of a variable's call (it writes its callee register): a VALUE node there, beyond the
+        // caller's frame, is stored with the rest.
+        self.store_operand(n, callee_reg);
+        if (self.w.op == Opcode.CALL) self.store_operand(n, callee_reg + 1);
+        self.dead_slots(n, callee_reg, var_call ? self.w.b : self.w.c, cf);
+    }
     OptNode* node = &self.g.nodes[n];
     for (uint k = 0; k < node.dirty_count; k++) self.cur[self.g.dirty[(sz)(node.dirty_first + k)].reg].dirty = false;
     for (uint r = callee_reg; r < self.nregs; r++) self.kill(r);
@@ -2543,12 +2552,50 @@ fn bool OptBuild.reg_call(&self, CompiledFunction* cf) {
     return true;
 }
 
+// Add register `r`'s dirty node to the stores of node `n`, the last snapshot taken, unless it is there.
+fn void OptBuild.store_operand(&self, uint n, uint r) {
+    OptRegState st = self.cur[r];
+    if (st.node == NO_NODE || !st.dirty) return;
+    OptNode* node = &self.g.nodes[n];
+    for (uint k = 0; k < node.dirty_count; k++) if (self.g.dirty[(sz)(node.dirty_first + k)].reg == r) return;
+    self.g.dirty.push({ .reg = r, .node = st.node });
+    node.dirty_count++;
+}
+
+// The slots a call from an inlined body (CALL_REG `n` of the callee `cf`, null for any of a
+// polymorphic call's, at `callee_reg` with `nargs` arguments) clears, into its reload range as
+// OptGraph.dirty entries without a node. The records of the bodies' frames (OptCg.push_records)
+// make the collector read each window and its scratch slots for the length of the call. Past the
+// caller's frame and scratch slots those hold, but for the registers live here (stored or in the
+// window), whatever frames were there before, which no frame cleared: the rest is cleared, but for
+// the callee's own frame, which its entry fills from its first argument not passed up.
+fn void OptBuild.dead_slots(&self, uint n, uint callee_reg, uint nargs, CompiledFunction* cf) {
+    uint lo = self.caller_regs + vm::FRAME_SCRATCH_SLOTS;
+    uint hi = 0;
+    for (uint f = self.cur_fn; f != 0; f = self.g.fns[f].parent) hi = max(hi, self.g.fns[f].reg_base + self.g.fns[f].f.num_regs);
+    hi += vm::FRAME_SCRATCH_SLOTS;
+    uint own_lo = callee_reg;
+    uint own_hi = callee_reg + 2 + nargs;
+    if (cf != null && !cf.call_flags.forward_args && !cf.call_flags.rest_length_only) own_hi = max(own_hi, callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS);
+    uint first = (uint)self.g.dirty.len();
+    for (uint r = lo; r < hi; r++) {
+        if ((r >= own_lo && r < own_hi) || (r < self.nregs && self.live_in_at(r))) continue;
+        self.g.dirty.push({ .reg = r, .node = NO_NODE });
+    }
+    OptNode* node = &self.g.nodes[n];
+    node.reload_first = first;
+    node.reload_count = (uint)self.g.dirty.len() - first;
+}
+
 // The instruction as the baseline emitter runs it: the registers it can read
 // stored first, the registers it can write no longer numeric nodes, and the
 // numeric registers live after it reloaded from the window.
 fn bool OptBuild.generic(&self) {
-    // An inlined body holds nothing that runs as a GENERIC: the site stays a call.
+    // An inlined body holds nothing that runs as a GENERIC, but a call its guard proves (records_ok,
+    // reg_call): else the site stays a call.
     if (self.cur_fn != 0) {
+        CompiledFunction* direct;
+        if (REG_CALLS && self.records_ok(self.cur_site) && self.direct_callee(&direct)) return self.reg_call(direct);
         self.inline_failed = true;
         return true;
     }
@@ -2733,7 +2780,8 @@ fn void OptBuild.inline_context(&self, OptInlineSite* s, uint k) {
 }
 
 // Whether every instruction of the callee of `s` is one the builder lowers without a GENERIC (given
-// what the callee's caches and feedback say), so that nothing in the body can call, allocate or throw.
+// what the callee's caches and feedback say), so that nothing in the body can allocate or throw but
+// the calls it makes as register calls (OptBuild.nested_call_ok); its other calls are inlined in turn.
 // The graph registers of the callee's window must lie in the caller's own register file when anything
 // but a number is written to them (OptBuild.inline_unsafe); that is decided while building.
 fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
@@ -3225,7 +3273,10 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
         Opcode cop = self.sites[si].cfg.nodes[k].view.insn.op;
         if (!self.inline_candidate(k, &c, si + 1)) {
             // A constructor's own reason is worth its count too: the parent's names only the opcode.
-            if (cop == Opcode.NEW_OBJ && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
+            bool real = self.nested_call_ok(si, k);
+            if ((cop == Opcode.NEW_OBJ || real) && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
+            // A call the body makes for real (OptBuild.reg_call).
+            if (real) continue;
             self.rej_op = cop == Opcode.NEW_OBJ ? cop : Opcode.CALL;
             return false;
         }
@@ -3243,6 +3294,28 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
         if (!self.add_children(ci, words)) return false;
     }
     return true;
+}
+
+// Whether the bodies from site `si` out can each have a record for the length of a call made from
+// inside them (OptCg.push_records): a plain call, a method call or a construction of a function that
+// neither forwards its arguments nor needs a scope of its own, which vm::jit_fill completes.
+fn bool OptBuild.records_ok(&self, uint si) {
+    for (OptInlineSite* s = &self.sites[si]; ; s = &self.sites[(sz)s.parent - 1]) {
+        if (s.forward || s.dotcall || s.cf.arguments_in_reg() || s.cf.flags.needs_env) return false;
+        if (s.parent == 0) return true;
+    }
+}
+
+// Whether the call at instruction `k` of the body of site `si`, which is not an inline site, can be
+// made from the body as a register call to the functions its feedback names (OptBuild.reg_call).
+fn bool OptBuild.nested_call_ok(&self, uint si, uint k) {
+    OptInlineSite* s = &self.sites[si];
+    DecodedBytecode view = s.cfg.nodes[k].view;
+    Opcode op = view.insn.op;
+    if (!REG_CALLS || view.wide || s.cf.ic_entries == null || (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && op != Opcode.CALL_VAR && op != Opcode.CALL_GLOBAL)) return false;
+    OptCallees set;
+    uint at = view.next_pc - 1;
+    return self.records_ok(si) && !opt_site_banned(self.f, s.cf, at) && opt_direct_targets(self.h, s.cf, at, &set);
 }
 
 // Splice the bodies of the flat sites into the caller's control flow graph: each call stays as the
