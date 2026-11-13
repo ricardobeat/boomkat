@@ -3946,17 +3946,17 @@ fn bool OptBuild.construct_return(&self, uint this_reg, uint* node) {
     return true;
 }
 
-// A register the guard of a nested call reads its callee or receiver from (OptBuild.try_inline):
-// inside the caller's frame a value in the window, beyond it a VALUE node, which `node` receives.
-// A value there that a property or global read left in the window asks for that read to be an
-// VALUE node in the next round.
+// A register the guard of an inlined call reads its callee or receiver from (OptBuild.try_inline):
+// a VALUE node, which `node` receives, or inside the caller's frame a value in the window. A value
+// beyond it that a property or global read left in the window asks for that read to be a VALUE node
+// in the next round.
 fn bool OptBuild.call_operand(&self, uint r, uint* node) {
     *node = NO_NODE;
-    if (r < self.caller_regs) return self.in_window(r);
     if (self.holds_value(r)) {
         *node = self.cur[r].node;
         return true;
     }
+    if (r < self.caller_regs) return self.in_window(r);
     if (r < self.nregs && self.cur[r].node == NO_NODE && self.load_def[r] != NO_NODE) {
         self.ask_value(r);
         // Not a final refusal: the site waits for the round that has the node (as for a load).
