@@ -17,6 +17,13 @@ small default code footprint for embedded hosts.
 
 ## Where it stands
 
+Gate g35 (`fa199421`, 2026-11-13, three runs alternating with g34
+`fbff012a`): **16,797** against 16,347 (+2.8%). Richards 12,511 (+23%),
+Box2D 17,128 (+23%, collector timing), Splay +10%, DeltaBlue +4%,
+NavierStokes +4%; PdfJS 9,670 against 11,538 (bimodal by collector timing,
+as in g34). Peak RSS 1,955 MiB (g34 2,126). Weakest: RegExp 3,117,
+EarleyBoyer 7,887, DeltaBlue 8,549, PdfJS ~9.7k.
+
 Gate r15 (`716b8d37`, three alternating runs) is the last clean gate. JSC
 columns are the system framework measured on 2026-11-03 (`--useDFGJIT=false`
 for baseline, `--useFTLJIT=false` for DFG).
@@ -636,6 +643,19 @@ bit, clears it and pushes the header back on `objects_old`/`objects_young`.
 Every live object costs two list operations and a cache miss per cycle. 11% of
 EarleyBoyer.
 
+- Measured 2026-11-13: the header lists are arrays (`List{HeapHeader*}`),
+  not linked lists; a sweep pops each header, reads its flags (the cache
+  miss), and pushes survivors onto the other array. EarleyBoyer ran 149
+  majors and 86 minors (GC profile build); 109 majors because the nursery
+  was off (`gc_uses_nursery`: 63k old objects, under `GC_NURSERY_MIN_OLD`
+  65,536, and the churn rule `dead > 2 * kept` failing at ~37% young
+  survival). Marked per allocation 1.13. Lowering the bound to 16,384:
+  EarleyBoyer -2.7%, TypeScript -3.7%; `dead > kept`: -1.1%, -4.6%; not
+  committed (small, and PdfJS moved +2%). Freeing a dead plain object
+  costs flag tests, a shape-table read (the private-shape test), the slot
+  release loop and a pool push: stage B's bitmaps remove the header visit
+  for survivors, not this.
+
 - Stage A, small: do not unlink survivors. Flip the meaning of the mark by
   epoch (the heap already marks by epoch, per the incremental collector work;
   verify the reachable bit can be compared against a cycle parity instead of
@@ -789,6 +809,18 @@ state. Inlining removes it only where the callee holds no call of its own
 "polymorphic call"): nested calls from inlined frames and polymorphic inlining
 (3.2) are worth about 240 instructions per call each.
 
+Progress (2026-11-13): the guard of an inlined or register call takes its
+callee and receiver as nodes (`3abe58e9`): they were stored to the window
+behind a marking barrier test and reloaded, a leftover from before VALUE
+nodes lived in frame registers (DeltaBlue -2.9%, Richards -1.3%). The
+inherited method read still loads the method from the owner's slot on its
+constant path (a write to the slot does not move the epoch), so the callee
+guard compares it again (about 9 instructions) and the read's result test
+runs on it (7). Folding both needs the write watch above, and a store cache
+must never cover a watched slot: prototypes need shapes of their own (as
+V8's prototype maps and JSC's per-prototype structures), so a store into a
+watched slot always takes the slow path that moves the epoch.
+
 **3.1 A boxed rep.** Add `OptRep.VALUE`: a boxed `TVal` in a machine register,
 type unknown or partly known.
 
@@ -902,6 +934,22 @@ inline.
   cold-ish sites and up for hot ones. Use call-site counts from feedback
   rather than a single size threshold.
 
+Progress (2026-11-13): done. Real calls from inlined bodies (`cba3ab16`,
+records pushed for the call, `c2c76fbb`, `220f4026`); callees with loops
+(`685c66ff`: the body loop's poll pushes the records, definedness is a
+fixpoint, `.length` sites are not cold); the cases of a polymorphic call in an
+inlined body (`bb145007`); depth 5 as in JSC's DFG (`94fbb400`, exit records
+sized by depth, `inline4/`, `inline5/` force exits); trees of 600 words and
+polymorphic cases of 720 (`fa199421`; V8 allows 920 bytes of bytecode per
+caller), with a callee the tree has no room for made a real call instead of
+failing its parent. Richards' steady count went 9.29M to 6.46M over these.
+Call-site counts: the call ICs record targets, not counts, and counting in
+the baseline call path costs every call. Tried instead: refusing a callee
+with a loop whose call site is outside any loop (Richards' scheduler into
+runRichards): Richards +1.9%; the binding limit was the tree's room, not the
+depth or the loop. Left: nothing structural; counts only if a benchmark
+shows a size limit binding at a hot site.
+
 **3.4 Guard elimination and hoisting.** With 3.1 and 3.2 there are stretches
 without `GENERIC` nodes for facts to live across.
 
@@ -933,6 +981,13 @@ discards 8 of 20 bodies after int32 overflow exits.
   against `OPT_REOPT_MAX`.
 - Measure: `--jit-stats` discards and rebuilds per suite run (2,089 compiles
   for 610 discards at the last count), Splay and Gameboy against `--jit`.
+
+Seen 2026-11-13: Box2D's `b2ContactSolver.Initialize` stores `m_allocator`
+into solvers whose constructor does not create it, so the store adds on a
+new solver and overwrites on an old one. Whether a rebuild meets the add case
+depends on when it lands; when it does, two shape exits discard the body and
+the third build inlines nothing (Box2D +4% steady from that alone). The
+per-site adaptation above (`SHAPE` adds the case) fixes it.
 
 ### 4. Builtins and strings
 
