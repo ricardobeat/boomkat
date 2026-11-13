@@ -133,9 +133,11 @@ enum OptInlineReject : char (String label) {
 }
 
 // The words of bytecode an inlined callee may have, and the callees nested in one inline site may
-// have together.
+// have together. The tree's room is what lets a hot loop's polymorphic call inline every case once
+// the loop's function is itself inlined (Richards' scheduler into runRichards): 200 left the
+// cases real calls.
 const uint INLINE_WORDS_MAX = 64;
-const uint INLINE_TREE_WORDS_MAX = 200;
+const uint INLINE_TREE_WORDS_MAX = 600;
 
 // A call site whose callee the graph may inline (OptBuild.find_sites): a straight-line body, found
 // by the call's feedback, with its own control flow graph and liveness.
@@ -3197,7 +3199,7 @@ fn void OptBuild.find_sites(&self) {
 
 // The most callees of one polymorphic call whose bodies the graph inlines, and the bytecode words
 // of all of their trees together.
-const uint POLY_WORDS_MAX = 240;
+const uint POLY_WORDS_MAX = 720;
 
 // Whether the call at instruction `i` of the function being optimized is a polymorphic one whose
 // feedback names two to four callees (hobject::ic_call_count), of which at least one is inlined:
@@ -3318,12 +3320,14 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
             self.rej_op = cop == Opcode.NEW_OBJ ? cop : Opcode.CALL;
             return false;
         }
-        *words += c.cf.code_count;
-        if (*words > INLINE_TREE_WORDS_MAX) {
+        // A callee the tree has no room for is a call the body makes for real, when it can be.
+        if (*words + c.cf.code_count > INLINE_TREE_WORDS_MAX) {
             c.free_site();
+            if (self.nested_call_ok(si, k)) continue;
             self.rej_op = cop == Opcode.NEW_OBJ ? cop : Opcode.CALL;
             return false;
         }
+        *words += c.cf.code_count;
         uint ci = (uint)self.sites.len();
         self.sites.push(c);
         self.sites[si].child_of[k] = ci + 1;
