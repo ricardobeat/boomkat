@@ -111,7 +111,6 @@ enum OptInlineReject : char (String label) {
     SIZE {"callee too big"},
     TOP_LEVEL {"top level code"},
     WINDOW_LIVE {"call window live after the call"},
-    BLOCKS {"loop in the callee"},
     WIDE {"wide instruction"},
     NO_RET {"no final return"},
     READ_UNDEF {"reads an unwritten register"},
@@ -731,10 +730,12 @@ fn bool OptBuild.analyze(&self) {
     }
     if (self.nb > OPT_BLOCK_MAX || (usz)self.nb * self.nregs > OPT_STATE_MAX) return self.refuse(OptRefuse.BUDGET);
 
+    // The baseline code enters at the function's own loop headers; a loop of an inlined body is
+    // only entered from its call.
     self.osr_target = mem::new_array(bool, count);
     for (uint i = 0; i < count; i++) {
         uint t = cfg.nodes[i].branch_target;
-        if (t != compiler::CFG_NO_INSTRUCTION && t <= i) self.osr_target[t] = true;
+        if (t != compiler::CFG_NO_INSTRUCTION && t <= i && (self.fl_site == null || self.fl_site[t] == 0)) self.osr_target[t] = true;
     }
     uint nb = self.nb;
     self.b_first = mem::new_array(uint, nb);
@@ -932,15 +933,22 @@ fn void OptBuild.snapshot(&self, uint node) {
     OptNode* n = &self.g.nodes[node];
     n.dirty_first = first;
     n.dirty_count = (uint)self.g.dirty.len() - first;
-    if (self.cur_fn != 0) {
-        OptInlineSite* s = &self.sites[self.cur_site];
-        if (s.flat) {
-            uint local = self.fl_local[self.insn];
-            for (uint k = 0; k < s.cf.num_regs; k++) if (self.live_in[self.insn].test(s.base + k) && (s.defined[local] & (1u << k)) != 0) n.live_mask |= 1u << k;
-        } else {
-            for (uint k = 0; k < s.cf.num_regs; k++) if (s.live_in[self.insn].test(k) && (s.defined[self.insn] & (1u << k)) != 0) n.live_mask |= 1u << k;
-        }
+    n.live_mask = self.live_mask();
+}
+
+// The registers of the inlined body's frame that an exit before the instruction being lowered keeps
+// (OptInlineFrame.keep): those live and written on every way there. Zero outside a body.
+fn uint OptBuild.live_mask(&self) {
+    if (self.cur_fn == 0) return 0;
+    OptInlineSite* s = &self.sites[self.cur_site];
+    uint mask = 0;
+    if (s.flat) {
+        uint local = self.fl_local[self.insn];
+        for (uint k = 0; k < s.cf.num_regs; k++) if (self.live_in[self.insn].test(s.base + k) && (s.defined[local] & (1u << k)) != 0) mask |= 1u << k;
+    } else {
+        for (uint k = 0; k < s.cf.num_regs; k++) if (s.live_in[self.insn].test(k) && (s.defined[self.insn] & (1u << k)) != 0) mask |= 1u << k;
     }
+    return mask;
 }
 
 fn uint OptBuild.guarded(&self, OptOp op, OptRep rep, uint reg) {
@@ -1821,10 +1829,12 @@ fn hobject::ICEntry* OptBuild.absent_field(&self) {
 }
 
 // Whether the field instruction being lowered has never run: its cache was never filled. A flat
-// body leaves such an instruction as an unconditional exit to the callee's baseline code.
+// body leaves such an instruction as an unconditional exit to the callee's baseline code. An
+// array's `length` leaves the cache empty (OptBuild.length_site).
 fn bool OptBuild.cold_field(&self) {
     switch (self.w.op) {
         case GETPROPC: case GETPROPC_CACHED: case GETTHISC: case PUTPROPC: case PUTTHISC:
+            if (self.length_site()) return false;
             CompiledFunction* f = self.cur_f();
             if (f.ic_entries == null) return false;
             hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
@@ -2562,21 +2572,25 @@ fn void OptBuild.store_operand(&self, uint n, uint r) {
 // window), whatever frames were there before, which no frame cleared: the rest is cleared, but for
 // the callee's own frame, which its entry fills from its first argument not passed up.
 fn void OptBuild.dead_slots(&self, uint n, uint callee_reg, uint nargs, CompiledFunction* cf) {
+    uint own_hi = callee_reg + 2 + nargs;
+    if (cf != null && !cf.call_flags.forward_args && !cf.call_flags.rest_length_only) own_hi = max(own_hi, callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS);
+    OptNode* node = &self.g.nodes[n];
+    self.push_dead(callee_reg, own_hi, &node.reload_first, &node.reload_count);
+}
+
+// Into OptGraph.dirty from `first`, `count` of them: the slots of the inlined bodies' frames around
+// the instruction being lowered that hold nothing live, but those in [own_lo, own_hi).
+fn void OptBuild.push_dead(&self, uint own_lo, uint own_hi, uint* first, uint* count) {
     uint lo = self.caller_regs + vm::FRAME_SCRATCH_SLOTS;
     uint hi = 0;
     for (uint f = self.cur_fn; f != 0; f = self.g.fns[f].parent) hi = max(hi, self.g.fns[f].reg_base + self.g.fns[f].f.num_regs);
     hi += vm::FRAME_SCRATCH_SLOTS;
-    uint own_lo = callee_reg;
-    uint own_hi = callee_reg + 2 + nargs;
-    if (cf != null && !cf.call_flags.forward_args && !cf.call_flags.rest_length_only) own_hi = max(own_hi, callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS);
-    uint first = (uint)self.g.dirty.len();
+    *first = (uint)self.g.dirty.len();
     for (uint r = lo; r < hi; r++) {
         if ((r >= own_lo && r < own_hi) || (r < self.nregs && self.live_in_at(r))) continue;
         self.g.dirty.push({ .reg = r, .node = NO_NODE });
     }
-    OptNode* node = &self.g.nodes[n];
-    node.reload_first = first;
-    node.reload_count = (uint)self.g.dirty.len() - first;
+    *count = (uint)self.g.dirty.len() - *first;
 }
 
 // The instruction as the baseline emitter runs it: the registers it can read
@@ -2794,8 +2808,6 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             return self.reject(OptInlineReject.OPCODE);
         }
     }
-    // Forward branches only: a loop in the callee stays a call.
-    if (cfg.has_backedge) return self.reject(OptInlineReject.BLOCKS);
     s.flat = cfg.block_count != 1;
     if (s.flat && s.dotcall) return self.reject(OptInlineReject.DOTCALL_FLAT);
     if (s.flat && !self.splice_ok(s)) return false;
@@ -2817,11 +2829,31 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     uint argmask = given >= 32 ? ~0u : (1u << given) - 1;
     s.remap = uint::max;
     if (s.flat) {
-        // A forward dataflow: what every path to an instruction has written.
+        // A forward dataflow to its fixpoint (a loop's back edge comes later): what every path to
+        // an instruction has written.
         bool* reached = mem::new_array(bool, cfg.instruction_count);
         defer mem::free(reached);
         s.defined[0] = argmask;
         reached[0] = true;
+        for (bool changed = true; changed;) {
+            changed = false;
+            for (uint k = 0; k < cfg.instruction_count; k++) {
+                if (!reached[k]) continue;
+                DecodedCfgNode* node = &cfg.nodes[k];
+                uint reads;
+                uint writes;
+                inline_rw(&node.view.insn, &reads, &writes);
+                uint out = s.defined[k] | writes;
+                for (uint e = 0; e < node.successor_count; e++) {
+                    uint t = node.successors[e];
+                    uint d = reached[t] ? (s.defined[t] & out) : out;
+                    if (reached[t] && d == s.defined[t]) continue;
+                    s.defined[t] = d;
+                    reached[t] = true;
+                    changed = true;
+                }
+            }
+        }
         for (uint k = 0; k < cfg.instruction_count; k++) {
             if (!reached[k]) continue;
             DecodedCfgNode* node = &cfg.nodes[k];
@@ -2829,13 +2861,6 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             uint writes;
             inline_rw(&node.view.insn, &reads, &writes);
             if ((reads & ~s.defined[k]) != 0) return self.reject(OptInlineReject.READ_UNDEF);
-            uint out = s.defined[k] | writes;
-            for (uint e = 0; e < node.successor_count; e++) {
-                uint t = node.successors[e];
-                if (t <= k) return self.reject(OptInlineReject.BLOCKS);
-                s.defined[t] = reached[t] ? (s.defined[t] & out) : out;
-                reached[t] = true;
-            }
             if (node.successor_count == 0 && node.view.insn.op != Opcode.RET && node.view.insn.op != Opcode.RETUNDEF && node.view.insn.op != Opcode.THROW) return self.reject(OptInlineReject.NO_RET);
         }
     } else {
@@ -4402,6 +4427,12 @@ fn void OptBuild.begin_block(&self, uint pos) {
             if (self.cur[r].node != NO_NODE && self.cur[r].dirty) self.g.dirty.push({ .reg = r, .node = self.cur[r].node });
         }
         blk.entry_count = (uint)self.g.dirty.len() - blk.entry_first;
+        // A loop of an inlined body: what its poll needs to run from the bodies' records.
+        if (self.cur_fn != 0) {
+            blk.fidx = self.cur_fn;
+            blk.live_mask = self.live_mask();
+            self.push_dead(0, 0, &blk.dead_first, &blk.dead_count);
+        }
     }
     if (osr) {
         blk.osr = true;

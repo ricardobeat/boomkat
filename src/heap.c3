@@ -169,8 +169,9 @@ struct EnvSweepCursor {
 // module so vm_execute can call it without importing capi (which imports vm).
 alias BkInterruptFn = fn int(void* runtime, void* opaque);
 // How many backward jumps between GC checks. Spacing them out stops loops
-// from thrashing the collector.
-const uint  BWD_GC_INTERVAL        = 1024;
+// from thrashing the collector; the stress build checks at almost every one.
+const uint  BWD_GC_INTERVAL @feat(!GC_STRESS) = 1024;
+const uint  BWD_GC_INTERVAL @feat(GC_STRESS)  = 4;
 // How many back-edge safepoints between interrupt handler calls. Under
 // threaded dispatch most back-edges run inside the burst and never reach the
 // switch, which is where the poll site lives, so the effective cadence there

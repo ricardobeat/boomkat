@@ -574,37 +574,56 @@ fn void OptCg.emit_poll(&self, uint target) {
 // The slow path of each poll: store the registers the header holds in the
 // window, as the garbage collector reads it there, call opt_poll preserving
 // the registers in use, and resume the loop or, when a hook is installed,
-// leave for the baseline code at the header.
+// leave for the baseline code at the header. A loop of an inlined body polls from records of the
+// bodies' frames, as a call from one is made (emit_call_reg), so that the collector reads their
+// windows; the slots of those that hold nothing live are cleared first.
 fn void OptCg.emit_poll_stubs(&self) {
-    void* c = self.a.c;
-    int saved = 0;
+    Asm* a = self.a;
+    void* c = a.c;
+    CallLayout* k = call_layout();
     foreach (&p : self.polls) {
         OptBlock* h = &self.g.blocks[p.target];
         void* label = sljit_emit_label(c);
-        for (uint k = 0; k < p.jump_count; k++) sljit_set_label(p.jumps[k], label);
+        for (uint j = 0; j < p.jump_count; j++) sljit_set_label(p.jumps[j], label);
         self.store_dirty(h.entry_first, h.entry_count);
+        uint records = h.fidx == 0 ? 0 : self.g.fns[h.fidx].depth;
+        for (uint d = 0; d < h.dead_count; d++) a.store(self.g.dirty[(sz)(h.dead_first + d)].reg, SLJIT_IMM, K_UNDEF);
         long off = CALL_FRAME_BYTES;
-        for (int k = 0; k < self.pools.int_count; k++, off += 8) {
-            sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), off, self.pools.int_first + k, 0);
+        for (int j = 0; j < self.pools.int_count; j++, off += 8) {
+            sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), off, self.pools.int_first + j, 0);
         }
-        for (int k = 0; k < self.pools.flt_count; k++, off += 8) {
-            sljit_emit_fop1(c, SLJIT_MOV_F64, SLJIT_MEM | reg_sp(), off, self.pools.flt_first + k, 0);
+        for (int j = 0; j < self.pools.flt_count; j++, off += 8) {
+            sljit_emit_fop1(c, SLJIT_MOV_F64, SLJIT_MEM | reg_sp(), off, self.pools.flt_first + j, 0);
         }
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.a.f.code + (long)h.pc * Instruction::size);
-        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.a.ds, self.a.pc_off, R1, 0);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
-        self.a.c_call(SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&opt_poll);
+        if (records != 0) self.push_records(h.fidx);
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.g.fns[h.fidx].f.code + (long)h.pc * Instruction::size);
+        if (records != 0) a.mov(SLJIT_MEM | a.la, k.act_curr_pc, R1, 0);
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | a.ds, a.pc_off, R1, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+        a.c_call(SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&opt_poll);
         sljit_emit_op1(c, SLJIT_MOV, R4, 0, R0, 0);
+        if (records != 0) {
+            // As after a call from a body: the VM's frame state names a record popped now.
+            sljit_emit_op2(c, SLJIT_SUB, a.la, 0, a.la, 0, SLJIT_IMM, (long)records * Activation::size);
+            void* below = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, SLJIT_MEM | a.ds, a.lay.ds_act, a.la, 0);
+            a.mov(SLJIT_MEM | a.ds, a.lay.ds_act, SLJIT_IMM, 0);
+            sljit_set_label(below, sljit_emit_label(c));
+            a.mov(a.regs, 0, SLJIT_MEM | a.la, k.act_bottom);
+        }
         off = CALL_FRAME_BYTES;
-        for (int k = 0; k < self.pools.int_count; k++, off += 8) {
-            sljit_emit_op1(c, SLJIT_MOV, self.pools.int_first + k, 0, SLJIT_MEM | reg_sp(), off);
+        for (int j = 0; j < self.pools.int_count; j++, off += 8) {
+            sljit_emit_op1(c, SLJIT_MOV, self.pools.int_first + j, 0, SLJIT_MEM | reg_sp(), off);
         }
-        for (int k = 0; k < self.pools.flt_count; k++, off += 8) {
-            sljit_emit_fop1(c, SLJIT_MOV_F64, self.pools.flt_first + k, 0, SLJIT_MEM | reg_sp(), off);
+        for (int j = 0; j < self.pools.flt_count; j++, off += 8) {
+            sljit_emit_fop1(c, SLJIT_MOV_F64, self.pools.flt_first + j, 0, SLJIT_MEM | reg_sp(), off);
         }
-        self.exit_clean_dirty(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0), h.pc, h.entry_first, h.entry_count, OptExit.INTERRUPT);
+        void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
+        if (records != 0) {
+            self.exits.push({ .jump = leave, .pc = h.pc, .fidx = h.fidx, .reason = (uint)OptExit.INTERRUPT.ordinal, .mask = h.live_mask, .node = NO_NODE });
+        } else {
+            self.exit_clean_dirty(leave, h.pc, h.entry_first, h.entry_count, OptExit.INTERRUPT);
+        }
         sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), p.resume);
-        saved++;
     }
 }
 

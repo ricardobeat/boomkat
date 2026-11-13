@@ -441,6 +441,14 @@ struct OptBlock {
     // For a header: the phis' (register, node) pairs, which a poll's exit stores.
     uint entry_first;
     uint entry_count;
+    // For a header in an inlined body: the body's OptGraph.fns entry, the registers of its frame an
+    // exit keeps (OptInlineFrame.keep), and [dead_first, dead_first + dead_count) in
+    // OptGraph.dirty: the slots of the bodies' frames that hold nothing live, which its poll clears
+    // before it pushes their records (OptBuild.push_dead).
+    uint fidx;
+    uint live_mask;
+    uint dead_first;
+    uint dead_count;
     // Entered from baseline code (the target of a backward branch): the numeric
     // nodes live at its start, which the entry reloads from the window.
     bool osr;
