@@ -676,7 +676,7 @@ fn void OptCg.emit_entry_facts(&self, OptBlock* blk) {
         }
         a.unbox_object(R1, R0);
         if (fact.shape != heap::SHAPE_NONE) self.guard_shape(R1, fact.shape);
-        if (fact.plain) a.guard_plain(R1);
+        if (fact.plain) self.guard_plain(R1);
         if (fact.elem != 0) a.call.add(a.array_or_typed(fact.elem == ELEM_ARRAY_STORE ? a.lay.indexed_named_mask : 0));
         self.exit_calls_clean(blk.pc, OptExit.ENTRY);
     }
@@ -1233,6 +1233,26 @@ fn int OptCg.shape_operand(&self, uint shape, long* w) {
 
 // The shape of the object in `obj` against `shape`, leaving for the baseline code on any other.
 // Uses R2 and R3.
+// The leave for the baseline code unless object `obj` is a plain object: class Object with no
+// exotic or namespace flag. That holds for the object's life, and it passes Asm.guard_plain and the
+// receiver tests of an inherited read (settled_chain_slots, select_chain_slot). Uses R2 and R3.
+fn void OptCg.guard_plain(&self, int obj) {
+    Layout* l = self.a.lay;
+    sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | obj, 0);
+    sljit_emit_op2(self.a.c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask | l.module_ns_mask | l.deferred_ns_mask);
+    self.a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.class_object));
+}
+
+// The receiver of field node `n`, boxed in `rr`, unboxed into R1: an object, which is tested
+// unless the node knows it plain.
+fn void OptCg.field_receiver(&self, OptNode* n, int rr) {
+    if (n.plain) {
+        sljit_emit_op2(self.a.c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
+    } else {
+        self.a.unbox_object(R1, rr);
+    }
+}
+
 fn void OptCg.guard_shape(&self, int obj, uint shape) {
     sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | obj, self.a.lay.obj_shape);
     long w;
@@ -1366,9 +1386,12 @@ fn void OptCg.settled_chain_slots(&self, hobject::ICEntry* ic, uint i, Jumps* se
     Jumps rest;
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
     if (exact) self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)ic.shape_id), i, OptExit.RECEIVER);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
-    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-    rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+    // An ordinary object, no proxy among them; a plain one is known so (OptCg.guard_plain).
+    if (!self.g.nodes[i].plain) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+        rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+    }
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, l.heap_proto_epoch);
     rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)e.value));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
@@ -1386,12 +1409,12 @@ fn void OptCg.settled_chain_slots(&self, hobject::ICEntry* ic, uint i, Jumps* se
     rest.bind(sljit_emit_label(c));
 }
 
-// The slot address in R0 of the property the read entry `ic` names for the plain object in R1
-// (unboxed, not a proxy): the data property of the prototype the entry's epoch guard or link
+// The slot address in R0 of the property the read entry `ic` names for the object in R1 (unboxed;
+// known plain when `plain`): the data property of the prototype the entry's epoch guard or link
 // snapshot describes, as Asm.emit_get does for a hit. The entry is read
-// at run time, so a refill leaves the code right; a miss, an accessor and any other chain leave for
-// the baseline code. Uses R0 to R4.
-fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic) {
+// at run time, so a refill leaves the code right; a miss, a proxy, an accessor and any other chain
+// leave for the baseline code. Uses R0 to R4.
+fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic, bool plain) {
     void* c = self.a.c;
     Asm* a = self.a;
     Layout* l = a.lay;
@@ -1426,9 +1449,11 @@ fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic) {
     a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)kind));
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R2, l.ic_chain);
     if (epoch) {
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
-        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+        if (!plain) {
+            sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
+            sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+        }
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
         a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_first));
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_current);
@@ -1436,6 +1461,7 @@ fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic) {
         a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_value));
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R4, l.epoch_owner);
     } else {
+        if (!plain) a.guard_not_proxy(R1, R0);
         // Each link by the identity and shape the entry snapshotted, as ic_resolve_owner.
         hobject::ICChain probe;
         long shapes = (long)((char*)&probe.snapshot.shapes[0] - (char*)&probe);
@@ -1536,14 +1562,13 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         // The receiver was proven an object of this shape by an earlier node (see OptBuild.forget_facts).
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     } else {
-        a.unbox_object(R1, rr);
+        self.field_receiver(n, rr);
         // An own field's shape holds the property, which no proxy's does (it has no own properties).
         if (chain) {
-            a.guard_not_proxy(R1, R2);
             hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
             Jumps settled;
             self.settled_chain_slots(ic, i, &settled);
-            self.select_chain_slot(ic);
+            self.select_chain_slot(ic, n.plain);
             settled.bind(sljit_emit_label(c));
             known_slot = true;
         } else if (poly.count > 1) {
@@ -1770,8 +1795,8 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     if (n.cc != 0) {
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     } else {
-        a.unbox_object(R1, rr);
-        a.guard_plain(R1);
+        self.field_receiver(n, rr);
+        if (!n.plain) self.guard_plain(R1);
         if (poly.count > 1) {
             self.select_slot(poly);
             known_slot = true;

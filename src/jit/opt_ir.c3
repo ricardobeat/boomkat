@@ -384,6 +384,9 @@ struct OptNode {
     // A VALUE node that may hold a string (read from a counted holder by a load, or a copy or phi
     // of one), which a store into the heap counts. Any other VALUE node holds no counted value.
     bool counted;
+    // LOAD_FIELD, STORE_FIELD: the receiver is known to be a plain object (OptBuild.fact_plain,
+    // OptCg.guard_plain), so only its shape is tested.
+    bool plain;
 }
 
 // A sunk allocation: its NEW_OBJECT node, the keys its fields are added under, in order, and the
@@ -664,6 +667,7 @@ fn void OptGraph.dump(&self, CompiledFunction* f) {
             io::eprintf("  n%d %s rep=%s a=%d b=%d imm=%d pc=%d reg=%d home=%d last=%d cc=%d", i, n.op, n.rep, (int)n.a, (int)n.b, n.imm, n.pc, n.reg, n.home, n.last_use, n.cc);
             if (n.fidx != 0) io::eprintf(" fn=%d", n.fidx);
             if (n.sunk) io::eprintf(" sunk=%d", n.c);
+            if (n.plain) io::eprintf(" plain");
             if (n.dirty_count != 0) {
                 io::eprintf(" dirty=");
                 for (uint k = 0; k < n.dirty_count; k++) io::eprintf("r%d:n%d ", self.dirty[(sz)(n.dirty_first + k)].reg, self.dirty[(sz)(n.dirty_first + k)].node);

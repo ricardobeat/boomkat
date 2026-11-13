@@ -284,8 +284,10 @@ struct OptBuild {
     OptRegState* cur;
     // Per JS register, and at index nregs for `this`: the shape id of the object it holds when the
     // last LOAD_FIELD or STORE_FIELD on it passed its guards and nothing since can have changed
-    // that, else SHAPE_NONE; and whether that node also proved the object plain (a load only proves
-    // it is not a proxy, which is all a load needs).
+    // that, else SHAPE_NONE; and whether the object is known plain (OptCg.guard_plain: a store
+    // proved it, or the register was given a new object). An object's class and exotic flags are
+    // fixed when it is allocated, so that fact stays while the register holds the same value,
+    // across calls (forget_facts keeps it).
     uint* fact_shape;
     bool* fact_plain;
     // Per register: what the element accesses since the facts were last dropped proved of the
@@ -955,6 +957,8 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
     self.load_def[reg] = NO_NODE;
     self.const_def[reg] = NO_NODE;
     self.fact_shape[reg] = heap::SHAPE_NONE;
+    uint made = self.copied(node);
+    self.fact_plain[reg] = made != NO_NODE && self.g.nodes[made].op == OptOp.NEW_OBJECT;
     self.fact_elem[reg] = 0;
     self.drop_reg(reg, node);
 }
@@ -963,12 +967,20 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
 // STORE_FIELD (an overwrite, so never a shape change), LOAD_ELEM, STORE_ELEM, numeric ops and
 // branches. Nothing then can collect an object, recycle a shape id or rebind a register, so the
 // shape cell a node compared is still the receiver's. Every GENERIC, write to the register and
-// join the ways in disagree on (begin_block) drops its facts.
+// join the ways in disagree on (begin_block) drops its facts, but for fact_plain, which only a
+// write to the register or such a join drops.
 fn void OptBuild.forget_facts(&self) {
     for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
     mem::clear(self.fact_elem, (usz)self.nregs + 1);
     self.fact_bindings = 0;
     self.avail_n = 0;
+}
+
+// forget_facts, and what is known of the values the registers hold: for a block whose ways in
+// were not all built.
+fn void OptBuild.forget_values(&self) {
+    self.forget_facts();
+    mem::clear(self.fact_plain, (usz)self.nregs + 1);
 }
 
 // The register a field node reads its receiver from: nregs for `this`.
@@ -987,6 +999,9 @@ fn bool OptBuild.guards_known(&self, uint reg, uint shape) {
     return self.fact_plain[reg] || (self.w.op != Opcode.PUTPROPC && self.w.op != Opcode.PUTTHISC);
 }
 
+// Whether the object register `reg` holds is known plain (fact_plain).
+fn bool OptBuild.known_plain(&self, uint reg) => reg <= self.nregs && self.fact_plain[reg];
+
 // Register `dst` was given the value of register `src`: what is known of the object goes with it.
 fn void OptBuild.same_facts(&self, uint dst, uint src) {
     if (dst >= self.nregs) return;
@@ -998,7 +1013,7 @@ fn void OptBuild.same_facts(&self, uint dst, uint src) {
 fn void OptBuild.learn(&self, uint reg, uint shape) {
     if (reg > self.nregs) return;
     self.fact_shape[reg] = shape;
-    self.fact_plain[reg] = self.w.op == Opcode.PUTPROPC || self.w.op == Opcode.PUTTHISC;
+    self.fact_plain[reg] = self.fact_plain[reg] || self.w.op == Opcode.PUTPROPC || self.w.op == Opcode.PUTTHISC;
 }
 
 fn uint OptBuild.const_i32(&self, long v) => self.add(OptOp.CONST_I32, OptRep.INT32, NO_NODE, NO_NODE, v);
@@ -1898,6 +1913,7 @@ fn bool OptBuild.get_field(&self) {
     bool mono = ic.chain_len == 0;
     bool exact = inherited && self.cur_fn == 0 && self.w.op != Opcode.GETTHISC && opt_settled_shape(self.h, ic) != null && ic.chain.protos == null;
     bool known = mono && self.guards_known(recv, ic.shape_id);
+    bool plain = self.known_plain(recv);
     uint shape = ic.shape_id;
     uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
     if (n == NO_NODE) {
@@ -1909,12 +1925,16 @@ fn bool OptBuild.get_field(&self) {
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].exact = exact;
+    self.g.nodes[n].plain = plain;
     self.g.nodes[n].b = rnode;
     self.g.nodes[n].key = key;
     self.set_poly(n, ic);
     if (mono || exact) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
-    if (recv < self.nregs && recv == ra) self.fact_shape[recv] = heap::SHAPE_NONE;
+    if (recv < self.nregs && recv == ra) {
+        self.fact_shape[recv] = heap::SHAPE_NONE;
+        self.fact_plain[recv] = false;
+    }
     if (self.g.nodes[n].rep != OptRep.NONE && (rkey != NO_NODE || recv != ra)) self.note_field(key, rkey, recv, n);
     return true;
 }
@@ -2089,8 +2109,13 @@ fn bool OptBuild.put_field(&self) {
     self.g.nodes[n].key = key;
     bool mono = ic.chain_len == 0;
     self.g.nodes[n].cc = (mono && self.guards_known(recv, ic.shape_id)) ? 1 : 0;
+    self.g.nodes[n].plain = self.known_plain(recv);
     self.set_poly(n, ic);
-    if (mono) self.learn(recv, ic.shape_id);
+    if (mono) {
+        self.learn(recv, ic.shape_id);
+    } else if (recv <= self.nregs) {
+        self.fact_plain[recv] = true;
+    }
     // The field of any receiver may be the one written; this one now reads back the value.
     self.drop_key(key);
     if (self.cur[rv].node != NO_NODE) self.note_field(key, self.copied(rnode), recv, self.cur[rv].node);
@@ -2437,6 +2462,7 @@ fn void OptBuild.kill(&self, uint r) {
     self.load_def[r] = NO_NODE;
     self.const_def[r] = NO_NODE;
     self.fact_shape[r] = heap::SHAPE_NONE;
+    self.fact_plain[r] = false;
     self.fact_elem[r] = 0;
     self.drop_reg(r, NO_NODE);
 }
@@ -4239,7 +4265,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
     // which holds no field value in a node. A capture record a frame proved stays proved.
     bool osr = self.osr_target[first_insn];
     if (fwd == 0) {
-        self.forget_facts();
+        self.forget_values();
         self.fact_captures = 0;
     } else {
         self.meet_facts(pos);
@@ -4247,6 +4273,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
             // Of the caller's frame alone, and `this`.
             for (uint r = self.caller_regs; r < self.nregs; r++) {
                 self.fact_shape[r] = heap::SHAPE_NONE;
+                self.fact_plain[r] = false;
                 self.fact_elem[r] = 0;
             }
             self.avail_n = 0;
@@ -4254,7 +4281,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
         if (back != 0 && self.loop_facts) {
             self.head_facts(pos);
         } else if (back != 0) {
-            self.forget_facts();
+            self.forget_values();
         }
     }
     blk.header = back > 0;
@@ -4312,9 +4339,9 @@ fn void OptBuild.begin_block(&self, uint pos) {
         blk.osr_count = (uint)self.g.dirty.len() - blk.osr_first;
         blk.fact_first = (uint)self.g.entry_facts.len();
         for (uint r = 0; r <= self.nregs; r++) {
-            if (self.fact_shape[r] == heap::SHAPE_NONE && self.fact_elem[r] == 0) continue;
+            if (self.fact_shape[r] == heap::SHAPE_NONE && self.fact_elem[r] == 0 && !self.fact_plain[r]) continue;
             OptEntryFact fact = { .reg = r == self.nregs ? OPT_THIS : r, .shape = self.fact_shape[r], .elem = self.fact_elem[r] };
-            fact.plain = fact.shape != heap::SHAPE_NONE && self.fact_plain[r];
+            fact.plain = self.fact_plain[r];
             self.g.entry_facts.push(fact);
         }
         blk.fact_count = (uint)self.g.entry_facts.len() - blk.fact_first;
@@ -4457,7 +4484,7 @@ fn void OptBuild.head_facts(&self, uint pos) {
             self.fact_elem[r] = min(self.fact_elem[r], self.head_elem[at + r]);
         }
         self.head_shape[at + r] = self.fact_shape[r];
-        self.head_plain[at + r] = self.fact_shape[r] != heap::SHAPE_NONE && self.fact_plain[r];
+        self.head_plain[at + r] = self.fact_plain[r];
         self.head_elem[at + r] = self.fact_elem[r];
     }
     if (set) {
@@ -4480,7 +4507,6 @@ fn bool OptBuild.meet_head(&self, uint pos, uint p) {
     for (usz r = 0; r < w; r++) {
         if (self.head_shape[at + r] != heap::SHAPE_NONE && self.head_shape[at + r] != self.end_shape[end + r]) {
             self.head_shape[at + r] = heap::SHAPE_NONE;
-            self.head_plain[at + r] = false;
             changed = true;
         }
         if (self.head_plain[at + r] && !self.end_plain[end + r]) {
