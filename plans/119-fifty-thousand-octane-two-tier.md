@@ -1089,6 +1089,26 @@ strings, and the matcher at about a quarter.
   skip to a byte that can start a match) and inline class tests above Latin-1.
   Last, since the matcher is the smaller part.
 
+**2026-11-13 status (5.1).** Done on `jit`, RegExp steady instructions -9.1%
+against fa199421 (28.0 to 25.5 ms per mini iteration):
+
+- Call path: `jit_call_builtin_method` (0d4e74e6) calls a non-leaf builtin of a
+  method site directly; `regexp_inherits_exec` (46829322) reads a plain
+  RegExp's `exec` from the guard's located slot instead of a Get.
+- Result array: already built on a cached final shape; the cache was
+  one-way and alternating capture counts evicted each other (198k slow builds
+  per run). `MATCH_SHAPES` 16, two-way (8a6864ce), -3.9%.
+- Captures as slices: substrings already share their parent. Interning and a
+  larger slice cache were measured and gave nothing; not pursued.
+- Matcher: first-unit scan inside the compiled body (18f61031); the
+  interpreter's 4 KB capture buffer moved off the native path (679b2d7e);
+  greedy runs whose continuation cannot use a give-back are possessive
+  (430da7b4); no undo records for writes with no frame live (80e25775).
+  `exec` with three captures 362 to 111 ms.
+- Not done: a pristine version check (needs the prototype write watch, 3.0);
+  `regexp_proto_pristine` is 2.4% of RegExp. Generated regex code is now ~6%
+  of the benchmark; what remains is glue, match objects, GC and strings.
+
 **5.2 CodeLoad** (32,593 against 118,169; JSC is at that level in every
 configuration, so this is parse and compile throughput). No profile since the
 flat AST merged. Profile first, then expect the work to be: skipping function
