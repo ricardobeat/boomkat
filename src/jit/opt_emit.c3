@@ -659,7 +659,10 @@ fn void OptCg.emit_osr_entries(&self, void* to_base) {
             OptNode* n = &self.g.nodes[d.node];
             // A spilled value is in its slot already.
             if (n.reg < 0) continue;
-            if (n.rep == OptRep.INT32) {
+            if (n.rep == OptRep.VALUE) {
+                // Whatever the baseline code left there, as the bytecode computed it.
+                self.a.load(n.reg, d.reg);
+            } else if (n.rep == OptRep.INT32) {
                 self.a.load(R0, d.reg);
                 self.int32_from_r0(d.reg);
                 self.exit_calls_clean(blk.pc, OptExit.NOT_INT32);
