@@ -421,6 +421,60 @@ static uint8_t* cesu8_pattern_to_utf8(const char* input, size_t input_len, size_
     return out;
 }
 
+/* libregexp's interpreter over `re`, for a pattern the native matcher declined
+ * or a run it gave up. Kept out of re_run_interruptible: its capture buffer is
+ * a 4 KB frame, which would cost every native run a stack probe. */
+static __attribute__((noinline)) int re_run_interp(ReCompiled* re, const void* input, int input_len,
+           int start_offset, int input_wide, int total_captures,
+           int* out_start, int* out_end, int* out_num_captures,
+           int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt)
+{
+    /* lre_exec NULL-initialises capture[0..2*capture_count-1] (it reads the
+     * count from the compiled bytecode header) and writes back matching
+     * pointers for the captures that participate in the match. A regex with
+     * more than RE_MAX_CAPTURES capture groups would blow the 64-slot
+     * stack array on every call, so we heap-allocate when the compiled
+     * regex carries more captures than the stack buffer can hold. The
+     * outer cap on `total_captures` (above) and the inner cap on the
+     * copy-out loop (using max_captures) keep callers' caps_* arrays safe
+     * even when lre_exec was passed a larger capture buffer. */
+    uint8_t* capture_stack[RE_MAX_CAPTURES * 2];
+    uint8_t** capture = capture_stack;
+    /* The buffer also holds the quantifier registers after the captures. */
+    int alloc_count = lre_get_alloc_count(re->bc);
+    if (alloc_count > RE_MAX_CAPTURES * 2) {
+        capture = (uint8_t**)calloc((size_t)alloc_count, sizeof(uint8_t*));
+        if (!capture) return RE_ERROR;
+    }
+
+    /* cbuf_type 0 reads one byte per unit and 1 reads two. lre_exec derives
+     * is_unicode from the compiled bytecode and promotes 1 to 2 itself
+     * (surrogate-pair combining) under the u or v flag; the stride is 2 bytes
+     * either way, so wide input is always passed as 1. A Latin-1 string holds
+     * no surrogate, so unicode mode needs no promotion there. */
+    int ret = lre_exec_ex(capture, re->bc, (const uint8_t*)input, start_offset, input_len,
+                          input_wide ? 1 : 0, interrupt,
+                          re->has_first_set ? &re->first_set : NULL);
+    if (ret == RE_MATCH) {
+        size_t shift = input_wide ? 1 : 0;
+        const uint8_t* base = (const uint8_t*)input;
+#define UNIT_OFFSET(p) ((p) ? (int)((size_t)((p) - base) >> shift) : -1)
+        if (out_start) *out_start = UNIT_OFFSET(capture[0]);
+        if (out_end)   *out_end   = UNIT_OFFSET(capture[1]);
+        if (out_num_captures) *out_num_captures = total_captures - 1;
+        for (int i = 1; i < total_captures && (i - 1) < max_captures; i++) {
+            caps_start[i - 1] = UNIT_OFFSET(capture[i * 2]);
+            caps_end[i - 1]   = UNIT_OFFSET(capture[i * 2 + 1]);
+        }
+#undef UNIT_OFFSET
+        if (capture != capture_stack) free(capture);
+        return RE_MATCH;
+    }
+    if (capture != capture_stack) free(capture);
+    if (ret == 0) return RE_NO_MATCH;
+    return RE_ERROR;
+}
+
 /*
  * Run `re` over `input_len` code units of `input`, starting at unit
  * `start_offset`. The input is Latin-1 bytes, or native-endian UTF-16 when
@@ -493,50 +547,9 @@ int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
         }
     }
 
-    /* lre_exec NULL-initialises capture[0..2*capture_count-1] (it reads the
-     * count from the compiled bytecode header) and writes back matching
-     * pointers for the captures that participate in the match. A regex with
-     * more than RE_MAX_CAPTURES capture groups would blow the 64-slot
-     * stack array on every call, so we heap-allocate when the compiled
-     * regex carries more captures than the stack buffer can hold. The
-     * outer cap on `total_captures` (above) and the inner cap on the
-     * copy-out loop (using max_captures) keep callers' caps_* arrays safe
-     * even when lre_exec was passed a larger capture buffer. */
-    uint8_t* capture_stack[RE_MAX_CAPTURES * 2];
-    uint8_t** capture = capture_stack;
-    /* The buffer also holds the quantifier registers after the captures. */
-    int alloc_count = lre_get_alloc_count(re->bc);
-    if (alloc_count > RE_MAX_CAPTURES * 2) {
-        capture = (uint8_t**)calloc((size_t)alloc_count, sizeof(uint8_t*));
-        if (!capture) return RE_ERROR;
-    }
-
-    /* cbuf_type 0 reads one byte per unit and 1 reads two. lre_exec derives
-     * is_unicode from the compiled bytecode and promotes 1 to 2 itself
-     * (surrogate-pair combining) under the u or v flag; the stride is 2 bytes
-     * either way, so wide input is always passed as 1. A Latin-1 string holds
-     * no surrogate, so unicode mode needs no promotion there. */
-    int ret = lre_exec_ex(capture, re->bc, (const uint8_t*)input, start_offset, input_len,
-                          input_wide ? 1 : 0, interrupt,
-                          re->has_first_set ? &re->first_set : NULL);
-    if (ret == RE_MATCH) {
-        size_t shift = input_wide ? 1 : 0;
-        const uint8_t* base = (const uint8_t*)input;
-#define UNIT_OFFSET(p) ((p) ? (int)((size_t)((p) - base) >> shift) : -1)
-        if (out_start) *out_start = UNIT_OFFSET(capture[0]);
-        if (out_end)   *out_end   = UNIT_OFFSET(capture[1]);
-        if (out_num_captures) *out_num_captures = total_captures - 1;
-        for (int i = 1; i < total_captures && (i - 1) < max_captures; i++) {
-            caps_start[i - 1] = UNIT_OFFSET(capture[i * 2]);
-            caps_end[i - 1]   = UNIT_OFFSET(capture[i * 2 + 1]);
-        }
-#undef UNIT_OFFSET
-        if (capture != capture_stack) free(capture);
-        return RE_MATCH;
-    }
-    if (capture != capture_stack) free(capture);
-    if (ret == 0) return RE_NO_MATCH;
-    return RE_ERROR;
+    return re_run_interp(re, input, input_len, start_offset, input_wide, total_captures,
+                         out_start, out_end, out_num_captures, caps_start, caps_end, max_captures,
+                         interrupt);
 }
 
 /* Predicates the native regexp backend needs. libregexp and libunicode keep
