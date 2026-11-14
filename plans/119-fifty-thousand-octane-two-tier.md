@@ -24,6 +24,69 @@ NavierStokes +4%; PdfJS 9,670 against 11,538 (bimodal by collector timing,
 as in g34). Peak RSS 1,955 MiB (g34 2,126). Weakest: RegExp 3,117,
 EarleyBoyer 7,887, DeltaBlue 8,549, PdfJS ~9.7k.
 
+**2026-11-14 status (`jit` at `20a9da0e`, not gated since g35).** Steady
+instructions per mini iteration (`scripts/mini_steady.py --args "--jit --opt"`),
+start of day to now, with JSC beside them:
+
+| Mini | 2026-11-13 | now | JSC |
+|---|---:|---:|---:|
+| RegExp | 470M | 233M | 82M |
+| EarleyBoyer | 407M | 290M | 44.5M |
+| PdfJS | 2.11G | 1.49G | 150M |
+| Splay | 10.1M | 8.6M | |
+| RayTrace | 99M | 88.6M | |
+| TypeScript | 9.7G | 8.74G | |
+| DeltaBlue | 18.2M | 17.3M | |
+
+Merged today, each validated on the merged tree (full test262 53,380 / 0 and
+the JIT ASan subset clean at `fc3a7078`; the gates for `20a9da0e` are recorded
+in §6):
+
+- **§2 collector** (`640d4a52`, `89b125b1`): stages A and B of 2.1 are done.
+  Objects live in 64 KB pool pages with live, mark and teardown bitmaps; the
+  sweep visits a page's dead objects only, and only those whose teardown bit
+  says they own something. Bump allocation in generated code, array literals
+  filled in one allocation (`NEWARR_FILL`), pool page reserve, inline string
+  free. Rule that follows: a generated store of a counted string or owned
+  resource into a fresh pooled object sets the teardown bit
+  (`Asm.emit_needs_teardown`); `make out/boomkat_jit_gc_verify` catches a
+  miss. A young-generation retune measured ±1.2% and was dropped. Marking is
+  ~12% of EarleyBoyer; collector work is ~25% of it after today's other cuts.
+- **§5.1 RegExp**, waves 2 to 5 (`6b6c1475`, `62b2a0c1`, `b721121b`): the
+  prototype write watch (pristine guard), per-site literal cache, inline
+  `REGEXP_EXEC` (plain, global, sticky) and `STRING_REGEXP` nodes, replace
+  with a parsed template, match arrays built from group bounds, in-code
+  prefilters. Per-call budgets are all still missed (failing `exec` 331
+  against 250, two-capture `exec` 1,472 against 700, global replace with
+  three matches 1,742 against 900); wave 6 (branch `re6`) carries them:
+  call-site plumbing, the never-inlined `Exec` helper ("call window live
+  after the call"), result escape analysis, replace/split/match direct
+  paths, matcher code against Yarr.
+- **§3 EarleyBoyer** (`46645684`): object-valued globals are watched
+  constants (a write watch on the binding slot replaces the per-use guard),
+  which removes LOAD_VAR and CHECK_CALLEE for calls through them, makes
+  `instanceof` an inline prototype walk and gives `new` its prototype as an
+  immediate; `STORE_GLOBAL` / `STEP_GLOBAL` nodes; counted string adds and
+  string returns stay in generated code. Left: shape propagation from
+  `instanceof` / `new` into field loads, recursion through CALL_REG, RET as a
+  node, `arguments`, cells, watch guards hoisted out of loops.
+- **§4 PdfJS** (`20a9da0e`): 4.1's leaf table is general
+  (`src/builtins/leaf.c3`, about 25 builtins, both tiers and the interpreter,
+  `BUILTIN_LEAF` node); tail calls compile through the CFG; a named function
+  expression binds its name only when its source may read it; in-place
+  append reaches an accumulator also held by a compiler cell. PdfJS is still
+  64% runtime helpers. Wave 2 (branch `pdf2`): polymorphic loads and calls so
+  hot functions stay optimized (45 discarded builds, 196 generic calls),
+  string accumulation with an O(1) ownership proof and an inline append,
+  arrays, closures and scopes.
+
+`main` carries what does not depend on the JIT branch's object and string
+model: the page-bitmap sweep, array literal fill, pool page reserve, inline
+free, `Object.keys` sizing, dense-move counts, function-name binding, the
+cell accumulator. Not portable until the zero-count table and deferred
+register counts are there: the leaf table, the frame-alias check, the native
+regexp engine (`src/re`).
+
 Gate r15 (`716b8d37`, three alternating runs) is the last clean gate. JSC
 columns are the system framework measured on 2026-11-03 (`--useDFGJIT=false`
 for baseline, `--useFTLJIT=false` for DFG).
