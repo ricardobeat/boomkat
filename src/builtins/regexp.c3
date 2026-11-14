@@ -495,9 +495,8 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
     HString* s_hstr;
     if (ctx.argc > 0) {
         TVal* arg = &ctx.regs[ctx.base_reg];
-        if (arg.is_string() && arg.get_heapptr() != null) {
-            s_hstr = (HString*)arg.get_heapptr();
-        } else {
+        s_hstr = regexp_plain_input(arg);
+        if (s_hstr == null) {
             s_hstr = builtin_to_string_vm(ctx, arg);
             if (ctx.should_throw) return;
             if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
@@ -2550,15 +2549,21 @@ fn bool regexp_set_last_index(BuiltinContext* ctx, HObject* rx, HString* key,
     return builtins_generic_set(ctx, rx, key, value, "lastIndex");
 }
 
+// A string argument RegExpBuiltinExec takes as is, or null: a Symbol carries
+// the string tag and must go through ToString, which throws.
+fn HString* regexp_plain_input(TVal* v) @inline {
+    if (!v.is_string()) return null;
+    HString* s = (HString*)v.get_heapptr();
+    return s != null && !s.is_symbol() ? s : null;
+}
+
 // RegExpBuiltinExec (ECMA-262 §22.2.7.2), sets ctx.result to the match array or
 // null, or directly to a Boolean for RegExp.prototype.test. `rx` must already
 // be a REGEXP-class object with a compiled matcher.
 fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
                             bool boolean_result = false) {
-    HString* s_hstr;
-    if (input_str_tv.is_string() && input_str_tv.get_heapptr() != null) {
-        s_hstr = (HString*)input_str_tv.get_heapptr();
-    } else {
+    HString* s_hstr = regexp_plain_input(input_str_tv);
+    if (s_hstr == null) {
         s_hstr = builtin_to_string_vm(ctx, input_str_tv);
         if (ctx.should_throw) return;
         if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);

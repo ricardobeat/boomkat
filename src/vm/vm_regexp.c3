@@ -15,9 +15,9 @@ fn void? vm_retest(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
     Vm* vm = ds.vm;
     CompiledFunction* func = vm.current_func;
     uint k = insn.c;
-    if (rb.is_string() && func.regexp_cache != null && k < func.regexp_cache_count
+    HString* s = builtins::regexp_plain_input(rb);
+    if (s != null && func.regexp_cache != null && k < func.regexp_cache_count
         && func.regexp_cache[k] != null && builtins::regexp_proto_pristine(vm.heap)) {
-        HString* s = (HString*)rb.get_heapptr();
         int out_start; int out_end; int out_num;
         int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
         int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
