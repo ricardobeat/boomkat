@@ -1021,11 +1021,11 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     }
     // A failed type guard: record the operand classes the instruction met, as the baseline would
     // have off its integer path, so that the rebuild lowers it for them instead of guarding again.
-    if ((reason == OptExit.NOT_INT32.ordinal || reason == OptExit.NOT_NUMBER.ordinal) && oc.f.ic_entries != null) {
-        opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
-    }
+    // Feedback the build had not seen makes it rebuild at once, as an unprofiled site does.
+    bool widened = (reason == OptExit.NOT_INT32.ordinal || reason == OptExit.NOT_NUMBER.ordinal) && oc.f.ic_entries != null
+        && opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
-    if (reason == OptExit.UNPROFILED.ordinal) {
+    if (reason == OptExit.UNPROFILED.ordinal || widened) {
         opt_relearn(h, oc);
         return 0;
     }
@@ -1068,14 +1068,16 @@ fn bool opt_note_proto_exit(Dispatch* ds, CompiledFunction* f, uint pc) {
 
 // OR the classes of the operands the instruction at word `pc` of `f` reads from the window into its
 // feedback, for the instructions whose feedback the optimizer reads.
-fn void opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reason) {
+fn bool opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reason) {
     DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
-    if (!d.valid) return;
+    if (!d.valid) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.payload_pc];
+    char before = ic.feedback;
     if (!vm::has_feedback(d.insn.op)) {
         // A typed load (an element, field, closure or global read) found a value its int32 node
         // cannot hold: the rebuild reads it as a double (OptBuild.typed_load).
-        if (reason == OptExit.NOT_INT32.ordinal) ((hobject::ICEntry*)f.ic_entries)[d.payload_pc].feedback |= hobject::FB_DBL;
-        return;
+        if (reason == OptExit.NOT_INT32.ordinal) ic.feedback |= hobject::FB_DBL;
+        return ic.feedback != before;
     }
     TVal* regs = ds.regs_base;
     TVal imm;
@@ -1088,7 +1090,8 @@ fn void opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reaso
         default:
             bits = hobject::fb_class(regs + d.insn.b) | hobject::fb_class(vm::op_operand_c(ds, d.insn, &imm));
     }
-    ((hobject::ICEntry*)f.ic_entries)[d.payload_pc].feedback |= bits;
+    ic.feedback |= bits;
+    return ic.feedback != before;
 }
 
 fn usz opt_code_limit(Heap* h) @inline => h.opt.code_max != 0 ? h.opt.code_max : OPT_CODE_MAX;
