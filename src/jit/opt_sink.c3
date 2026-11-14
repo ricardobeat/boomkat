@@ -72,7 +72,9 @@ fn bool OptGraph.sink_refs(&self, OptSinkScratch* s, OptNode* n) @inline {
 
 fn bool OptGraph.sink_in_list(&self, OptSinkScratch* s, uint first, uint count) {
     for (uint k = 0; k < count; k++) {
-        if (s.held_by[self.dirty[(sz)(first + k)].node]) return true;
+        // A slot a call from an inlined body clears has no node.
+        uint node = self.dirty[(sz)(first + k)].node;
+        if (node != NO_NODE && s.held_by[node]) return true;
     }
     return false;
 }
