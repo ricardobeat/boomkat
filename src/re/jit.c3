@@ -35,8 +35,9 @@ import std::io;
 bool print_code_map;
 uint bodies_compiled;
 
-// A compiled body: the program and the run, over the position to start at.
-alias ReJitFn = fn int(re_native::ReNative* n, re_native::ReExec* e, usz start);
+// A compiled body: RE_MATCH with the captures written, RE_NO_MATCH, or
+// RE_TIMEOUT when the interrupt fired.
+alias ReJitFn = fn int(re_native::ReCall* call);
 
 // A compiled body is refused beyond this many instructions, which bounds the
 // code one pattern can hold: the emitter expands each instruction to a block of
@@ -89,6 +90,8 @@ struct ReLayout {
     long capture;
     long undo;
     long undo_cap;
+    long heap_frames;
+    long heap_undo;
 }
 
 // A greedy run's give-back path: the address its frame resumes at, the register
@@ -127,11 +130,12 @@ const long SLOT_FRAME = 8;
 const long SLOT_RUN_START = 16;
 const long SLOT_RUN_END = 24;
 const long SLOT_SCRATCH = 32;
-// The slots above, and the frame SLJIT is asked for: SLJIT places the saved
-// registers of its own prologue and what a call spills above the area the
-// emitted code addresses, so the two are sized together here and the frame
-// size is never written as a literal at the call.
-const int RE_JIT_LOCALS = SLOT_SCRATCH + 8;
+// The run state follows them in the body's frame: the ReExec, then the frame,
+// undo and register buffers it starts with (ReAsm.frame_layout). SLJIT places
+// its saved registers and what a call spills above that area.
+const long SLOT_EXEC = SLOT_SCRATCH + 8;
+// The most quantifier registers a body keeps in its frame.
+const uint RE_JIT_MAX_REGS = 64;
 
 // The emitter's registers. Saved registers hold state that must survive a
 // helper call; scratch registers are the C ABI's argument and result registers,
@@ -149,8 +153,14 @@ struct ReAsm {
     int s_data;   // the subject base
     int s_len;    // the subject length in code units
     int s_polls;  // dispatches left before the interrupt is polled
-    int s_n;      // the program's ReNative
+    int s_n;      // the ReCall, until the run state is set up
     re_native::ReNative* native;
+    // The run state is set up: a return releases what its stacks grew into.
+    bool exec_ready;
+    long off_frames;
+    long off_undo;
+    long off_regs;
+    int locals;
     int t0;
     int t1;
     int t2;
@@ -218,6 +228,11 @@ fn long re_jit_prev_code_point(re_native::ReExec* e, long pos) {
     return (long)at;
 }
 
+// Free the heap buffers a run's stacks grew into.
+fn void re_jit_release(re_native::ReExec* e) {
+    e.release();
+}
+
 // Make room for one more frame before the emitted push stores it.
 fn long re_jit_grow(re_native::ReExec* e) {
     e.reserve_frame();
@@ -238,6 +253,8 @@ fn ReLayout re_layout() {
         .capture = (char*)&e.capture - (char*)e,
         .undo = (char*)&e.undo - (char*)e,
         .undo_cap = (char*)&e.undo_cap - (char*)e,
+        .heap_frames = (char*)&e.heap_frames - (char*)e,
+        .heap_undo = (char*)&e.heap_undo - (char*)e,
     };
     // The emitted code stores through these offsets; a field reordered above
     // them would silently corrupt the run.
@@ -308,8 +325,18 @@ fn void* ReAsm.jump(&self) @inline => jit::sljit_emit_jump(self.c, jit::SLJIT_JU
 
 fn void ReAsm.bind(&self, void* jump, void* label) @inline => jit::sljit_set_label(jump, label);
 
-// Leave the generated function with `value`.
-fn void ReAsm.leave(&self, int value) @inline {
+// Leave the generated function with `value`, releasing the heap buffers the
+// run's stacks grew into.
+fn void ReAsm.leave(&self, int value) {
+    if (self.exec_ready) {
+        self.mov(self.t0, 0, jit::SLJIT_MEM | self.s_e, self.lay.heap_frames);
+        self.op2(jit::SLJIT_OR, self.t0, 0, self.t0, 0, jit::SLJIT_MEM | self.s_e, self.lay.heap_undo);
+        void* bare = self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0);
+        self.mov(self.t0, 0, self.s_e, 0);
+        jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS1WW,
+                              jit::SLJIT_IMM, (long)(usz)&re_jit_release);
+        self.bind(bare, self.label());
+    }
     jit::sljit_emit_return(self.c, jit::SLJIT_MOV, jit::SLJIT_IMM, (long)value);
 }
 
@@ -1298,7 +1325,7 @@ fn void ReAsm.emit_exhausted(&self) {
         return;
     }
     if (self.wide) {
-        self.mov(self.t0, 0, self.s_n, 0);
+        self.mov(self.t0, 0, jit::SLJIT_IMM, (long)(usz)self.native);
         self.mov(self.t1, 0, self.s_e, 0);
         self.mov_u32(self.t2, 0, jit::SLJIT_MEM | jit::reg_sp(), 0);
         jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
@@ -1327,7 +1354,7 @@ fn void ReAsm.emit_exhausted(&self) {
 fn void ReAsm.emit_scan(&self) {
     re_native::ReNative* n = self.native;
     if (self.wide) {
-        self.mov(self.t0, 0, self.s_n, 0);
+        self.mov(self.t0, 0, jit::SLJIT_IMM, (long)(usz)self.native);
         self.mov(self.t1, 0, self.s_e, 0);
         self.mov(self.t2, 0, self.s_pos, 0);
         jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
@@ -1401,7 +1428,7 @@ fn void ReAsm.emit_literal(&self) {
                 if (n.lit_where == re_bindings::RE_LIT_PREFIX) self.mov(self.s_pos, 0, self.t0, 0);
         }
         if (n.lit_whole) {
-            self.mov(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.capture);
+            self.mov(self.t1, 0, jit::SLJIT_MEM | self.s_n, re_call_offset(RE_CALL_CAPS));
             self.store_u32(self.t1, 0, self.s_pos);
             self.op2(jit::SLJIT_ADD, self.t2, 0, self.s_pos, 0, jit::SLJIT_IMM, n.lit_len);
             self.store_u32(self.t1, 4, self.t2);
@@ -1615,6 +1642,87 @@ fn void* ReAsm.emit_find_units(&self) {
     return match;
 }
 
+const int RE_CALL_DATA = 0;
+const int RE_CALL_LEN = 1;
+const int RE_CALL_START = 2;
+const int RE_CALL_CAPS = 3;
+const int RE_CALL_INTERRUPT = 4;
+
+// The offset of a ReCall field on this build.
+fn long re_call_offset(int field) {
+    re_native::ReCall* k = (re_native::ReCall*)(usz)4096;
+    switch (field) {
+        case RE_CALL_DATA: return (char*)&k.data - (char*)k;
+        case RE_CALL_LEN: return (char*)&k.len - (char*)k;
+        case RE_CALL_START: return (char*)&k.start - (char*)k;
+        case RE_CALL_CAPS: return (char*)&k.caps - (char*)k;
+        default: return (char*)&k.interrupt - (char*)k;
+    }
+}
+
+// Where the run state sits in the body's frame, and the frame's size.
+fn void ReAsm.frame_layout(&self) {
+    self.off_frames = SLOT_EXEC + (long)((re_native::ReExec::size + 7) & ~(usz)7);
+    self.off_undo = self.off_frames + (long)re_native::RE_SMALL_FRAMES * RE_JIT_FRAME_BYTES;
+    self.off_regs = self.off_undo + (long)re_native::RE_SMALL_SLOTS * re_native::ReSlot::size;
+    self.locals = (int)(self.off_regs + ((long)self.prog.register_count * 4 + 7) / 8 * 8);
+}
+
+// A wide unicode start inside a surrogate pair backs up to the pair's first
+// unit, so a sticky match never begins mid-character.
+fn void ReAsm.emit_pair_start(&self) {
+    void* first = self.cmp(jit::SLJIT_EQUAL, self.s_pos, 0, jit::SLJIT_IMM, 0);
+    void* end = self.cmp(jit::SLJIT_GREATER_EQUAL, self.s_pos, 0, self.s_len, 0);
+    self.op2(jit::SLJIT_SHL, self.t1, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+    self.op2(jit::SLJIT_ADD, self.t1, 0, self.t1, 0, self.s_data, 0);
+    self.mov_u16(self.t0, 0, jit::SLJIT_MEM | self.t1, 0);
+    self.op2(jit::SLJIT_AND, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, 0xFC00);
+    void* not_low = self.cmp(jit::SLJIT_NOT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0xDC00);
+    self.mov_u16(self.t0, 0, jit::SLJIT_MEM | self.t1, -2);
+    self.op2(jit::SLJIT_AND, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, 0xFC00);
+    void* not_high = self.cmp(jit::SLJIT_NOT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0xD800);
+    self.op2(jit::SLJIT_SUB, self.s_pos, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+    void* done = self.label();
+    foreach (j : (void*[4]){ first, end, not_low, not_high }) self.bind(j, done);
+}
+
+// The run state in the body's frame, once the literal checks have passed: the
+// subject, the captures and interrupt from the ReCall in s_n, and empty stacks
+// over the frame's buffers. s_e addresses it from here on.
+fn void ReAsm.emit_exec_setup(&self) {
+    re_native::ReExec* e = (re_native::ReExec*)(usz)4096;
+    long prog = (char*)&e.prog - (char*)e;
+    long wide = (char*)&e.in.wide - (char*)e;
+    long unicode = (char*)&e.in.unicode - (char*)e;
+    long interrupt = (char*)&e.interrupt - (char*)e;
+    jit::sljit_get_local_base(self.c, self.s_e, 0, SLOT_EXEC);
+    self.mov(self.t0, 0, jit::SLJIT_MEM | self.s_n, re_call_offset(RE_CALL_CAPS));
+    self.mov(jit::SLJIT_MEM | self.s_e, self.lay.capture, self.t0, 0);
+    self.mov(self.t0, 0, jit::SLJIT_MEM | self.s_n, re_call_offset(RE_CALL_INTERRUPT));
+    self.mov(jit::SLJIT_MEM | self.s_e, interrupt, self.t0, 0);
+    self.mov(jit::SLJIT_MEM | self.s_e, prog, jit::SLJIT_IMM, (long)(usz)self.prog);
+    self.mov(jit::SLJIT_MEM | self.s_e, self.lay.in_data, self.s_data, 0);
+    self.store_u32(self.s_e, self.lay.in_len, self.s_len);
+    jit::sljit_emit_op1(self.c, jit::SLJIT_MOV_U8, jit::SLJIT_MEM | self.s_e, wide, jit::SLJIT_IMM, self.wide ? 1 : 0);
+    jit::sljit_emit_op1(self.c, jit::SLJIT_MOV_U8, jit::SLJIT_MEM | self.s_e, unicode, jit::SLJIT_IMM, self.unicode ? 1 : 0);
+    jit::sljit_get_local_base(self.c, self.t0, 0, self.off_frames);
+    self.mov(jit::SLJIT_MEM | self.s_e, self.lay.frames, self.t0, 0);
+    jit::sljit_get_local_base(self.c, self.t0, 0, self.off_undo);
+    self.mov(jit::SLJIT_MEM | self.s_e, self.lay.undo, self.t0, 0);
+    jit::sljit_get_local_base(self.c, self.t0, 0, self.off_regs);
+    self.mov(jit::SLJIT_MEM | self.s_e, self.lay.regs, self.t0, 0);
+    self.mov(self.t0, 0, jit::SLJIT_IMM, 0);
+    self.mov(jit::SLJIT_MEM | self.s_e, self.lay.heap_frames, self.t0, 0);
+    self.mov(jit::SLJIT_MEM | self.s_e, self.lay.heap_undo, self.t0, 0);
+    self.store_u32(self.s_e, self.lay.depth, self.t0);
+    self.store_u32(self.s_e, self.lay.undo_len, self.t0);
+    self.mov(self.t0, 0, jit::SLJIT_IMM, (long)re_native::RE_SMALL_FRAMES);
+    self.store_u32(self.s_e, self.lay.frame_cap, self.t0);
+    self.mov(self.t0, 0, jit::SLJIT_IMM, (long)re_native::RE_SMALL_SLOTS);
+    self.store_u32(self.s_e, self.lay.undo_cap, self.t0);
+    self.exec_ready = true;
+}
+
 // Emit one subject form's body and generate its code. Null when SLJIT refuses
 // to generate.
 fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
@@ -1656,19 +1764,16 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     defer mem::free(a.stubs);
     a.stub_len = 0;
 
-    // The arguments arrive in S0, S1 and S2: the program, the run being
-    // resumed, and the position to start at.
-    jit::sljit_emit_enter(c, 0, jit::SLJIT_ARGS3WWW, 5, 6, RE_JIT_LOCALS);
-    a.mov(a.t0, 0, a.s_e, 0);
-    a.mov(a.t1, 0, a.s_pos, 0);
-    a.mov(a.s_pos, 0, a.s_data, 0);
-    a.mov(a.s_e, 0, a.t1, 0);
-    a.mov(a.s_n, 0, a.t0, 0);
-    // The subject is reached through the run, at the offsets the struct has on
-    // this build.
-    a.mov(a.s_data, 0, jit::SLJIT_MEM | a.s_e, a.lay.in_data);
-    a.mov_u32(a.s_len, 0, jit::SLJIT_MEM | a.s_e, a.lay.in_len);
+    // The ReCall arrives in S0; the subject and the start are read from it.
+    a.frame_layout();
+    jit::sljit_emit_enter(c, 0, jit::SLJIT_ARGS1WW, 5, 6, a.locals);
+    a.mov(a.s_n, 0, a.s_e, 0);
+    a.mov(a.s_data, 0, jit::SLJIT_MEM | a.s_n, re_call_offset(RE_CALL_DATA));
+    a.mov_u32(a.s_len, 0, jit::SLJIT_MEM | a.s_n, re_call_offset(RE_CALL_LEN));
+    a.mov_u32(a.s_pos, 0, jit::SLJIT_MEM | a.s_n, re_call_offset(RE_CALL_START));
+    if (wide && a.unicode) a.emit_pair_start();
     a.emit_literal();
+    a.emit_exec_setup();
     a.mov(a.s_polls, 0, jit::SLJIT_IMM, re_native::RE_POLL_INTERVAL);
     if (a.scanning) {
         a.emit_scan();
@@ -1770,7 +1875,7 @@ fn bool re_jit_op_supported(ReOp op) {
 // inside the bound.
 fn bool re_jit_program_ok(re_native::ReNative* n, uint first_pc) {
     if (n.prog.insns.len == 0 || n.prog.insns.len > RE_JIT_MAX_INSNS) return false;
-    if (first_pc >= n.prog.insns.len) return false;
+    if (first_pc >= n.prog.insns.len || n.prog.register_count > RE_JIT_MAX_REGS) return false;
     // The position loop stays code: the attempt loop performs it with the
     // first-unit filter, so its three instructions are outside the body.
     for (uint i = first_pc; i < n.prog.insns.len; i++) {

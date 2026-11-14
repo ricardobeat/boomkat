@@ -118,6 +118,17 @@ struct ReExec {
     ReInterrupt* interrupt;
 }
 
+// The arguments of a compiled body: the subject, the position to start at,
+// the capture buffer, which holds 2 * capture_count ints, and the interrupt.
+// The body keeps the rest of the run in its own frame.
+struct ReCall {
+    char* data;
+    uint len;
+    uint start;
+    int* caps;
+    ReInterrupt* interrupt;
+}
+
 // The capture slots a match ends with, in code-unit positions.
 struct ReOutcome {
     uint start;
@@ -707,6 +718,38 @@ fn int re_walk_fresh(ReExec* e, ReNative* n, uint start, ReInterrupt* interrupt)
 // when it holds every group.
 fn int re_exec_run(ReNative* n, ReInput* in, uint start, void* code, int* caps, int cap_slots,
                    ReInterrupt* interrupt) @inline {
+    uint captures = n.prog.capture_count * 2;
+    int* out = caps;
+    if (@unlikely(captures > (uint)cap_slots)) out = (int*)mem::new_array(uint, (sz)captures).ptr;
+    int ret;
+    $if $feat(SLJIT):
+        if (code != null) {
+            ReCall call = { in.data, in.len, start, out, interrupt };
+            ret = ((boomkat::re_jit::ReJitFn)code)(&call);
+        } else {
+            ret = re_walk_run(n, in, start, out, interrupt);
+        }
+    $else
+        ret = re_walk_run(n, in, start, out, interrupt);
+    $endif
+    if (@unlikely(out != caps)) {
+        if (ret == RE_MATCH) mem::copy(caps, out, (usz)cap_slots * int::size);
+        mem::free(out);
+    }
+    if (ret != RE_MATCH) return ret;
+    re_normalize_caps(caps);
+    return RE_MATCH;
+}
+
+// Group 0 of a match whose bounds a lookbehind left unset.
+fn void re_normalize_caps(int* caps) @inline {
+    if (caps[0] == -1) caps[0] = 0;
+    if (caps[1] == -1) caps[1] = caps[0];
+}
+
+// The walk of `n` over `in` from `start`, with its run state on this frame and
+// the captures in `caps`, which holds every group.
+fn int re_walk_run(ReNative* n, ReInput* in, uint start, int* caps, ReInterrupt* interrupt) @noinline {
     ReExec e @noinit;
     e.in = *in;
     // A start position inside a surrogate pair backs up to the pair's first
@@ -729,30 +772,11 @@ fn int re_exec_run(ReNative* n, ReInput* in, uint start, void* code, int* caps, 
     e.undo = &undo_buf;
     e.regs = &regs_buf;
     e.capture = (uint*)caps;
-    uint captures = n.prog.capture_count * 2;
-    if (@unlikely(captures > (uint)cap_slots)) e.capture = mem::new_array(uint, (sz)captures).ptr;
     if (@unlikely(n.prog.register_count > RE_SMALL_REGS)) e.regs = mem::new_array(uint, (sz)n.prog.register_count).ptr;
-
-    int ret;
-    $if $feat(SLJIT):
-        if (code != null) {
-            ret = ((boomkat::re_jit::ReJitFn)code)(n, &e, (usz)start);
-        } else {
-            ret = re_walk_fresh(&e, n, start, interrupt);
-        }
-    $else
-        ret = re_walk_fresh(&e, n, start, interrupt);
-    $endif
+    int ret = re_walk_fresh(&e, n, start, interrupt);
     if (@unlikely(e.heap_frames != null || e.heap_undo != null)) e.release();
     if (@unlikely(e.regs != &regs_buf)) mem::free(e.regs);
-    if (@unlikely(e.capture != (uint*)caps)) {
-        if (ret == RE_MATCH) mem::copy(caps, e.capture, (usz)cap_slots * int::size);
-        mem::free(e.capture);
-    }
-    if (ret != RE_MATCH) return ret;
-    if (caps[0] == -1) caps[0] = 0;
-    if (caps[1] == -1) caps[1] = caps[0];
-    return RE_MATCH;
+    return ret;
 }
 
 // Run `native` over `input_len` units of `input` from `start_offset`, as
