@@ -2602,24 +2602,6 @@ fn bool OptBuild.not_value(&self) {
     return true;
 }
 
-// A call of the function's own body that has never run, past the last word that has (opt_ran_end),
-// while the function may still be rebuilt for what it learns: an exit (OptExit.UNPROFILED) instead
-// of a GENERIC, so that the rebuild can inline or specialize it. The code the build was made from
-// has not reached it yet, as a loop entered on stack replacement has not reached the loops after
-// it; a call skipped by a branch that ran past it keeps its GENERIC. Nothing after it on this path
-// is lowered.
-fn bool OptBuild.unprofiled_call(&self) {
-    if (self.cur_fn != 0 || self.wide || self.f.ic_entries == null || self.f.opt_relearns >= OPT_RELEARN_MAX) return false;
-    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.next_pc - 1];
-    if ((ic.feedback & (hobject::FB_CALL | hobject::FB_CTOR | hobject::FB_CALL_RAN)) != 0) return false;
-    if (self.next_pc - 1 <= opt_ran_end(self.f)) return false;
-    uint n = self.add(OptOp.EXIT, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
-    self.g.nodes[n].cc = OPT_EXIT_UNPROFILED;
-    self.snapshot(n);
-    self.cold_exit = true;
-    return true;
-}
-
 // THROW in an inlined body is a cold path: leave for the callee's baseline code, which throws.
 fn bool OptBuild.throw_exit(&self) {
     if (self.cur_fn == 0 || !self.sites[self.cur_site].flat) return self.generic();
@@ -4726,7 +4708,6 @@ fn bool OptBuild.lower_op(&self) {
             if (self.string_regexp_call()) return true;
             if (self.leaf_call()) return true;
             if (self.try_inline()) return true;
-            if (self.unprofiled_call()) return true;
             return self.generic();
         case TAILCALL_CALL:
         case TAILCALL_UNDEF_THIS:

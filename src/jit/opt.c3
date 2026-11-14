@@ -429,15 +429,6 @@ fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     return false;
 }
 
-// The last word of `f` whose cache records a run: a filled key, feedback or a call target.
-fn uint opt_ran_end(CompiledFunction* f) {
-    hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
-    for (uint i = f.code_count; i > 0; i--) {
-        if (ic[i - 1].feedback != 0 || (void*)ic[i - 1].key.borrow() != null) return i - 1;
-    }
-    return 0;
-}
-
 // Whether the CALL at word `i` of `f` has always called a String.prototype method the tier builds
 // as a STRING_REGEXP (OptBuild.string_regexp_call).
 fn bool opt_string_regexp_site(CompiledFunction* f, uint i) {
@@ -1131,10 +1122,6 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         && opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
     if (reason == OptExit.SLOW_PATH.ordinal && oc.f.ic_entries != null) widened = widened || opt_note_string_elem(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
-    if (reason == OptExit.UNPROFILED.ordinal && oc.f.ic_entries != null) {
-        DecodedBytecode d = bytecode::decode_bytecode(oc.f.code, oc.f.code_count, (uint)(ds.curr_pc - ds.code_base));
-        if (d.valid && inline_call_op(d.insn.op)) ((hobject::ICEntry*)oc.f.ic_entries)[d.payload_pc].feedback |= hobject::FB_CALL_RAN;
-    }
     if (reason == OptExit.UNPROFILED.ordinal || reason == OptExit.WATCH.ordinal || widened) {
         opt_relearn(h, oc);
         return 0;

@@ -3962,8 +3962,6 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
                 self.emit_inline_exit(n.fidx, n.pc, n.live_mask, OptExit.COLD.ordinal, false);
             } else if (n.cc == OPT_EXIT_LEAVE) {
                 self.a.emit_opt_leave(self.oc);
-            } else if (n.cc == OPT_EXIT_UNPROFILED) {
-                self.a.emit_opt_exit(self.oc, OptExit.UNPROFILED.ordinal, false);
             } else {
                 self.a.emit_opt_exit(self.oc, OptExit.COLD.ordinal, false);
             }
