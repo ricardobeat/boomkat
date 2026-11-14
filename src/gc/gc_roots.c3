@@ -271,6 +271,9 @@ fn bool Heap.gc_prune_weak_step(&self, uint budget) {
         hobject::VarICEntry* entries = (hobject::VarICEntry*)cf.var_ic_entries;
         hobject::VarICEntry* vie = &entries[self.gc_weak_entry_index++];
         if (vie.env == null && vie.bindings == null && vie.search_head == null) continue;
+        // A global instruction's entry is not tied to the chain it was filled from: its hits never
+        // compare the head, so a dead head only needs replacing with the owner.
+        if (self.gc_weak_entry_index <= cf.code_count && bytecode::is_global_var_op(cf.code[self.gc_weak_entry_index - 1].op)) vie.search_head = vie.env;
         bool survive = false;
         if (hobject::env_record_is_allocated(vie.env)
             && hobject::env_record_get_epoch(vie.env) == self.env_mark_epoch

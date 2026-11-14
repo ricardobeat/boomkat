@@ -1411,6 +1411,22 @@ fn bool is_imm_form(Opcode op) @inline => op.ordinal >= Opcode.ADDI.ordinal && o
 // Fused compare-and-branch forms, register and immediate: A is a jump offset.
 fn bool is_cmp_branch(Opcode op) @inline => op.ordinal >= Opcode.JMP_NLT.ordinal && op.ordinal <= Opcode.JMP_SNEQI.ordinal;
 
+// The instructions that read or write a global binding through their variable cache entry with no
+// test of the scope chain: the name resolves in the global objects whatever chain runs them.
+fn bool is_global_var_op(Opcode op) {
+    switch (op) {
+        case GETGLOBAL:
+        case PUTGLOBAL:
+        case INC_GLOBAL:
+        case DEC_GLOBAL:
+        case CALL_GLOBAL:
+        case TAILCALL_GLOBAL:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // The bitwise and shift immediates are unsigned; every other immediate is signed.
 fn bool imm_is_unsigned(Opcode op) @inline => op.ordinal >= Opcode.BANDI.ordinal && op.ordinal <= Opcode.USHRI.ordinal;
 
