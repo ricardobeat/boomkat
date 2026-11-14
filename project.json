@@ -302,6 +302,36 @@
         "vendor/sljit/sljit_src"
       ]
     },
+    "boomkat_jit_gc_verify": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [
+        "GC_STRESS",
+        "GC_VERIFY",
+        "PRINT",
+        "CONSOLE",
+        "THREADED_DISPATCH",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "boomkat_threaded_asan": {
       "type": "executable",
       "sources": [

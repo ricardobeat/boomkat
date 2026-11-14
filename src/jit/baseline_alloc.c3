@@ -1,17 +1,17 @@
 // Baseline tier allocation ops: NEWARR, NEWARR_CONST, NEWARR_FILL, NEWOBJ and NEWOBJ_SHAPE.
 //
-// A fresh ordinary object or short literal array is built inline. The pool pop
-// and the allocation accounting are one shared subroutine (ALLOC_SUB); the
+// A fresh ordinary object or short literal array is built inline. The pool's
+// bump allocation and the accounting are one shared subroutine (ALLOC_SUB); the
 // caller writes the header the allocator would (hobject::plain_object_flags and
 // its siblings give both the same words). The inline path takes only the state
 // in which Heap.adopt_object does no more than count and shade: the trigger
 // spent only once a collection is requested or running, the memory-check
-// budget not about to expire, a page with a free or never-used block that is
-// not the pool's last, room in the young list and, while marking, room in the
-// gray queue: a new object is shaded gray, as Heap.shade_new_header does, so
-// its initializing stores need no barrier. Anything else calls the C helper
-// that runs the threaded handler's body, which does the rest. Neither path collects: the trigger only requests a collection for the
-// next safepoint.
+// budget not about to expire, a block left in the pool's current run and,
+// while marking, room in the gray queue: a new object is shaded gray, as
+// Heap.shade_new_header does, so its initializing stores need no barrier.
+// Anything else calls the C helper that runs the threaded handler's body,
+// which does the rest. Neither path collects: the trigger only requests a
+// collection for the next safepoint.
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::vm;
@@ -32,7 +32,7 @@ $endif
 
 // An inline object allocation: its pool, header words and slot fill.
 struct InlineAlloc {
-    long pool;           // offset of the PagePool in the Heap
+    long pool;           // offset of the ObjectPool in the Heap
     uint flags;
     uint gc;
     uint shape_id;
@@ -134,17 +134,18 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = ALLOC_SUB });
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    // HObject.init_header, with the reachable bit ALLOC_SUB left in R1, then the prototype and
-    // the fill the caller's allocator adds.
-    sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, SLJIT_IMM, (long)p.flags);
-    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, 0, R1, 0);
+    // HObject.init_header, with the GcBits ALLOC_SUB left in R1, then the prototype and the fill
+    // the caller's allocator adds.
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, 0, SLJIT_IMM, (long)p.flags);
     if (p.site != null) {
-        sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&p.site.gc);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM, (long)(usz)&p.site.gc);
+        sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, R2, 0);
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, R1, 0);
         sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&p.site.capacity);
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_capacity, R1, 0);
     } else {
-        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, SLJIT_IMM, (long)p.gc);
+        sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, SLJIT_IMM, (long)p.gc);
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, R1, 0);
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_capacity, SLJIT_IMM, (long)p.prop_capacity);
     }
     if (p.proto_off == PROTO_ON_STACK) {
@@ -215,15 +216,34 @@ fn void Asm.emit_fill_elements(&self) {
         void* pinned = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)types::STRING_PINNED_REFCOUNT);
         sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, 1);
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R4, l.str_refcount, R1, 0);
+        self.emit_needs_teardown();
         sljit_set_label(not_string, sljit_emit_label(c));
         sljit_set_label(pinned, sljit_emit_label(c));
     }
 }
 
-// The pool pop and accounting of Heap.alloc_plain_object / Heap.alloc_inline_array
-// as PagePool.alloc_uninit and Heap.adopt_object do them. In: R1 the PagePool.
-// Out: R0 the block, registered in the young list and counted, and R1 the
-// reachable bit for its flags; or R0 0 with nothing changed. Uses R1 to R4.
+// heap::needs_teardown for the fresh object in R0, which now holds a counted string: the
+// object's bit in its page's teardown bitmap. Uses R1 and R4.
+fn void Asm.emit_needs_teardown(&self) {
+    void* c = self.c;
+    // The word: the page, plus the bitmap's offset, plus the granule over 64 words.
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R0, 0, SLJIT_IMM, pagepool::PAGE_SIZE - 1);
+    sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R1, 0, SLJIT_IMM, pagepool::GRANULE_SHIFT + 6);
+    sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 3);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R0, 0, SLJIT_IMM, -(long)pagepool::PAGE_SIZE);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R4, 0);
+    // The bit: the granule's low six bits.
+    sljit_emit_op2(c, SLJIT_LSHR, R4, 0, R0, 0, SLJIT_IMM, pagepool::GRANULE_SHIFT);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, 63);
+    sljit_emit_op2(c, SLJIT_SHL, R4, 0, SLJIT_IMM, 1, R4, 0);
+    long off = self.lay.page_teardown;
+    sljit_emit_op2(c, SLJIT_OR, SLJIT_MEM | R1, off, SLJIT_MEM | R1, off, R4, 0);
+}
+
+// The bump allocation and accounting of Heap.alloc_plain_object / Heap.alloc_inline_array
+// as ObjectPool.alloc and Heap.adopt_object do them. In: R1 the ObjectPool. Out: R0 the block,
+// counted, and R1 the bits shade_new_header adds to its GcBits word: while marking, the old bit,
+// with the block marked in its page; or R0 0 with nothing changed. Uses R1 to R4.
 fn void Asm.emit_alloc_body(&self) {
     void* c = self.c;
     Layout* l = self.lay;
@@ -247,39 +267,13 @@ fn void Asm.emit_alloc_body(&self) {
     sljit_set_label(running, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, hp, l.heap_mem_budget);
     fail.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R3, 0, SLJIT_IMM, 1));
-    // The oldest page with room, which must keep room: the C code unlinks a page once it fills.
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | R1, l.pool_avail_head);
-    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R3, l.page_used);
-    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, l.pool_capacity);
-    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, R0, 0));
-    // Room in the young list.
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, hp, l.heap_young_size);
-    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, hp, l.heap_young_cap));
-    // The block: the page's freelist head, else its next never-used one.
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, m | R3, l.page_freelist);
-    void* bump = sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | R2, 0);
-    sljit_emit_op1(c, SLJIT_MOV, m | R3, l.page_freelist, R0, 0);
-    void* got = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(bump, sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, m | R3, l.page_bump);
-    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
-    // The next bump pointer is null once no further block fits in the page.
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | R1, l.pool_block_size);
-    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R2, 0, R1, 0);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R0, 0, R1, 0);
-    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R3, 0, SLJIT_IMM, pagepool::PAGE_SIZE);
-    void* fits = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, R4, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 0);
-    sljit_set_label(fits, sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, m | R3, l.page_bump, R0, 0);
-    sljit_set_label(got, sljit_emit_label(c));
-    // R2 is the block, R3 its page. Commit: the page's count, then Heap.adopt_object's.
-    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R3, l.page_used);
-    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
-    sljit_emit_op1(c, SLJIT_MOV_U32, m | R3, l.page_used, R4, 0);
+    // The block at the pool's bump pointer, when a whole one fits below its limit.
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, m | R1, l.pool_bump);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | R1, l.pool_block_size);
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, R2, 0, R3, 0);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER, R3, 0, m | R1, l.pool_limit));
+    sljit_emit_op1(c, SLJIT_MOV, m | R1, l.pool_bump, R3, 0);
+    // R2 is the block. Heap.adopt_object's counts.
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, hp, l.heap_trigger);
     sljit_emit_op2(c, SLJIT_SUB, R4, 0, R4, 0, SLJIT_IMM, 1);
     sljit_emit_op1(c, SLJIT_MOV, hp, l.heap_trigger, R4, 0);
@@ -296,14 +290,9 @@ fn void Asm.emit_alloc_body(&self) {
     sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
     sljit_emit_op1(c, SLJIT_MOV, hp, l.heap_alloc_since, R4, 0);
     sljit_set_label(idle, sljit_emit_label(c));
-    // register_allocation: append to the young list.
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, hp, l.heap_young_entries);
-    sljit_emit_op1(c, SLJIT_MOV, R4, 0, hp, l.heap_young_size);
-    sljit_emit_op1(c, SLJIT_MOV, mem_index(R3, R4), 3, R2, 0);
-    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
-    sljit_emit_op1(c, SLJIT_MOV, hp, l.heap_young_size, R4, 0);
-    // shade_new_header: while marking, the block joins the gray queue (gray_push) and R1 is the
-    // reachable bit the caller ORs into the header's flags.
+    // shade_new_header: while marking, the block joins the gray queue (gray_push), is marked in
+    // its page's bitmap for the cycle (Heap.gc_alloc_bitmap; the page has the cycle's epoch) and
+    // is promoted.
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U8, R4, 0, hp, l.heap_gc_phase);
     void* unshaded = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
@@ -318,7 +307,20 @@ fn void Asm.emit_alloc_body(&self) {
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, hp, l.heap_gray_count);
     sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
     sljit_emit_op1(c, SLJIT_MOV_U32, hp, l.heap_gray_count, R4, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, l.reachable_mask);
+    // The bitmap word: the page, plus the bitmap's offset, plus the granule over 64 words.
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, pagepool::PAGE_SIZE - 1);
+    sljit_emit_op2(c, SLJIT_XOR, R4, 0, R2, 0, R3, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, hp, l.heap_alloc_bitmap);
+    sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R3, 0, SLJIT_IMM, pagepool::GRANULE_SHIFT);
+    sljit_emit_op2(c, SLJIT_LSHR, R0, 0, R3, 0, SLJIT_IMM, 6);
+    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 3);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, R0, 0);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, 63);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 1);
+    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, R3, 0);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, m | R4, 0);
+    sljit_emit_op1(c, SLJIT_MOV, m | R4, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, l.old_mask);
     sljit_set_label(unshaded, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
@@ -468,6 +470,7 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
         void* pinned = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)types::STRING_PINNED_REFCOUNT);
         sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, 1);
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R4, l.str_refcount, R1, 0);
+        self.emit_needs_teardown();
         sljit_set_label(not_string, sljit_emit_label(c));
         sljit_set_label(pinned, sljit_emit_label(c));
     }

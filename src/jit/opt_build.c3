@@ -1515,7 +1515,7 @@ fn void OptBuild.fold_binding(&self, uint k) {
         n = self.const_f64(v.get_number_or_fastint());
     } else {
         // Its death would let its address name another object: folded, it moves the epoch first.
-        ((HObject*)v.get_heapptr()).gc.folded = true;
+        ((HObject*)v.get_heapptr()).mark_folded();
         n = self.add(OptOp.CONST_OBJ, OptRep.VALUE, NO_NODE, NO_NODE, (long)b.value);
     }
     self.set(self.w.a, n);
@@ -1784,7 +1784,7 @@ fn HObject* constant_callee(TVal v, CompiledFunction* cf) {
     if (fo.callable_kind() != hobject::CallableKind.COMPILED_FN || fo.flags.exotic_proxyobj || fo.flags.obj_class != hobject::ObjClass.FUNCTION) return null;
     hobject::HObjectFunction* fx = &(*fo.extra_ptr()).func;
     if (fx.comp_func != cf || fx.var_env == null || (fx.lex_env != null && fx.lex_env.flags.is_with)) return null;
-    fo.gc.prototype_observed = true;
+    fo.observe_prototype();
     return fo;
 }
 

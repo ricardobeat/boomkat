@@ -525,7 +525,7 @@ fn bool jit_opt_sink_check(Dispatch* ds, HObject* ctor, jit::OptSinkSite* site) 
         }
         if (owner[k] == null) return false;
     }
-    for (HObject* cur = first; cur != null; cur = cur.prototype) cur.gc.prototype_observed = true;
+    for (HObject* cur = first; cur != null; cur = cur.prototype) cur.observe_prototype();
     for (uint k = 0; k < site.read_count; k++) {
         site.read_owner[k] = owner[k];
         site.read_off[k] = off[k];
@@ -582,7 +582,7 @@ $if types::USE_NANBOX:
     for (HObject* cur = proto; cur != null; cur = cur.prototype) {
         if (!hobject::plain_property_object(cur) || cur.in_dict_mode(h)) return false;
     }
-    for (HObject* cur = proto; cur != null; cur = cur.prototype) cur.gc.prototype_observed = true;
+    for (HObject* cur = proto; cur != null; cur = cur.prototype) cur.observe_prototype();
     TVal value;
     value.set_object(proto);
     site.proto_bits = value.bits;

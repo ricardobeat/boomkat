@@ -97,7 +97,7 @@ struct Layout {
     long class_regexp;
     long old_mask;
     long remembered_mask;
-    long reachable_mask;
+
     long heap_gc_kind;
     long heap_gc_oracle;
     long accessor_mask;
@@ -126,15 +126,12 @@ struct Layout {
     long me_proto_shape;
     long me_epoch;
     long me_accessor;
-    // Inline allocation (baseline_alloc.c3): the heap's counters, young list and
-    // pools, and the pool and page fields the bump pop reads.
+    // Inline allocation (baseline_alloc.c3): the heap's counters and pools, and
+    // the pool and page fields the bump allocation and its mark read.
     long heap_trigger;
     long heap_alloc_since;
     long heap_live;
     long heap_mem_budget;
-    long heap_young_size;
-    long heap_young_cap;
-    long heap_young_entries;
     long heap_gc_requested;
     long heap_gray_items;
     long heap_gray_len;
@@ -149,12 +146,14 @@ struct Layout {
     long heap_pool_shaped;
     long heap_pool_arrays;
     long pool_size;
-    long pool_avail_head;
+    long pool_bump;
+    long pool_limit;
     long pool_block_size;
-    long pool_capacity;
-    long page_freelist;
-    long page_bump;
-    long page_used;
+    long page_mark_epoch;
+    long page_mark;
+    long page_teardown;
+    long heap_major_epoch;
+    long heap_alloc_bitmap;
     long undefined_bits;
     long obj_array_used;
     long obj_size_array;
@@ -264,9 +263,6 @@ fn Layout* layout() {
     l.heap_alloc_since = (char*)&h.gc_alloc_since_begin - base;
     l.heap_live = (char*)&h.live_obj_count - base;
     l.heap_mem_budget = (char*)&h.mem_check_budget - base;
-    l.heap_young_size = (char*)&h.objects_young.len - base;
-    l.heap_young_cap = (char*)&h.objects_young.cap - base;
-    l.heap_young_entries = (char*)&h.objects_young.data - base;
     l.heap_gc_requested = (char*)&h.gc_requested - base;
     l.heap_gray_items = (char*)&h.gc_gray.items - base;
     l.heap_gray_len = (char*)&h.gc_gray.len - base;
@@ -280,15 +276,17 @@ fn Layout* layout() {
     l.heap_pool_compact = (char*)&h.obj_pool_compact - base;
     l.heap_pool_shaped = (char*)&h.obj_pool_shaped - base;
     l.heap_pool_arrays = (char*)&h.obj_pool_inline_arrays - base;
-    pagepool::PagePool* pool = (pagepool::PagePool*)base;
-    pagepool::PoolPage* page = (pagepool::PoolPage*)base;
-    l.pool_size = pagepool::PagePool::size;
-    l.pool_avail_head = (char*)&pool.avail_head - base;
+    pagepool::ObjectPool* pool = (pagepool::ObjectPool*)base;
+    pagepool::ObjPage* page = (pagepool::ObjPage*)base;
+    l.pool_size = pagepool::ObjectPool::size;
+    l.pool_bump = (char*)&pool.bump - base;
+    l.pool_limit = (char*)&pool.limit - base;
     l.pool_block_size = (char*)&pool.block_size - base;
-    l.pool_capacity = (char*)&pool.capacity - base;
-    l.page_freelist = (char*)&page.freelist - base;
-    l.page_bump = (char*)&page.bump - base;
-    l.page_used = (char*)&page.used - base;
+    l.page_mark_epoch = (char*)&page.mark_epoch - base;
+    l.page_mark = (char*)&page.mark - base;
+    l.page_teardown = (char*)&page.teardown - base;
+    l.heap_major_epoch = (char*)&h.gc_major_epoch - base;
+    l.heap_alloc_bitmap = (char*)&h.gc_alloc_bitmap - base;
     l.obj_array_used = (char*)&o.array_used - base;
     l.obj_size_array = hobject::OBJ_SIZE_ARRAY;
     hobject::PropValue undef;
@@ -346,9 +344,6 @@ fn Layout* layout() {
     g = {};
     g.remembered = true;
     l.remembered_mask = (long)(uint)g;
-    types::HeapFlags hf;
-    hf.reachable = true;
-    l.reachable_mask = (long)(uint)hf;
     $assert heap::GcKind::size == 1 && bool::size == 1;
     g = {};
     g.prototype_observed = true;
@@ -629,18 +624,36 @@ fn void Asm.emit_publish_body(&self) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
     publishable.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
     // While marking, as th_can_publish: an object the collector has no mark
-    // left to give, being reachable already or old during a minor collection.
+    // left to give. In a minor that is an old one, marked objects among them;
+    // in a major a pooled object whose page bitmap has its mark. Others call.
     publishable.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, 0);
-    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.reachable_mask);
-    publishable.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_kind);
-    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcKind.MAJOR.ordinal));
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_oracle);
     fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_kind);
+    void* major = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcKind.MAJOR.ordinal);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.obj_gc);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.old_mask);
     fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    publishable.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(major, sljit_emit_label(c));
+    hobject::ObjFlags fallback;
+    fallback.pool_fallback = true;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, 0);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, (long)(uint)fallback);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    // The page's mark byte for the object: its granule over eight, with the
+    // bit the granule's low three bits pick, taken from the value in R0.
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, pagepool::PAGE_SIZE - 1);
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R2, 0, R3, 0);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM | R2, l.page_mark_epoch, SLJIT_MEM | self.heap, l.heap_major_epoch));
+    sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R3, 0, SLJIT_IMM, pagepool::GRANULE_SHIFT + 3);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, l.page_mark);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, mem_index(R2, R3), 0);
+    sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R0, 0, SLJIT_IMM, pagepool::GRANULE_SHIFT);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, 7);
+    sljit_emit_op2(c, SLJIT_LSHR, R2, 0, R2, 0, R3, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, 1);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
     publishable.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, mem_index(self.regs, R1), 3, R0, 0);
     // track_heap_store
