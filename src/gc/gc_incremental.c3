@@ -143,10 +143,11 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
         if (self.live_obj_count > 0) self.live_obj_count--;
         if (cur.is_object()) {
             HObject* obj = (HObject*)cur;
-            // Freeing costs one unit per slot, as hobject_free_step charges.
+            // Freeing costs one unit per slot, as hobject_free_step charges. An
+            // object whose slots are all in its header block is freed whole.
             uint slots = obj.prop_count + obj.array_size;
-            if (slots < budget && hobject::hobject_free_inline(obj, self)) {
-                budget -= slots;
+            if (hobject::hobject_free_inline(obj, self)) {
+                budget = slots >= budget ? 0 : budget - slots;
                 continue;
             }
             self.gc_free_object = obj;

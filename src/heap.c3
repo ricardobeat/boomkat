@@ -4020,14 +4020,17 @@ fn void Heap.free_string(&self, hstring::HString* s) {
  * collector alone, so a release of one of those does nothing.
  */
 fn void Heap.decref(&self, HeapHeader* hdr) {
-    // Pinned headers, meaning builtin strings, well-known symbols, and the
-    // small-int cache, keep a fixed refcount. See HeapHeader.set_pinned.
-    if (!hdr.is_string() || hdr.is_pinned()) {
-        return;
-    }
-    hstring::HString* s = (hstring::HString*)hdr;
+    if (!hdr.is_string()) return;
+    self.release_string((hstring::HString*)hdr);
+}
+
+// Drop a counted reference to a string. Pinned headers, meaning builtin
+// strings, well-known symbols, and the small-int cache, keep a fixed refcount.
+// See HeapHeader.set_pinned.
+fn void Heap.release_string(&self, hstring::HString* s) @inline {
+    if (s.refcount == types::STRING_PINNED_REFCOUNT) return;
     uint table_reference = s.flags.is_interned ? 1u : 0u;
-    if (--hdr.refcount <= table_reference) self.zct_push(s);
+    if (--s.refcount <= table_reference) self.zct_push(s);
 }
 
 // ============================================================================
