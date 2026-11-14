@@ -299,6 +299,7 @@ fn int main(String[] args) {
         hp.jit_stats.count_ops = jit_count_ops;
         hp.jit_stats.dump_feedback = jit_dump_feedback;
         boomkat::re_jit::print_code_map = jit_dump_feedback;
+        boomkat::re_jit::print_code_bytes = jit_dump_code;
         hp.jit_stats.dump_code = jit_dump_code;
         hp.jit_stats.timing = jit_stats;
     $endif

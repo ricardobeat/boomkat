@@ -17,7 +17,7 @@ lines of --jit-dump-feedback to identify it); `opt` marks optimized code.
 --annotate PATTERN prints the disassembly of the hottest engine function whose name contains
 PATTERN with the samples at each instruction. --annotate-code fn#N does the same for the optimized
 code of function N (its hottest body), node by node, leaving out the nodes no sample fell in; it
-disassembles with llvm-mc. Call chains follow frame pointers: a function that
+disassembles with llvm-mc. --annotate-code re#N shows the compiled regexp body N. Call chains follow frame pointers: a function that
 keeps none (generated code may not) ends its chain.
 """
 import argparse, bisect, collections, os, platform, re, shutil, subprocess, sys, tempfile
@@ -168,13 +168,19 @@ for l in lines[1:]:
         if mp:
             cat['generated code'] += 1
             tag = mp['fn'] + (' opt' if mp['opt'] else '')
-            e = [x for x in mp['ents'] if x[0] <= pc]
-            hot['%s +0x%x (op %s)' % (tag, pc - mp['start'], e[-1][1] if e else 'entry')] += 1
-            fns[tag + ' n' + str(len(mp['ents']))] += 1
-            ops[(tag, e[-1][1] if e else 'entry')] += 1
-            if mp['opt'] and mp['fn'] == a.annotate_code:
-                code_hits[mp['start']][pc] += 1
+            # Optimized code is laid out by graph node, not by bytecode instruction: its samples
+            # go to the node whose code holds them, the out-of-line stubs after the last one included.
             nd = node_at(mp['start'], pc) if mp['opt'] else None
+            if nd:
+                where = '%s pc %s' % (nd[1], nd[2]) if nd[2] != '' else nd[1]
+            else:
+                e = [x for x in mp['ents'] if x[0] <= pc]
+                where = e[-1][1] if e else 'entry'
+            hot['%s +0x%x (%s)' % (tag, pc - mp['start'], where)] += 1
+            fns[tag + ' n' + str(len(mp['ents']))] += 1
+            ops[(tag, where)] += 1
+            if mp['fn'] == a.annotate_code:
+                code_hits[mp['start']][pc] += 1
             if nd:
                 nodekinds[nd[1]] += 1
                 op = nd[1] if nd[1].startswith('GENERIC') or not nd[4] else '%s (%s)' % (nd[1], nd[4])
@@ -262,7 +268,7 @@ if a.annotate_code:
                 off += len(m.group(1).split(','))
         hits = code_hits[start]
         nodes = onodes.get(start, (fn, []))[1]
-        print('\n-- %s optimized code: %d samples (%.1f%%), per instruction, nodes with samples' % (fn, n, 100.0 * n / max(total, 1)))
+        print('\n-- %s code: %d samples (%.1f%%), per instruction, nodes with samples' % (fn, n, 100.0 * n / max(total, 1)))
         groups = []  # (node label, [(offset, text, samples)])
         k = 0
         for o, text in insns:
@@ -271,7 +277,7 @@ if a.annotate_code:
                 groups.append(('%s pc %s %s%s' % (nd[1], nd[2], nd[4], ' fn %s' % nd[3] if nd[3] not in ('', '0') else ''), []))
                 k += 1
             if not groups:
-                groups.append(('prologue', []))
+                groups.append(('prologue' if nodes else 'body', []))
             groups[-1][1].append((o, text, hits.get(start + o, 0)))
         for label, rows in groups:
             g = sum(r[2] for r in rows)

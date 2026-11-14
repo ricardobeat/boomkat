@@ -87,6 +87,8 @@ struct ReNative {
     uint lit_rare;
     int lit_where;
     bool lit_whole;
+    // Whether the pattern names a group.
+    bool named;
     // The program as machine code, one body per subject form, and the bitmaps
     // those bodies address (src/re/jit.c3). All null when the emitter declined
     // the program, which leaves it on the walk.
@@ -835,6 +837,7 @@ fn void* re_native_prepare(void* re) @export("re_native_prepare") {
     n.lit_rare = (uint)rare;
     n.lit_where = where;
     n.lit_whole = whole != 0;
+    n.named = re_bindings::re_get_groupnames(re) != null;
     if (n.scanning) {
         int wide, single, at_start, at_end;
         n.has_first_set = re_bindings::re_first_set(re, &n.fs_bits[0], &wide, &single, &at_start, &at_end);

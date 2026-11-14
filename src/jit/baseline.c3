@@ -2042,7 +2042,8 @@ fn void Asm.truth_test(&self, uint r, Jumps* truthy, Jumps* falsy) {
 }
 
 // truth_test of the value in R0.
-fn void Asm.truth_test_r0(&self, Jumps* truthy, Jumps* falsy) {
+// With `strings`, a non-empty string is found truthy in line as well.
+fn void Asm.truth_test_r0(&self, Jumps* truthy, Jumps* falsy, bool strings = false) {
     void* c = self.c;
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_BOOL);
     void* not_bool = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, 2);
@@ -2057,6 +2058,13 @@ fn void Asm.truth_test_r0(&self, Jumps* truthy, Jumps* falsy) {
     sljit_set_label(not_int, sljit_emit_label(c));
     falsy.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
     falsy.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_NULL));
+    if (strings) {
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+        void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
+        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, self.lay.str_length);
+        truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+        sljit_set_label(not_string, sljit_emit_label(c));
+    }
     self.call_test_sub(TRUTH_SUB, truthy, falsy);
 }
 

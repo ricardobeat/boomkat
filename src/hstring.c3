@@ -118,6 +118,10 @@ bitstruct HStringFlags : uint {
     // reached the table's own level (interned at 1, registry at 0) rather
     // than count 0 through decref, so a native frame may still borrow it.
     bool  zct_deferred      : 17;
+    // Whether the units hold a `$` (has_dollar) is known: a replacement
+    // template is searched for one once.
+    bool  dollar_known      : 18;
+    bool  has_dollar        : 19;
 }
 
 // ============================================================================
@@ -556,6 +560,7 @@ fn bool HString.try_append_in_place(&self, Units tail) {
     usz tail_off = (usz)self.length << (wide ? 1 : 0);
     copy_units(dest + tail_off, wide, tail);
     self.length = (uint)need;
+    self.flags.dollar_known = false;
     dest[self.byte_len()] = 0;
     if (wide) dest[self.byte_len() + 1] = 0;
 
@@ -799,12 +804,21 @@ fn int find_bytes(char[] haystack, char[] needle, uint from = 0) {
     if (needle.len > haystack.len) return -1;
     sz last = haystack.len - needle.len;
     sz i = (sz)from;
+    char first = needle[0];
     while (i <= last) {
-        // Stop the scan where the needle no longer fits.
-        char* hit = libc::memchr(&haystack[i], needle[0], (usz)(last - i + 1));
-        if (hit == null) return -1;
-        i = (sz)(hit - haystack.ptr);
-        if (haystack[i : needle.len] == needle) return (int)i;
+        // A short span is scanned in line; memchr's setup costs more than it.
+        if (last - i < 8) {
+            while (i <= last && haystack[i] != first) i++;
+            if (i > last) return -1;
+        } else {
+            // Stop the scan where the needle no longer fits.
+            char* hit = libc::memchr(&haystack[i], first, (usz)(last - i + 1));
+            if (hit == null) return -1;
+            i = (sz)(hit - haystack.ptr);
+        }
+        usz k = 1;
+        while (k < needle.len && haystack[(usz)i + k] == needle[k]) k++;
+        if (k == needle.len) return (int)i;
         i++;
     }
     return -1;

@@ -523,7 +523,7 @@ fn HString* regexp_slice(Heap* heap, HString* s, uint from, uint to) @inline {
 // The null-prototype `groups` object of a match: each group name, in pattern
 // order, set to its capture.
 fn void regexp_fill_groups(BuiltinContext* ctx, HObject* groups, void* re_data, HString* input_str,
-                           int* caps_start, int* caps_end, int num_caps) {
+                           int* caps, int num_caps) {
     groups.prototype = null;
     int name_count = re_bindings::re_get_capture_count(re_data) - 1;
     char* p = re_bindings::re_get_groupnames(re_data);
@@ -532,8 +532,8 @@ fn void regexp_fill_groups(BuiltinContext* ctx, HObject* groups, void* re_data, 
         if (name_len > 0) {
             HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
             TVal cap_val;
-            if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
-                cap_val.set_string_borrowed(regexp_slice(ctx.heap, input_str, (uint)caps_start[gi], (uint)caps_end[gi]));
+            if (gi < num_caps && caps[2 * gi + 2] >= 0 && caps[2 * gi + 3] >= 0) {
+                cap_val.set_string_borrowed(regexp_slice(ctx.heap, input_str, (uint)caps[2 * gi + 2], (uint)caps[2 * gi + 3]));
             } else {
                 cap_val.set_undefined();
             }
@@ -553,10 +553,10 @@ fn void regexp_fill_groups(BuiltinContext* ctx, HObject* groups, void* re_data, 
 // Its elements are dense, a non-participating capture an `undefined` element
 // of a packed array.
 fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HString* input_str,
-                                      int out_start, int out_end,
-                                      int* caps_start, int* caps_end, int num_caps,
-                                      bool with_indices) {
+                                      int* caps, int num_caps, bool with_indices) {
     Heap* heap = ctx.heap;
+    int out_start = caps[0];
+    int out_end = caps[1];
     uint elements = (uint)(1 + num_caps);
 
     // Without `d` the named properties are index, input, groups and length,
@@ -576,8 +576,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
         if (catch err = arr_raw) return null;
         HObject* arr = arr_raw;
         heap.set_prototype(arr, heap.array_proto);
-        regexp_fill_match_result(ctx, arr, heap.match_shape, re_data, input_str, out_start, out_end,
-                                 caps_start, caps_end, num_caps);
+        regexp_fill_match_result(ctx, arr, heap.match_shape, re_data, input_str, caps, num_caps);
         return arr;
     }
 
@@ -586,7 +585,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     HObject* arr = arr_raw;
     if (!arr.reserve_array_storage(hobject::PROPS_INITIAL_CAPACITY, elements, heap)) return null;
     heap.set_prototype(arr, heap.array_proto);
-    bool packed = regexp_fill_match_elements(heap, arr, input_str, out_start, out_end, caps_start, caps_end, num_caps);
+    bool packed = regexp_fill_match_elements(heap, arr, input_str, caps, num_caps);
     int total_captures = 1 + num_caps;
 
     TVal idx_tv; idx_tv.set_fastint((long)out_start);
@@ -597,11 +596,11 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.INPUT), input_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // groups property
-    char* group_names = re_bindings::re_get_groupnames(re_data);
+    char* group_names = re_bindings::re_has_group_names(re_data) ? re_bindings::re_get_groupnames(re_data) : null;
     if (group_names != null) {
         HObject*? groups_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try groups = groups_raw) {
-            regexp_fill_groups(ctx, groups, re_data, input_str, caps_start, caps_end, num_caps);
+            regexp_fill_groups(ctx, groups, re_data, input_str, caps, num_caps);
             TVal groups_val; groups_val.set_object(groups);
             arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_val, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
@@ -634,9 +633,9 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 HObject* pair = pair_raw;
                 ctx.heap.set_prototype(pair, ctx.heap.array_proto);
                 TVal pair_tv;
-                if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                    TVal ps; ps.set_fastint((long)caps_start[i]);
-                    TVal pe; pe.set_fastint((long)caps_end[i]);
+                if (caps[2 * i + 2] >= 0 && caps[2 * i + 3] >= 0) {
+                    TVal ps; ps.set_fastint((long)caps[2 * i + 2]);
+                    TVal pe; pe.set_fastint((long)caps[2 * i + 3]);
                     pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC, ctx.heap);
                     pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC, ctx.heap);
                     pair_tv.set_object(pair);
@@ -658,12 +657,12 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                         if (name_len > 0) {
                             HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
                             TVal pair_tv;
-                            if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
+                            if (gi < num_caps && caps[2 * gi + 2] >= 0 && caps[2 * gi + 3] >= 0) {
                                 HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
                                 if (try pair = pair_raw) {
                                     ctx.heap.set_prototype(pair, ctx.heap.array_proto);
-                                    TVal ps; ps.set_fastint((long)caps_start[gi]);
-                                    TVal pe; pe.set_fastint((long)caps_end[gi]);
+                                    TVal ps; ps.set_fastint((long)caps[2 * gi + 2]);
+                                    TVal pe; pe.set_fastint((long)caps[2 * gi + 3]);
                                     pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC, ctx.heap);
                                     pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC, ctx.heap);
                                     pair_tv.set_object(pair);
@@ -752,23 +751,20 @@ fn bool regexp_init_last_index(Heap* heap, HObject* rx) {
 }
 
 // Writes the elements of a match array whose dense slots hold nothing yet:
-// the match, then each capture or `undefined`. Returns whether a capture did
-// not participate, which makes the array packed.
-fn bool regexp_fill_match_elements(Heap* heap, HObject* arr, HString* input_str, int out_start, int out_end,
-                                   int* caps_start, int* caps_end, int num_caps) {
+// each group of `caps` (the match first) or `undefined`. Returns whether a
+// capture did not participate, which makes the array packed.
+fn bool regexp_fill_match_elements(Heap* heap, HObject* arr, HString* input_str, int* caps, int num_caps) {
     hobject::PropValue* part = arr.array_part();
-    TVal elem;
-    elem.set_string_borrowed(regexp_slice(heap, input_str, (uint)out_start, (uint)out_end));
-    heap.init_slot_ref(arr, &part[0], &elem);
     uint unmatched = 0;
-    for (int i = 0; i < num_caps; i++) {
-        if (caps_start[i] < 0 || caps_end[i] < 0) {
-            part[i + 1].set_untraced(types::make_undefined());
+    for (int i = 0; i <= num_caps; i++) {
+        if (caps[2 * i] < 0 || caps[2 * i + 1] < 0) {
+            part[i].set_untraced(types::make_undefined());
             unmatched++;
             continue;
         }
-        elem.set_string_borrowed(regexp_slice(heap, input_str, (uint)caps_start[i], (uint)caps_end[i]));
-        heap.init_slot_ref(arr, &part[i + 1], &elem);
+        TVal elem;
+        elem.set_string_borrowed(regexp_slice(heap, input_str, (uint)caps[2 * i], (uint)caps[2 * i + 1]));
+        heap.init_slot_ref(arr, &part[i], &elem);
     }
     arr.array_used = (uint)(1 + num_caps) - unmatched;
     *arr.array_len_ptr() = (uint)(1 + num_caps);
@@ -780,23 +776,22 @@ fn bool regexp_fill_match_elements(Heap* heap, HObject* arr, HString* input_str,
 // The result is the array the property-by-property path builds, down to the
 // flag bits that path leaves set.
 fn void regexp_fill_match_result(BuiltinContext* ctx, HObject* arr, uint shape_id, void* re_data,
-                                 HString* input_str, int out_start, int out_end,
-                                 int* caps_start, int* caps_end, int num_caps) {
+                                 HString* input_str, int* caps, int num_caps) {
     Heap* heap = ctx.heap;
-    arr.gc.packed = regexp_fill_match_elements(heap, arr, input_str, out_start, out_end, caps_start, caps_end, num_caps);
+    arr.gc.packed = regexp_fill_match_elements(heap, arr, input_str, caps, num_caps);
     hobject::PropValue* slots = arr.prop_values();
     TVal tv;
-    tv.set_fastint((long)out_start);
+    tv.set_fastint((long)caps[0]);
     slots[0] = (hobject::PropValue)tv;
     tv.set_string_borrowed(input_str);
     heap.init_slot_ref(arr, &slots[1], &tv);
     // `groups` is undefined unless the pattern names a group.
     TVal groups;
     groups.set_undefined();
-    if (re_bindings::re_get_groupnames(re_data) != null) {
+    if (re_bindings::re_has_group_names(re_data)) {
         HObject*? groups_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try g = groups_raw) {
-            regexp_fill_groups(ctx, g, re_data, input_str, caps_start, caps_end, num_caps);
+            regexp_fill_groups(ctx, g, re_data, input_str, caps, num_caps);
             groups.set_object(g);
         }
     }
@@ -1191,6 +1186,13 @@ fn bool regexp_replace_try_pristine(BuiltinContext* ctx, HObject* rx, HString* s
                                     bool replace_is_fn, TVal replace_val, HString* replace_hs,
                                     bool known_pristine = false) {
     if (!known_pristine && !regexp_is_pristine(ctx.heap, rx)) return false;
+    if (!replace_is_fn) {
+        HString* out = regexp_replace_direct(ctx.heap, s_hstr, rx, replace_hs, false);
+        if (out != null) {
+            ctx.result_string(out);
+            return true;
+        }
+    }
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     int jsf = (*rx.extra_ptr()).regexp.flags;
     if (re_bindings::re_get_groupnames(re_data) != null || ((jsf & 32) != 0 && (jsf & 1) == 0)) return false;
@@ -1580,77 +1582,318 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     return true;
 }
 
-// String.prototype.replace, or replaceAll when `all`, on the narrow string `s`
-// with the plain RegExp `rx` and the narrow replacement `rep` that holds no `$`:
-// the result @@replace computes, without a builtin frame. The match positions
-// are found first, then one string of the exact size is filled; with no match
-// the result is `s`. Null, with nothing done, when the generic path must run:
-// another receiver, a wide string, a template, a sticky non-global pattern, a
-// non-global replaceAll (which throws), more groups than the stack buffer, an
-// interrupted run or a result past the length cap.
+// One piece of a replacement template (GetSubstitution): template units
+// [a, b), or what a `$` reference stands for in each match.
+struct ReplacePiece {
+    PieceKind kind;
+    // TEXT: the template range. GROUP: the group in a, 0 for the match. NAMED:
+    // in a, a bit per group of that name.
+    uint a;
+    uint b;
+}
+
+enum PieceKind : char {
+    TEXT,
+    GROUP,
+    NAMED,
+    BEFORE,
+    AFTER,
+}
+
+// The most pieces a template may have for regexp_replace_direct.
+const uint REPLACE_PIECES_MAX = 32;
+
+// Whether the units of `str` in [from, to) need a wide result.
+fn bool regexp_range_wide(HString* str, uint from, uint to) @inline {
+    if (!str.is_wide() || from >= to) return false;
+    return !hstring::fits_latin1({ .ptr = str.data_ptr() + (usz)from * 2, .len = to - from, .wide = true });
+}
+
+// Whether `rep` holds a `$`, remembered on the string after the first look.
+fn bool regexp_has_dollar(HString* rep) @inline {
+    if (rep.flags.dollar_known) return rep.flags.has_dollar;
+    bool found = rep.is_wide() ? regexp_find_literal(rep, "$", 0) >= 0 : hstring::find_bytes(rep.latin1(), "$") >= 0;
+    rep.flags.has_dollar = found;
+    rep.flags.dollar_known = true;
+    return found;
+}
+
+// Whether the UTF-8 group name `name` spells units [from, to) of `rep`.
+fn bool regexp_name_is(char[] name, HString* rep, uint from, uint to) {
+    uint at = from;
+    for (usz i = 0; i < name.len;) {
+        uint width = hstring::utf8_seq_len(name[i]);
+        if (i + width > name.len) return false;
+        uint cp = width == 1 ? (uint)name[i] : (uint)name[i] & (0xFFu >> (width + 1));
+        for (uint k = 1; k < width; k++) cp = (cp << 6) | ((uint)name[i + k] & 0x3F);
+        i += width;
+        if (cp >= 0x10000) {
+            if (at + 2 > to) return false;
+            cp -= 0x10000;
+            if (rep.unit_at(at) != 0xD800 + (cp >> 10) || rep.unit_at(at + 1) != 0xDC00 + (cp & 0x3FF)) return false;
+            at += 2;
+        } else {
+            if (at >= to || rep.unit_at(at) != cp) return false;
+            at++;
+        }
+    }
+    return at == to;
+}
+
+// A bit per group of `re_data`, below `groups`, whose name is units [from, to)
+// of `rep`.
+fn uint regexp_named_mask(void* re_data, int groups, HString* rep, uint from, uint to) {
+    char* p = re_bindings::re_get_groupnames(re_data);
+    uint mask = 0;
+    for (int g = 1; g < groups && p != null; g++) {
+        usz len = (usz)((ZString)p).len();
+        if (len > 0 && regexp_name_is(p[:len], rep, from, to)) mask |= 1u << g;
+        // Each entry is the name, its terminator and a scope byte.
+        p += (sz)(len + 2);
+    }
+    return mask;
+}
+
+// GetSubstitution's template `rep` as pieces, for a pattern of `groups` groups
+// (the match included) that names a group when `named`: the piece count, or -1
+// when `out` cannot hold them.
+fn int regexp_parse_template(HString* rep, void* re_data, int groups, bool named, ReplacePiece[] out) {
+    uint n = 0;
+    uint len = rep.length;
+    uint text = 0;
+    uint i = 0;
+    while (i + 1 < len) {
+        if (rep.unit_at(i) != '$') {
+            i++;
+            continue;
+        }
+        uint c = rep.unit_at(i + 1);
+        ReplacePiece piece;
+        uint next = i + 2;
+        switch {
+            case c == '$':
+                // The second `$` opens the text that follows.
+                piece = { .kind = TEXT, .a = i + 1, .b = i + 1 };
+            case c == '&':
+                piece = { .kind = GROUP, .a = 0 };
+            case c == '`':
+                piece = { .kind = BEFORE };
+            case c == '\'':
+                piece = { .kind = AFTER };
+            case c >= '0' && c <= '9':
+                uint index = c - '0';
+                if (i + 2 < len && rep.unit_at(i + 2) >= '0' && rep.unit_at(i + 2) <= '9') {
+                    uint two = index * 10 + rep.unit_at(i + 2) - '0';
+                    if (two < (uint)groups) {
+                        index = two;
+                        next = i + 3;
+                    }
+                }
+                if (index < 1 || index >= (uint)groups) {
+                    i++;
+                    continue;
+                }
+                piece = { .kind = GROUP, .a = index };
+            case c == '<' && named:
+                uint close = i + 2;
+                while (close < len && rep.unit_at(close) != '>') close++;
+                if (close >= len) {
+                    i++;
+                    continue;
+                }
+                piece = { .kind = NAMED, .a = regexp_named_mask(re_data, groups, rep, i + 2, close) };
+                next = close + 1;
+            default:
+                i++;
+                continue;
+        }
+        if ((usz)n + 3 > out.len) return -1;
+        if (text < i) out[n++] = { .kind = TEXT, .a = text, .b = i };
+        if (piece.kind == TEXT) {
+            text = i + 1;
+        } else {
+            out[n++] = piece;
+            text = next;
+        }
+        i = next;
+    }
+    if (text < len) out[n++] = { .kind = TEXT, .a = text, .b = len };
+    return (int)n;
+}
+
+// The subject units a reference piece stands for in the match whose group
+// bounds `m` holds (-1 for a group that did not participate), into *from and
+// *to; an empty range for a group that did not.
+fn void regexp_piece_range(ReplacePiece* p, int* m, uint len, uint* from, uint* to) @inline {
+    int g = -1;
+    switch (p.kind) {
+        case GROUP:
+            g = (int)p.a;
+        case NAMED:
+            for (int k = 1; k < 32; k++) {
+                if ((p.a & (1u << k)) != 0 && m[2 * k] >= 0) {
+                    g = k;
+                    break;
+                }
+            }
+        case BEFORE:
+            *from = 0;
+            *to = (uint)m[0];
+            return;
+        case AFTER:
+            *from = (uint)m[1];
+            *to = len;
+            return;
+        case TEXT:
+            break;
+    }
+    if (g < 0 || m[2 * g] < 0 || m[2 * g + 1] < 0) {
+        *from = 0;
+        *to = 0;
+        return;
+    }
+    *from = (uint)m[2 * g];
+    *to = (uint)m[2 * g + 1];
+}
+
+// Units [from, to) of `src` stored at `dest`, a result of width `wide`; past
+// them returned. A wide range copied into a narrow result fits Latin-1.
+fn char* regexp_put(char* dest, bool wide, HString* src, uint from, uint to) @inline {
+    if (from >= to) return dest;
+    uint n = to - from;
+    if (!src.is_wide()) {
+        hstring::copy_units(dest, wide, hstring::narrow_units(src.data_ptr()[from:n]));
+    } else if (wide) {
+        mem::copy(dest, src.data_ptr() + (usz)from * 2, (usz)n * 2);
+    } else {
+        ushort* units = (ushort*)src.data_ptr() + from;
+        for (uint k = 0; k < n; k++) dest[k] = (char)units[k];
+    }
+    return dest + ((usz)n << (wide ? 1 : 0));
+}
+
+// The longest result, in bytes, regexp_replace_direct interns.
+const usz REPLACE_INTERN_MAX = 64;
+
+// String.prototype.replace, or replaceAll when `all`, on `s` with the plain
+// RegExp `rx` and the replacement string `rep`: the result @@replace computes,
+// without a builtin frame. The match bounds are found first, then one string of
+// the exact size is filled, the template's `$` references expanded; with no
+// match the result is `s`. Null, with nothing done, when the generic path must
+// run: another receiver, a sticky non-global pattern, a non-global replaceAll
+// (which throws), more groups than the stack buffer, a template of too many
+// pieces, an interrupted run or a result past the length cap.
 fn HString* regexp_replace_direct(Heap* heap, HString* s, HObject* rx, HString* rep, bool all) {
-    if (!regexp_is_pristine(heap, rx) || s.is_wide() || rep.is_wide()) return null;
+    if (!regexp_plain(heap, rx) || rx.prototype != heap.regexp_proto || !regexp_proto_pristine(heap)) return null;
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     int jsf = (*rx.extra_ptr()).regexp.flags;
     bool global = (jsf & 1) != 0;
     if ((all || (jsf & 32) != 0) && !global) return null;
-    if (re_bindings::re_group_count(re_data) > REGEXP_SMALL_GROUPS) return null;
-    char[] text = rep.latin1();
-    if (hstring::find_bytes(text, "$") >= 0) return null;
+    int groups = re_bindings::re_captures(re_data);
+    if (groups > REGEXP_SMALL_GROUPS) return null;
+    ReplacePiece[REPLACE_PIECES_MAX] piece_buf @noinit;
+    ReplacePiece[] pieces;
+    // Per match, the bounds of every group when a piece reads one, else the match's.
+    uint stride = 2;
+    if (regexp_has_dollar(rep)) {
+        int count = regexp_parse_template(rep, re_data, groups, re_bindings::re_has_group_names(re_data), &piece_buf);
+        if (count < 0) return null;
+        pieces = piece_buf[:count];
+        stride = 2 * (uint)groups;
+    } else {
+        piece_buf[0] = { .kind = TEXT, .a = 0, .b = rep.length };
+        pieces = piece_buf[:1];
+    }
     int[2 * REGEXP_SMALL_GROUPS] caps @noinit;
     int[64] span_buf @noinit;
     growvec::GrowVec{int} spans = { .heap = heap };
     spans.use_storage(&span_buf, span_buf.len);
     defer spans.free();
     re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, heap };
-    char[] lit = re_bindings::re_whole_literal(re_data);
+    char[] lit = stride == 2 ? re_bindings::re_whole_literal(re_data) : {};
+    bool unicode = (jsf & (16 | 128)) != 0;
     uint len = s.unit_len();
     uint pos = 0;
-    ulong removed = 0;
     while (pos <= len) {
-        int at;
-        int end;
         if (lit.len > 0) {
-            at = regexp_find_literal(s, lit, pos);
+            int at = regexp_find_literal(s, lit, pos);
             if (at < 0) break;
-            end = at + (int)lit.len;
+            caps[0] = at;
+            caps[1] = at + (int)lit.len;
         } else {
-            int ret = re_bindings::re_run_direct(re_data, s.data_ptr(), len, false, pos, &caps, caps.len, &interrupt);
+            int ret = re_bindings::re_run_direct(re_data, s.data_ptr(), len, s.is_wide(), pos, &caps, caps.len, &interrupt);
             if (heap.uncatchable_throw || ret < 0) return null;
             if (ret != re_bindings::RE_MATCH) break;
-            at = caps[0];
-            end = caps[1];
         }
-        if (!spans.push(at) || !spans.push(end)) return null;
-        removed += (ulong)(end - at);
+        for (uint k = 0; k < stride; k++) {
+            if (!spans.push(caps[k])) return null;
+        }
         if (!global) break;
-        // A narrow subject has no surrogate pairs: an empty match steps one unit.
-        pos = end == at ? (uint)end + 1 : (uint)end;
+        uint end = (uint)caps[1];
+        pos = end == (uint)caps[0] ? hstring::advance_string_index(s, end, unicode) : end;
     }
     if (global) {
         TVal zero;
         zero.set_fastint(0);
         rx.prop_values()[0] = (hobject::PropValue)zero;
     }
-    usz count = spans.len / 2;
-    if (count == 0) return s;
-    ulong total = (ulong)len - removed + (ulong)count * text.len;
+    if (spans.len == 0) return s;
+    // The size and width of the result.
+    ulong total = 0;
+    bool wide = false;
+    uint last = 0;
+    foreach (&p : pieces) {
+        if (p.kind == TEXT) wide |= regexp_range_wide(rep, p.a, p.b);
+    }
+    for (usz at = 0; at < spans.len; at += stride) {
+        int* m = &spans.items[at];
+        total += (ulong)((uint)m[0] - last);
+        wide |= regexp_range_wide(s, last, (uint)m[0]);
+        foreach (&p : pieces) {
+            uint from;
+            uint to;
+            if (p.kind == TEXT) {
+                total += (ulong)(p.b - p.a);
+                continue;
+            }
+            regexp_piece_range(p, m, len, &from, &to);
+            total += (ulong)(to - from);
+            wide |= regexp_range_wide(s, from, to);
+        }
+        last = (uint)m[1];
+    }
+    total += (ulong)(len - last);
+    wide |= regexp_range_wide(s, last, len);
     if (total == 0) return heap.str(heap::BuiltinStr.EMPTY);
     if (hstring::length_exceeds_max(total)) return null;
-    HString* out = hstring::hstring_alloc_storage(heap, (uint)total, false, hstring::HASH_DEFERRED, (uint)total) ?? null;
-    if (out == null) return null;
-    char* dest = out.data_ptr();
-    char* src = s.data_ptr();
-    uint last = 0;
-    for (usz i = 0; i < spans.len; i += 2) {
-        uint at = (uint)spans.items[i];
-        mem::copy(dest, src + last, (usz)(at - last));
-        dest += (sz)(at - last);
-        mem::copy(dest, text.ptr, text.len);
-        dest += (sz)text.len;
-        last = (uint)spans.items[i + 1];
+    // A short result is interned, so a replace that repeats finds its string.
+    char[REPLACE_INTERN_MAX] short_buf @noinit;
+    HString* out = null;
+    char* dest = &short_buf;
+    bool interned = (total << (wide ? 1 : 0)) <= REPLACE_INTERN_MAX;
+    if (!interned) {
+        out = hstring::hstring_alloc_storage(heap, (uint)total, wide, hstring::HASH_DEFERRED, (uint)total) ?? null;
+        if (out == null) return null;
+        dest = out.data_ptr();
     }
-    mem::copy(dest, src + last, (usz)(len - last));
+    last = 0;
+    for (usz at = 0; at < spans.len; at += stride) {
+        int* m = &spans.items[at];
+        dest = regexp_put(dest, wide, s, last, (uint)m[0]);
+        foreach (&p : pieces) {
+            if (p.kind == TEXT) {
+                dest = regexp_put(dest, wide, rep, p.a, p.b);
+                continue;
+            }
+            uint from;
+            uint to;
+            regexp_piece_range(p, m, len, &from, &to);
+            dest = regexp_put(dest, wide, s, from, to);
+        }
+        last = (uint)m[1];
+    }
+    regexp_put(dest, wide, s, last, len);
+    if (interned) return heap.str_intern_units({ .ptr = &short_buf, .len = (uint)total, .wide = wide });
     out.finish_data();
     heap.large_string_register(out);
     return out;
@@ -2908,29 +3151,9 @@ fn HString* regexp_exec_input(Heap* heap, TVal* v) @inline {
 
 // The match array for the group bounds in `caps`, as re_run reports them.
 fn HObject* regexp_match_array(Heap* heap, void* re_data, HString* s, int* caps, bool has_indices) {
-    int num_caps = re_bindings::re_get_capture_count(re_data) - 1;
-    if (num_caps >= REGEXP_SMALL_GROUPS) return regexp_match_array_large(heap, re_data, s, caps, has_indices, num_caps);
-    int[REGEXP_SMALL_GROUPS] caps_start @noinit;
-    int[REGEXP_SMALL_GROUPS] caps_end @noinit;
-    for (int i = 0; i < num_caps; i++) {
-        caps_start[i] = caps[2 * i + 2];
-        caps_end[i] = caps[2 * i + 3];
-    }
+    int num_caps = re_bindings::re_captures(re_data) - 1;
     BuiltinContext ctx = { .heap = heap };
-    return regexp_build_match_result(&ctx, re_data, s, caps[0], caps[1], &caps_start, &caps_end, num_caps, has_indices);
-}
-
-fn HObject* regexp_match_array_large(Heap* heap, void* re_data, HString* s, int* caps, bool has_indices,
-                                     int num_caps) @noinline {
-    if (num_caps > re_bindings::RE_MAX_CAPTURES - 1) num_caps = re_bindings::RE_MAX_CAPTURES - 1;
-    int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
-    int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
-    for (int i = 0; i < num_caps; i++) {
-        caps_start[i] = caps[2 * i + 2];
-        caps_end[i] = caps[2 * i + 3];
-    }
-    BuiltinContext ctx = { .heap = heap };
-    return regexp_build_match_result(&ctx, re_data, s, caps[0], caps[1], &caps_start, &caps_end, num_caps, has_indices);
+    return regexp_build_match_result(&ctx, re_data, s, caps, num_caps, has_indices);
 }
 
 // Groups, group 0 included, whose bounds fit the capture buffer of the common
