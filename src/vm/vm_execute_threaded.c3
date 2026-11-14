@@ -568,20 +568,11 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
     }
     if (cold.heap.gc_safepoint_due(true)) { opprof_bail(NATIVE_GATE); return pc; }
 
-    // The actual builtin identity, primitive receiver and integer index make
-    // this a non-throwing read; all coercion and Unicode cases stay generic.
-    if (fn_idx == builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal && nargs > 0) {
-        HString* text = plain_string_of(regs + callee_reg + 1);
-        TVal index = regs[callee_reg + 2];
-        if (text != null && text.is_ascii() && index.is_fastint()) {
-            long offset = index.get_fastint();
-            TVal* dest = regs + result_reg;
-            if (offset >= 0 && offset < (long)text.unit_len()) {
-                uint code = text.unit_at((uint)offset);
-                dest.set_fastint((long)code);
-                return th_next(pc + 1, handlers, regs, cold);
-            }
-        }
+    // The common case a leaf answers needs no frame and no context.
+    builtins::LeafFn leaf = builtins::leaf_of(fn_idx);
+    if (leaf != null && leaf(cold.heap, regs[callee_reg + 1], regs + callee_reg + 2, nargs, regs + result_reg)) {
+        track_heap_store(cold.act, regs + result_reg, result_reg);
+        return th_next(pc + 1, handlers, regs, cold);
     }
 
     Activation* act = cold.act;
