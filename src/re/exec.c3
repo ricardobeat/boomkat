@@ -80,8 +80,13 @@ struct ReNative {
     int  fs_single;    // the one unit that can begin a match, or -1
     bool fs_at_start;  // an empty match is possible at the start
     bool fs_at_end;    // and at the end
-    // A run passes re_prefilter's literal checks first.
-    bool prefiltered;
+    // The literal re_prefilter checks, which the compiled body checks before
+    // its first attempt (re_bindings::re_literal); lit_len is 0 for none.
+    char[16] lit;
+    uint lit_len;
+    uint lit_rare;
+    int lit_where;
+    bool lit_whole;
     // The program as machine code, one body per subject form, and the bitmaps
     // those bodies address (src/re/jit.c3). All null when the emitter declined
     // the program, which leaves it on the walk.
@@ -777,13 +782,7 @@ fn int re_run_compiled(void* re, char* data, uint len, bool wide, uint start, in
         if (n == null) return RE_ERROR;
         void* code = wide ? n.code_wide : n.code_narrow;
         if (code == null) return RE_ERROR;
-        if (n.prefiltered) {
-            int at = re_bindings::re_prefilter(re, data, (int)len, (int)start, wide ? 1 : 0, caps);
-            if (at < 0) return at == re_bindings::RE_PREFILTER_MATCH ? RE_MATCH : RE_NO_MATCH;
-            start = (uint)at;
-        } else if (start > len) {
-            return RE_NO_MATCH;
-        }
+        if (start > len) return RE_NO_MATCH;
         ReInput in = { data, len, wide, n.prog.unicode() };
         int ret = re_exec_run(n, &in, start, code, caps, cap_slots, interrupt);
         return ret == RE_MATCH || ret == RE_NO_MATCH ? ret : RE_ERROR;
@@ -816,7 +815,11 @@ fn void* re_native_prepare(void* re) @export("re_native_prepare") {
         && prog.insns[2].op == GOTO && prog.insns[2].target == 0;
     n.body_pc = 3;
     n.fs_single = -1;
-    n.prefiltered = !re_bindings::re_unfiltered(re);
+    int rare, where, whole;
+    n.lit_len = (uint)re_bindings::re_literal(re, &n.lit, &rare, &where, &whole);
+    n.lit_rare = (uint)rare;
+    n.lit_where = where;
+    n.lit_whole = whole != 0;
     if (n.scanning) {
         int wide, single, at_start, at_end;
         n.has_first_set = re_bindings::re_first_set(re, &n.fs_bits[0], &wide, &single, &at_start, &at_end);

@@ -71,6 +71,8 @@ int re_run(ReCompiled* re, const void* input, int input_len,
 #define RE_PREFILTER_NONE  (-1)
 #define RE_PREFILTER_MATCH (-2)
 
+enum { RE_LIT_REQUIRED, RE_LIT_PREFIX, RE_LIT_AT, RE_LIT_AT_ZERO };
+int re_literal(ReCompiled* re, char* out, int* rare, int* where, int* whole);
 int re_prefilter(ReCompiled* re, const void* input, int input_len, int start_offset,
                  int input_wide, int* caps);
 bool re_unfiltered(ReCompiled* re);

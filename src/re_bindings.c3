@@ -34,13 +34,8 @@ fn int re_group_count(void* re) @inline {
     return n == null ? RE_MAX_CAPTURES : (int)n.prog.capture_count;
 }
 
-/* The literal checks every run passes first: the offset a match can begin at,
- * RE_PREFILTER_NONE, or RE_PREFILTER_MATCH with the bounds in caps[0..1]. */
-extern fn int re_prefilter(void* re, void* input, int input_len, int start_offset,
-                           int input_wide, int* caps);
-
-/* Whether re_prefilter passes every run of `re` unchanged. */
-extern fn bool re_unfiltered(void* re);
+/* The literal every run of `re` is checked against (re_wrapper.h). */
+extern fn int re_literal(void* re, char* out, int* rare, int* where, int* whole);
 
 extern fn void re_free(void* re);
 
