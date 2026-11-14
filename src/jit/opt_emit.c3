@@ -2514,6 +2514,30 @@ fn void OptCg.emit_typeof(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
+// An INSTANCEOF of an inlined body: the baseline's inline path on the window, its misses exits.
+fn void OptCg.emit_instanceof(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    self.decode(n);
+    if (n.a != NO_NODE) {
+        int r = self.value_reg(n.a, R4);
+        if (r != R4) sljit_emit_op1(c, SLJIT_MOV, R4, 0, r, 0);
+    } else {
+        self.a.load(R4, self.a.w.b);
+    }
+    if (n.b != NO_NODE) {
+        int r = self.value_reg(n.b, R0);
+        if (r != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, r, 0);
+    } else {
+        self.a.load(R0, self.a.w.c);
+    }
+    Jumps miss;
+    Jumps done;
+    self.a.instanceof_inline(&miss, &done, true);
+    miss.bind(sljit_emit_label(self.a.c));
+    self.exit_at(sljit_emit_jump(self.a.c, SLJIT_JUMP), i, OptExit.SLOW_PATH);
+    done.bind(sljit_emit_label(self.a.c));
+}
+
 // The object an inlined body allocates, built inline as the baseline emitter builds it and stored
 // boxed to its slot. The allocation adopts the object as a temporary root, so the slot needs no
 // scan extent until an exit publishes the frame (see the header of opt_ir.c3); a case the inline
@@ -3377,6 +3401,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.a.store(n.home, SLJIT_IMM, n.imm);
         case TYPEOF:
             self.emit_typeof(i, n);
+        case INSTANCEOF:
+            self.emit_instanceof(i, n);
         case ALLOC:
             self.emit_alloc(i, n);
         case INIT_SLOT:

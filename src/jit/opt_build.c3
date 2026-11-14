@@ -420,7 +420,7 @@ fn uint inline_reg_mask(Opcode op) {
         // INIT_SLOT, whose A is the object and C the value (B is the slot index).
         case NEWOBJ: case NEWOBJ_SHAPE: case NEWARR: case NEWARR_CONST: return 1;
         case INIT_SLOT: return 5;
-        case GETPROP: case PUTPROP:
+        case GETPROP: case PUTPROP: case INSTANCEOF:
             return 7;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -487,7 +487,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
         case NEWOBJ: case NEWOBJ_SHAPE: case NEWARR: case NEWARR_CONST: *writes = 1u << w.a;
         case INIT_SLOT:
             *reads = (1u << w.a) | (1u << w.c);
-        case GETPROP:
+        case GETPROP: case INSTANCEOF:
             *reads = (1u << w.b) | (1u << w.c);
             *writes = 1u << w.a;
         case PUTPROP:
@@ -883,7 +883,7 @@ fn bool keeps_fresh(OptOp op) {
         case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32: case I32_TO_F64: case F64_TO_I32:
         case ADD_F64: case SUB_F64: case MUL_F64: case DIV_F64: case NEG_F64: case MATH:
         case CHECK_CALLEE: case LOAD_VAR: case LOAD_GLOBAL: case GUARD_BINDING: case GUARD_CAPTURE:
-        case COPY_WINDOW: case STORE_CONST: case TYPEOF: case COMPARE: case LNOT: case NEW_OBJECT:
+        case COPY_WINDOW: case STORE_CONST: case TYPEOF: case INSTANCEOF: case COMPARE: case LNOT: case NEW_OBJECT:
         case CHECK_BUILTIN: case MOVE_WINDOW: case ADD_FIELD:
             return true;
         default:
@@ -2399,6 +2399,21 @@ fn bool OptBuild.typeof_value(&self) {
     uint n = self.add(OptOp.TYPEOF, OptRep.NONE, rnode, NO_NODE, (long)rb);
     self.g.nodes[n].home = ra;
     self.g.nodes[n].cc = number ? 1 : 0;
+    self.snapshot(n);
+    self.kill(ra);
+    return true;
+}
+
+// INSTANCEOF in an inlined body: the baseline's inline path on the VALUE nodes the operand
+// registers hold, or on their window slots. The function's own stays a GENERIC.
+fn bool OptBuild.instance_of(&self) {
+    if (self.cur_fn == 0) return self.generic();
+    uint ra = self.w.a;
+    if (ra >= self.nregs || self.w.b >= self.nregs || self.w.c >= self.nregs || self.wide || self.cur_f().ic_entries == null) return self.generic();
+    foreach (r : (uint[2]){ self.w.b, self.w.c }) {
+        if (self.cur[r].node != NO_NODE && !self.holds_value(r)) return self.generic();
+    }
+    uint n = self.add(OptOp.INSTANCEOF, OptRep.NONE, self.cur[self.w.b].node, self.cur[self.w.c].node, (long)self.pc);
     self.snapshot(n);
     self.kill(ra);
     return true;
@@ -4398,6 +4413,8 @@ fn bool OptBuild.lower_op(&self) {
             return self.throw_exit();
         case TYPEOF:
             return self.typeof_value();
+        case INSTANCEOF:
+            return self.instance_of();
         case NEWOBJ:
         case NEWOBJ_SHAPE:
         case NEWARR:
