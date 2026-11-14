@@ -883,6 +883,9 @@ bitstruct GcBits : uint {
     uint inline_words : 11..15;
     // Optimized code holds this object as a constant; its death moves Heap.folded_epoch.
     bool folded : 16;
+    // An array with no holes below its length, so a dense `undefined` is an
+    // element rather than a hole; see HObject.unpack.
+    bool packed : 17;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing

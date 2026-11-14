@@ -1983,7 +1983,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             && !(obj.get_class() == hobject::ObjClass.ARGUMENTS
                  && obj.find_prop_idx(key, ctx.heap) >= 0)) {
             TVal av = obj.array_part()[key_str.array_index()].get();
-            if (av.is_undefined()) {
+            if (av.is_undefined() && !obj.packed_elem(key_str.array_index())) {
                 ctx.result_undefined();
                 return;
             }
@@ -2667,6 +2667,8 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     if (key_hstr == null) { ctx.result_undefined(); return; }
     void* key = key_hstr;
+    // The define below reads an index's attributes from the named table.
+    if (key_hstr.is_arridx()) obj.unpack(ctx.heap);
 
     // Step 3: Check Attributes is Object
     if (ctx.argc < 3) {
@@ -3343,6 +3345,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
 
     for (uint k = 0; k < keys_count; k++) {
         HString* p_key = keys_arr[k];
+        if (p_key.is_arridx()) obj.unpack(ctx.heap);
         // Get descObj = props.[[Get]](p_key), invokes getters with props as receiver.
         // Per ECMA-262 §15.2.3.7 step 5, we must call [[Get]], not [[GetOwnProperty]].
         // desc_get_enum, not desc_get: a wrapped string's char indices are served

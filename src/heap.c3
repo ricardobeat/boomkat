@@ -665,10 +665,6 @@ struct RegExpGuard {
     uint verified;
 }
 
-// The shape a RegExp match array ends with, for one capture count and one set of
-// non-participating groups (bit i set: group i + 1 is undefined). That set fixes
-// which index keys the array carries in its named table, and so the whole shape.
-// `epoch` is the shape-recycle epoch when `shape_id` was recorded; a `shape_id` of 0 marks an empty entry.
 const uint SLICE_CACHE_SIZE = 256;
 // Slices longer than this skip the cache; a compare costs more than it saves.
 const uint SLICE_CACHE_MAX_LEN = 48;
@@ -676,17 +672,6 @@ const uint SLICE_CACHE_MAX_LEN = 48;
 fn uint slice_cache_index(char* p, uint len) @inline {
     uint h = len * 0x9E37_79B1 ^ (uint)p[0] * 0x85EB_CA6B ^ (uint)p[len >> 1] * 0xC2B2_AE35 ^ (uint)p[len - 1] * 0x27D4_EB2F;
     return (h ^ (h >> 15)) & (SLICE_CACHE_SIZE - 1);
-}
-
-// Match-array shapes kept at once: one per capture count and unmatched set a
-// program's regexps produce, up to this many before they evict each other.
-const uint MATCH_SHAPES = 16;
-
-struct MatchShape {
-    ulong unmatched;
-    uint  ncaps;
-    uint  shape_id;
-    uint  epoch;
 }
 
 struct PromiseSpeciesGuard {
@@ -846,7 +831,11 @@ struct RealmState {
     uint                fn_proto_shape;
     uint[5]             args_shapes;
     RegExpGuard         regexp_guard;
-    MatchShape[MATCH_SHAPES] match_shapes;
+    // The shape of a RegExp match array without `d`: index, input, groups and
+    // length, whatever its capture count. The epoch is the shape-recycle epoch
+    // it was read in; 0 until one has been built.
+    uint                match_shape;
+    uint                match_shape_epoch;
     // The shape of a fresh RegExp, whose only property is lastIndex, and the
     // shape-recycle epoch it was read in; 0 until one has been built.
     uint                regexp_shape;
@@ -2115,7 +2104,7 @@ fn void Heap.init_shapes(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
-    self.match_shapes = {};
+    self.match_shape = 0;
     self.regexp_shape = 0;
     self.slice_cache = {};
     self.promise_species_guard = {};
@@ -3144,7 +3133,7 @@ fn void Heap.reset(&self) {
     self.shape_recycle_epoch = 0;
     self.var_ic_filled = false;
     self.regexp_guard = {};
-    self.match_shapes = {};
+    self.match_shape = 0;
     self.regexp_shape = 0;
     self.slice_cache = {};
     self.promise_species_guard = {};
@@ -3706,6 +3695,26 @@ $endif
     obj.array_len_ptr()[0] = 0;
     obj.array_inline_capacity_ptr()[0] = capacity;
     hobject::fill_undefined((hobject::PropValue*)((char*)obj + hobject::OBJ_SIZE_ARRAY), capacity);
+    self.adopt_object(obj);
+    return obj;
+}
+
+// Allocate an array whose `named` property slots and `elements` dense slots,
+// together at most ARRAY_INLINE_MAX_CAPACITY, live in its header block. The
+// caller writes every slot, prop_count, the shape and the length before the
+// array can be observed.
+fn HObject*? Heap.alloc_inline_array_uninit(&self, uint named, uint elements) {
+    uint capacity = named + elements;
+    void* raw = null;
+$if !$feat(POOL_BYPASS):
+    raw = self.obj_pool_inline_arrays[capacity - 1].alloc_uninit();
+$endif
+    bool from_pool = raw != null;
+    if (!from_pool) raw = self.alloc(hobject::inline_array_alloc_size(capacity))!;
+    HObject* obj = (HObject*)raw;
+    obj.init_header(hobject::inline_array_flags(from_pool), hobject::inline_array_gc(), named);
+    obj.array_size = elements;
+    obj.array_inline_capacity_ptr()[0] = capacity;
     self.adopt_object(obj);
     return obj;
 }
@@ -6402,6 +6411,17 @@ fn HString* Heap.str_slice(&self, HString* s, uint from, uint to) {
     HString* r = self.str_intern_units(u);
     if (r != null && r.flags.is_interned && !r.flags.is_wide && r.length == u.len) self.slice_cache[ci] = r;
     return r;
+}
+
+// Store `src` into a slot of `owner` that holds no value yet, taking a
+// reference to it and passing the write barrier.
+fn void Heap.init_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVal* src) @inline {
+    if (src.is_refcounted()) {
+        void* ptr = src.get_heapptr();
+        if (ptr != null) ((HeapHeader*)ptr).incref();
+    }
+    self.write_barrier(owner, *src);
+    *slot = (hobject::PropValue)*src;
 }
 
 // The one-unit string holding `unit`, which may be a lone surrogate.

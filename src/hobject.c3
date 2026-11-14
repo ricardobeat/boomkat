@@ -2032,7 +2032,8 @@ const uint DENSE_GROW_SLACK = 1u << 16;    // how far past array_size an index m
 // The dense part marks a hole with `undefined`, so a stored `undefined` is
 // indistinguishable from an absent index. Writers keep the dense part free of
 // `undefined` (those stores take the named-table path, which records presence
-// properly), so within the dense part the sentinel means "absent".
+// properly), so within the dense part the sentinel means "absent", except in a
+// packed array, which has no holes below its length.
 //
 // ARGUMENTS objects are the exception and are still wrong here: their slots
 // are filled at call time from the actual arguments, `undefined` included, so
@@ -2041,7 +2042,36 @@ const uint DENSE_GROW_SLACK = 1u << 16;    // how far past array_size an index m
 // a real hole; see plans/084 §11.
 fn bool HObject.dense_idx_present(&self, uint idx) {
     if (idx >= self.array_size) return false;
-    return !self.array_part()[idx].get().is_undefined();
+    return !self.array_part()[idx].get().is_undefined() || self.packed_elem(idx);
+}
+
+// True when a dense `undefined` at `idx` is an element of a packed array.
+fn bool HObject.packed_elem(&self, uint idx) @inline {
+    return self.gc.packed && idx < *self.array_len_ptr();
+}
+
+// True when a dense slot alone does not tell whether its index is present
+// the way an ordinary array's does: the named table may hold an index, or a
+// dense `undefined` may be an element. Fast paths that treat the dense part
+// as the whole truth bail on it.
+fn bool HObject.dense_ambiguous(&self) @inline {
+    return self.flags.has_indexed_named_prop || self.gc.packed;
+}
+
+// Give up the packed form ahead of a write that may leave a hole below the
+// length: each dense `undefined` element moves to the named table, which
+// records its presence the way it does for any other array.
+fn void HObject.unpack(&self, heap::Heap* h) {
+    if (!self.gc.packed) return;
+    self.gc.packed = false;
+    uint end = min(*self.array_len_ptr(), self.array_size);
+    TVal undef;
+    undef.set_undefined();
+    for (uint i = 0; i < end; i++) {
+        if (!self.array_part()[i].get().is_undefined()) continue;
+        HString* key = h.int_to_hstring((long)i);
+        if (key != null) self.put_prop_new(key, undef, PROP_FLAGS_WEC, h);
+    }
 }
 
 // True when nothing on an array's prototype chain can intercept a store to a
@@ -2143,6 +2173,11 @@ fn HObject* HObject.find_index_holder(&self, ulong idx, heap::Heap* h, IndexProp
 // NAMED or DENSE. A dense element becomes a hole; a named one leaves the table
 // through delete_prop, which also clears any dense mirror.
 fn void HObject.delete_own_index(&self, ulong idx, IndexProp* own, heap::Heap* h) {
+    if (own.hold == DENSE && self.gc.packed) {
+        // Unpacking moves an `undefined` element to the named table.
+        self.unpack(h);
+        if (own.value.is_undefined()) own.hold = NAMED;
+    }
     if (own.hold == NAMED) {
         HString* key = h.int_to_hstring((long)idx);
         if (key != null) self.delete_prop(key, h);
@@ -2173,6 +2208,9 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     if (key != null && !((hstring::HString*)key).flags.is_interned) {
         key = (void*)h.ensure_interned((hstring::HString*)key);
     }
+    // An index key may land in the named table, which a packed array keeps
+    // free of indices.
+    if (self.gc.packed && ((HString*)key).is_arridx()) self.unpack(h);
     // The interned "length" key. Null only before the builtin strings are
     // interned, during heap setup, when no exotic array exists yet for the
     // comparisons to match.
@@ -2204,6 +2242,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         self.set_prop_flags((uint)idx, pflags, h);
         // A length write on an ARRAY exotic updates the shadow copy.
         if (self.flags.exotic_array && key == length_key) {
+            self.unpack(h);
             if (val.is_fastint()) {
                 *self.array_len_ptr() = (uint)val.get_fastint();
             } else if (val.is_number()) {
@@ -2249,6 +2288,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
     assert(!self.is_proxy(), "a property added to a proxy");
+    if (self.gc.packed && ((HString*)key).is_arridx()) self.unpack(h);
     if (self.gc.prototype_observed) h.bump_prototype_epoch(self);
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     // An Array's length is never enumerable or configurable (§10.4.2). Builtins
@@ -2315,6 +2355,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
 
     // Same length and dense-part syncing as the update path above.
     if (self.flags.exotic_array && key == length_key) {
+        self.unpack(h);
         if (val.is_fastint()) {
             *self.array_len_ptr() = (uint)val.get_fastint();
         } else if (val.is_number()) {
@@ -2509,7 +2550,7 @@ fn TVal? HObject.get_array_idx(&self, uint idx) {
         return PROP_NOT_FOUND~;
     }
     TVal v = self.array_part()[idx].get();
-    if (v.is_undefined()) {
+    if (v.is_undefined() && !self.packed_elem(idx)) {
         return PROP_NOT_FOUND~;
     }
     return v;
@@ -2550,6 +2591,7 @@ fn void HObject.sync_named_length(&self, heap::Heap* h) {
 // when the index cannot go there, because of overflow or a failed grow, and the
 // caller should then fall through to put_prop.
 fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
+    if (self.gc.packed && (val.is_undefined() || idx > *self.array_len_ptr())) self.unpack(h);
     if (idx >= self.array_size) {
         uint new_size = self.array_size;
         if (new_size == 0) {
@@ -2596,6 +2638,7 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
 // false, copying nothing, when the dense part cannot grow to hold the target.
 fn bool HObject.move_dense(&self, uint to, uint from, uint count, heap::Heap* h) {
     if (count == 0 || to == from) return true;
+    self.unpack(h);
     if (to + count > self.array_size) {
         self.grow_array(to + count, h);
         if (to + count > self.array_size) return false;
@@ -3182,11 +3225,12 @@ fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
         if (sh != null && sh.parent == PRIVATE_SHAPE_PARENT) return false;
     }
     if (cls == ObjClass.ARRAY) {
-        // Without a block an array has no named slots, and its elements
-        // are inline only in a literal's header block.
+        // Without a block an array keeps slots only in an inline header
+        // block: its named slots, then its elements.
         uint capacity = obj.array_inline_capacity();
         if (capacity == 0) return false;
-        release_slots(h, (PropValue*)((char*)obj + OBJ_SIZE_ARRAY), obj.array_size);
+        release_slots(h, obj.prop_values(), obj.prop_count);
+        release_slots(h, obj.prop_values() + obj.prop_capacity, obj.array_size);
         h.obj_pool_inline_arrays[capacity - 1].dealloc(obj);
         return true;
     }
@@ -4816,6 +4860,8 @@ fn bool HObject.is_prototype_of(&self, HObject* probe) {
 // Returns false only if the property exists and is non-configurable.
 // The caller is responsible for throwing in strict mode when false.
 fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
+    // A packed array's `undefined` element is deleted from the named table.
+    if (self.gc.packed && key != null && ((HString*)key).is_arridx()) self.unpack(h);
     int idx = self.find_prop_idx(key, h);
     if (idx >= 0) {
         if (!self.get_prop_flags((uint)idx, h).configurable) {

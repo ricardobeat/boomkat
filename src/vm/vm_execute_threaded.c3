@@ -2586,11 +2586,11 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     }
     if (elements == null || idx < 0 || idx >= (long)count) return pc;
     TVal value = elements[idx].get();
-    // Undefined dense slots need named-property and prototype lookup. An
-    // array that keeps an index in its named table (a RegExp match array's
-    // non-participating groups) answers from there when it holds a data
-    // property; anything else continues to the prototype chain.
-    if (value.is_undefined()) {
+    // An undefined dense slot is an element of a packed array, or else needs
+    // named-property and prototype lookup. An array that keeps an index in its
+    // named table answers from there when it holds a data property; anything
+    // else continues to the prototype chain.
+    if (value.is_undefined() && (cls != hobject::ObjClass.ARRAY || !obj.packed_elem((uint)idx))) {
         if (cls != hobject::ObjClass.ARRAY || !obj.flags.has_indexed_named_prop) return pc;
         HString* key = cold.heap.find_int_hstring(idx);
         if (key == null) return pc;

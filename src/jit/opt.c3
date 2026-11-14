@@ -425,7 +425,7 @@ fn bool opt_has_int_work(CompiledFunction* f) {
 }
 
 // Whether `f` has run at least OPT_FIELD_SITES property accesses that the tier can lower to a
-// guarded slot access: own data properties with a recorded shape. Such a function has shapes to
+// guarded slot access: own data properties with a recorded shape, or elements of arrays. Such a function has shapes to
 // specialize on even though its arithmetic never left int32.
 fn bool opt_has_field_feedback(CompiledFunction* f) {
     if (f.ic_entries == null) return false;
@@ -433,6 +433,10 @@ fn bool opt_has_field_feedback(CompiledFunction* f) {
     uint sites = 0;
     for (uint i = 0; i < f.code_count; i++) {
         switch (f.code[i].op) {
+            case GETPROP:
+                // An element read of arrays alone, which the tier loads inline with its index
+                // unboxed.
+                if (opt_elem_arrays_only(f, i)) return true;
             case GETPROPC: case GETPROPC_CACHED: case GETTHISC: case PUTPROPC: case PUTTHISC:
                 hobject::ICEntry* e = &ic[i];
                 if (e.key.borrow() == null || e.shape_id == heap::SHAPE_NONE || e.has_proto) break;
@@ -784,7 +788,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, Activation* act, uint osr_
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined or is entered
     // directly.
-    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
+    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && b.direct_calls == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && (g.polys.len() >= OPT_FIELD_SITES || g.loads_elements()))) {
         f.opt_declined++;
         return false;
     }

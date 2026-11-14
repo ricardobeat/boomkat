@@ -559,9 +559,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 getprop_store(vm, ds, ra, &v, (uint)insn.a);
                                 return (TVal){};
                             }
-                            // An element that is present with the value undefined
-                            // (a RegExp match's unmatched group) lives only in the
-                            // named table, where it is an own data property.
+                            // An element that an unpacked array holds with the value
+                            // undefined lives only in the named table, where it is an
+                            // own data property.
                             if (hobj.flags.has_indexed_named_prop) {
                                 int nidx = hobj.find_prop_idx(vm.heap.int_to_hstring(idx_long), vm.heap);
                                 if (nidx >= 0 && !hobj.get_prop_flags((uint)nidx, vm.heap).is_accessor) {

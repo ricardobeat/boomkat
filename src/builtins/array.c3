@@ -188,7 +188,7 @@ fn bool arr_move_elements(BuiltinContext* ctx, HObject* obj, ulong from, ulong t
 // array itself. A move that would grow the dense part far past its elements,
 // across a sparse length, stays element by element.
 fn bool arr_dense_movable(BuiltinContext* ctx, HObject* obj, ulong from, ulong to, ulong count) {
-    if (obj.get_class() != hobject::ObjClass.ARRAY || obj.is_proxy() || obj.flags.has_indexed_named_prop
+    if (obj.get_class() != hobject::ObjClass.ARRAY || obj.is_proxy() || obj.dense_ambiguous()
         || !obj.flags.extensible || !obj.flags.array_len_writable) return false;
     ulong end = (from > to ? from : to) + count;
     if (end > 0x7FFFFFFFUL) return false;
@@ -822,6 +822,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
                 }
             }
         }
+        if (len_val > old_len) obj.unpack(heap);
         *obj.array_len_ptr() = len_val;
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         if (len_key != null) {
@@ -1420,7 +1421,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
         && obj.flags.extensible
         && obj.flags.array_len_writable
         && idx < 0x1000000UL
-        && !obj.flags.has_indexed_named_prop
+        && !obj.dense_ambiguous()
         && length_ok_pop
         // The element must be PRESENT in the dense part. A hole is not
         // undefined: [[Get]] continues up the prototype chain, and
@@ -3065,6 +3066,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     // array_len_ptr without touching the table. Write through to the exotic
     // instead; the writability check above has already run.
     if (obj.flags.exotic_array) {
+        if ((uint)len_val > *obj.array_len_ptr()) obj.unpack(ctx.heap);
         *obj.array_len_ptr() = (uint)len_val;
         return true;
     }

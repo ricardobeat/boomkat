@@ -939,8 +939,8 @@ fn void OptCg.box_index(&self, uint n) {
 
 // The address in R0 of the element at INT32 node `idx` of the array in R1, as the array slot
 // subroutine finds it for a boxed index (Asm.emit_array_slot_body); an index out of range leaves
-// through the slow path. Uses R2 and R3.
-fn void OptCg.array_slot(&self, uint idx) {
+// through the slow path. Uses R2 and R3; returns the index register.
+fn int OptCg.array_slot(&self, uint idx) {
     void* c = self.a.c;
     Layout* l = self.a.lay;
     int x = self.int_reg(idx, R3);
@@ -953,6 +953,7 @@ fn void OptCg.array_slot(&self, uint idx) {
     sljit_emit_op2(c, SLJIT_SHL, R2, 0, R2, 0, SLJIT_IMM, 3);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_props);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R2, 0);
+    return x;
 }
 
 // The boxed value of number node `n`, or the constant of STORE_CONST `n`, in `dst`.
@@ -978,8 +979,8 @@ fn void OptCg.box_node(&self, uint n, int dst) {
     }
 }
 
-// LOAD_LENGTH: an array's length as emit_length reads it, as an INT32. Anything else, and a
-// length above the int32 range, leaves for the baseline code.
+// LOAD_LENGTH: a string's or an array's length as emit_length reads it, as an INT32. Anything
+// else, and a length above the int32 range, leaves for the baseline code.
 fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -992,6 +993,12 @@ fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.b);
     }
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_STRING_START);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
+    a.guard_flags_clear(R1, l.symbol_mask, R2);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.str_length);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_string, sljit_emit_label(c));
     a.unbox_object(R1, rr);
     // The class test excludes a proxy, which has a class of its own.
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
@@ -999,6 +1006,7 @@ fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
     a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_array_len);
     a.call.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, 0x7FFFFFFF));
+    sljit_set_label(done, sljit_emit_label(c));
     self.exit_calls(i, OptExit.SLOW_PATH);
     self.def_int(i, R0);
 }
@@ -1038,9 +1046,16 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         }
         other = a.array_or_typed(0);
     }
-    self.array_slot(n.a);
+    int x = self.array_slot(n.a);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
+    // An `undefined` leaves unless it is an element of a packed array.
+    void* value = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, a.lay.obj_gc);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, a.lay.packed_mask);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, a.lay.obj_array_len);
+    a.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, x, 0, R2, 0));
+    sljit_set_label(value, sljit_emit_label(c));
     if (other != null) {
         $if features::BUFFERS:
             void* done = sljit_emit_jump(c, SLJIT_JUMP);

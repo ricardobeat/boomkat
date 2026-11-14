@@ -1945,9 +1945,9 @@ fn bool OptBuild.get_field(&self) {
 }
 
 // Whether the instruction being lowered is a GETPROPC or GETPROPC_CACHED of the constant key
-// `length` that has not exited repeatedly. The baseline reads an array's length before its cache
-// and records nothing, so the read is taken for an array's; a string's leaves through the exit,
-// and the ban that follows lowers the site generically.
+// `length` that has not exited repeatedly. The baseline reads a string's or an array's length
+// before its cache and records nothing, so the read is taken for one of those; anything else
+// leaves through the exit, and the ban that follows lowers the site generically.
 fn bool OptBuild.length_site(&self) {
     if (self.w.op != Opcode.GETPROPC && self.w.op != Opcode.GETPROPC_CACHED) return false;
     CompiledFunction* f = self.cur_f();
@@ -1956,7 +1956,7 @@ fn bool OptBuild.length_site(&self) {
     return !opt_site_banned(self.f, f, self.next_pc - 1);
 }
 
-// The `length` of an array (OptBuild.length_site), as an INT32 node.
+// The `length` of a string or an array (OptBuild.length_site), as an INT32 node.
 fn bool OptBuild.get_length(&self) {
     uint recv = self.w.b;
     uint rnode = NO_NODE;
