@@ -299,9 +299,33 @@ fn bool HString.same_units(&self, HString* other, bool use_hash = false) @inline
     return same_bytes(self.data_ptr(), other.data_ptr(), self.byte_len());
 }
 
+// The `$Type` at `p`, which need not be aligned.
+macro load_unaligned($Type, char* p) {
+    $Type v;
+    mem::copy(&v, p, $Type::size);
+    return v;
+}
+
 // `n` bytes at `a` and `b` are equal. mem::equals of characters compares one at a time; string
-// comparison is hot in interning.
-fn bool same_bytes(void* a, void* b, usz n) @inline => n == 0 || libc::memcmp(a, b, n) == 0;
+// comparison is hot in interning. Up to 16 bytes compare inline as two overlapping words of the
+// widest size that fits, as copy_short copies them.
+fn bool same_bytes(void* a, void* b, usz n) @inline {
+    char* p = a;
+    char* q = b;
+    if (n > 16) return libc::memcmp(a, b, n) == 0;
+    if (n >= 8) {
+        return load_unaligned(ulong, p) == load_unaligned(ulong, q)
+            && load_unaligned(ulong, p + n - 8) == load_unaligned(ulong, q + n - 8);
+    }
+    if (n >= 4) {
+        return load_unaligned(uint, p) == load_unaligned(uint, q)
+            && load_unaligned(uint, p + n - 4) == load_unaligned(uint, q + n - 4);
+    }
+    for (usz i = 0; i < n; i++) {
+        if (p[i] != q[i]) return false;
+    }
+    return true;
+}
 
 // Lexicographic comparison of two HStrings by UTF-16 code unit, as the ECMAScript
 // relational operators define it. Returns -1 if a < b, 0 if a == b, 1 if a > b.
