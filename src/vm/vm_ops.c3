@@ -74,6 +74,7 @@ fn OpStatus op_setconst(Dispatch* ds, DecodedInsn insn) {
     uint bc = insn.get_bc();
     if (bc < vm.current_func.const_count) {
         vm.heap.tval_copy_ref(&ds.constants[bc], ra);
+        vm.heap.root_store_tval(*ra);
     }
     return NEXT;
 }
