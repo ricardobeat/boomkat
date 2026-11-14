@@ -655,6 +655,14 @@ fn uint OptGraph.copied(&self, uint n) {
 }
 
 // Whether VALUE node `n` holds a boolean: a comparison, a `!`, a phi of such (cc 1), or a copy.
+// Whether the graph reads an element inline.
+fn bool OptGraph.loads_elements(&self) {
+    foreach (&n : self.nodes) {
+        if (n.op == OptOp.LOAD_ELEM) return true;
+    }
+    return false;
+}
+
 fn bool OptGraph.is_boolean(&self, OptNode* n) {
     while (n.op == OptOp.COPY) n = &self.nodes[n.a];
     if (n.rep != OptRep.VALUE) return false;

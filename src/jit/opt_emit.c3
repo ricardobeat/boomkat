@@ -979,8 +979,8 @@ fn void OptCg.box_node(&self, uint n, int dst) {
     }
 }
 
-// LOAD_LENGTH: an array's length as emit_length reads it, as an INT32. Anything else, and a
-// length above the int32 range, leaves for the baseline code.
+// LOAD_LENGTH: a string's or an array's length as emit_length reads it, as an INT32. Anything
+// else, and a length above the int32 range, leaves for the baseline code.
 fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -993,6 +993,12 @@ fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.b);
     }
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_STRING_START);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
+    a.guard_flags_clear(R1, l.symbol_mask, R2);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.str_length);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_string, sljit_emit_label(c));
     a.unbox_object(R1, rr);
     // The class test excludes a proxy, which has a class of its own.
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
@@ -1000,6 +1006,7 @@ fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
     a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_array_len);
     a.call.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, 0x7FFFFFFF));
+    sljit_set_label(done, sljit_emit_label(c));
     self.exit_calls(i, OptExit.SLOW_PATH);
     self.def_int(i, R0);
 }
