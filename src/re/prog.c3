@@ -437,34 +437,84 @@ fn bool re_prog_decode(ReProgram* prog, char* bc, uint bc_len) {
     return true;
 }
 
+// What the continuation of a greedy run does at a position the run gave back
+// to: fails there, certainly succeeds already at the run's own end, or either.
+enum ReGiveback : char {
+    REJECTS,
+    SUCCEEDS,
+    UNKNOWN,
+}
+
 // Whether a greedy run never profits from giving a code point back. Every
 // position it gives back to is followed by a code point its atom accepted, and
-// sits before the subject's end; the continuation is followed to its first test
-// of the subject, and when that test rejects every such code point, or cannot
-// pass before the end, each give-back fails. Reaching MATCH first, the run's own
-// end already succeeds.
+// sits before the subject's end. Each path of the continuation is followed to its
+// first test of the subject: the run keeps everything when every path rejects
+// such a position, or when one path reaches MATCH with nothing able to fail on
+// the way, since then the run's own end already succeeds.
 fn bool ReProgram.gives_nothing_back(&self, ReInsn* star) {
+    uint budget = 32;
+    return self.giveback_from(star, star.after, &budget) != UNKNOWN;
+}
+
+fn ReGiveback ReProgram.giveback_from(&self, ReInsn* star, uint pc, uint* budget) {
     ReInsn* body = &self.insns[star.target];
-    uint pc = star.after;
-    for (uint steps = 0; steps < 16 && pc < self.insns.len; steps++) {
+    bool certain = true;
+    while (pc < self.insns.len) {
+        if (*budget == 0) return UNKNOWN;
+        (*budget)--;
         ReInsn* next = &self.insns[pc];
         switch (next.op) {
             case SAVE_START: case SAVE_END: case SAVE_RESET:
                 pc++;
+            case CHECK_ADVANCE:
+                // It can only fail, so a path through it no longer succeeds for certain.
+                certain = false;
+                pc++;
             case GOTO:
                 pc = next.target;
-            case MATCH: case LINE_END:
-                return true;
+            case SPLIT_GOTO_FIRST: case SPLIT_NEXT_FIRST:
+                ReGiveback taken = self.giveback_from(star, next.target, budget);
+                ReGiveback fall = self.giveback_from(star, pc + 1, budget);
+                if (taken == REJECTS && fall == REJECTS) return REJECTS;
+                if (certain && (taken == SUCCEEDS || fall == SUCCEEDS)) return SUCCEEDS;
+                return UNKNOWN;
+            case MATCH:
+                return certain ? SUCCEEDS : UNKNOWN;
+            case LINE_END:
+                return REJECTS;
+            case WORD_BOUNDARY: case WORD_BOUNDARY_I:
+                // With at least one code point kept, both sides of a give-back
+                // position are word characters the atom accepted.
+                return star.a > 0 && self.only_word(body) ? REJECTS : UNKNOWN;
             case STAR:
-                return next.a > 0 && self.disjoint(body, &self.insns[next.target]);
+                return next.a > 0 && self.disjoint(body, &self.insns[next.target]) ? REJECTS : UNKNOWN;
             case CHAR: case CHAR32: case DOT: case ANY: case SPACE: case NOT_SPACE:
             case RANGE: case RANGE32:
-                return self.disjoint(body, next);
+                return self.disjoint(body, next) ? REJECTS : UNKNOWN;
             default:
-                return false;
+                return UNKNOWN;
         }
     }
-    return false;
+    return UNKNOWN;
+}
+
+// Whether every code point the single-character test accepts is an ASCII word
+// character.
+fn bool ReProgram.only_word(&self, ReInsn* insn) {
+    switch (insn.op) {
+        case CHAR: case CHAR32:
+            return insn.a < 128 && re_bindings::re_is_word_byte((uint)insn.a);
+        case RANGE: case RANGE32:
+            for (uint k = 0; k < insn.pair_count; k++) {
+                uint low = self.ranges[insn.ranges + k * 2];
+                uint high = self.ranges[insn.ranges + k * 2 + 1];
+                if (high >= 128) return false;
+                for (uint c = low; c <= high; c++) if (!re_bindings::re_is_word_byte(c)) return false;
+            }
+            return true;
+        default:
+            return false;
+    }
 }
 
 // Whether no code point passes both single-character tests. The case-folding

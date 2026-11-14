@@ -64,6 +64,8 @@ struct ReJitClass {
 // instruction. Owned by the program and freed with it.
 struct ReJitData {
     char[RE_JIT_BITS] space_bits;
+    // Nonzero at each Latin-1 word unit, for the inline word-boundary test.
+    char[256] word_units;
     // Nonzero at each Latin-1 unit a match can begin with: the scan between
     // attempts reads one byte per subject unit.
     char[256] first_units;
@@ -203,8 +205,8 @@ fn long re_jit_class_matches(re_native::ReClass* cls, long cp) {
 }
 
 // Make room for one more undo record before the emitted write stores it.
-fn long re_jit_reserve_slots(re_native::ReExec* e) {
-    e.reserve_slots();
+fn long re_jit_reserve_slots(re_native::ReExec* e, long n) {
+    e.reserve_slots((uint)n);
     return 0;
 }
 
@@ -567,12 +569,30 @@ fn void ReAsm.emit_line_end(&self, bool multiline) {
 // Fail unless exactly one of the code points around the position is a word
 // character; `invert` is the \B form, which requires the two to agree.
 fn void ReAsm.emit_word_boundary(&self, bool ignore_case, bool invert) {
-    self.mov(self.t0, 0, self.s_e, 0);
-    self.mov_u32(self.t1, 0, self.s_pos, 0);
-    self.mov(self.t2, 0, jit::SLJIT_IMM, (ignore_case ? 1 : 0) | (invert ? 2 : 0));
-    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
-                          jit::SLJIT_IMM, (long)(usz)&re_jit_word_boundary);
-    self.fail_if_equal(self.t0, 0);
+    if (self.wide) {
+        self.mov(self.t0, 0, self.s_e, 0);
+        self.mov_u32(self.t1, 0, self.s_pos, 0);
+        self.mov(self.t2, 0, jit::SLJIT_IMM, (ignore_case ? 1 : 0) | (invert ? 2 : 0));
+        jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
+                              jit::SLJIT_IMM, (long)(usz)&re_jit_word_boundary);
+        self.fail_if_equal(self.t0, 0);
+        return;
+    }
+    // A Latin-1 unit is a word character by the table; past either end there is none.
+    self.mov(self.t1, 0, jit::SLJIT_IMM, (long)(usz)&self.data.word_units);
+    self.mov(self.t2, 0, jit::SLJIT_IMM, 0);
+    self.mov(self.t3, 0, jit::SLJIT_IMM, 0);
+    void* at_end = self.emit_bounds();
+    self.mov_u8(self.t0, 0, jit::mem_index(self.s_data, self.s_pos), 0);
+    self.mov_u8(self.t2, 0, jit::mem_index(self.t1, self.t0), 0);
+    self.bind(at_end, self.label());
+    void* at_start = self.cmp(jit::SLJIT_EQUAL, self.s_pos, 0, jit::SLJIT_IMM, 0);
+    self.op2(jit::SLJIT_SUB, self.t4, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+    self.mov_u8(self.t0, 0, jit::mem_index(self.s_data, self.t4), 0);
+    self.mov_u8(self.t3, 0, jit::mem_index(self.t1, self.t0), 0);
+    self.bind(at_start, self.label());
+    // A boundary when exactly one side is a word character.
+    self.fail_if(self.cmp(invert ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL, self.t2, 0, self.t3, 0));
 }
 
 // Canonicalize the code point in t0 for the ignore-case comparisons: the ASCII
@@ -636,7 +656,8 @@ fn void ReAsm.emit_write(&self, uint slot, int value) {
     // the call: it is spilled here, which is why only the rare path pays.
     self.mov(jit::SLJIT_MEM | jit::reg_sp(), SLOT_SCRATCH, value, 0);
     self.mov(self.t0, 0, self.s_e, 0);
-    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS1WW,
+    self.mov(self.t1, 0, jit::SLJIT_IMM, 1);
+    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW_R,
                           jit::SLJIT_IMM, (long)(usz)&re_jit_reserve_slots);
     self.mov(value, 0, jit::SLJIT_MEM | jit::reg_sp(), SLOT_SCRATCH);
     self.bind(room, self.label());
@@ -658,13 +679,116 @@ fn void ReAsm.emit_write(&self, uint slot, int value) {
     self.mov_u32(jit::SLJIT_MEM | self.t1, off, value, 0);
 }
 
-// Write the capture slot or register `slot` from the current position.
-fn void ReAsm.emit_save(&self, uint slot) @inline => self.emit_write(slot, self.s_pos);
+// Whether the instruction only writes captures or registers, from the position
+// or a constant: a run of them is emitted as one batch.
+fn bool re_jit_write_op(ReOp op) @inline {
+    return op == ReOp.SAVE_START || op == ReOp.SAVE_END || op == ReOp.SAVE_RESET
+        || op == ReOp.SET_I32 || op == ReOp.SET_CHAR_POS;
+}
 
-// Write the capture slot or register `slot` from a constant.
-fn void ReAsm.emit_value(&self, uint slot, uint value) @inline {
-    self.mov(self.t0, 0, jit::SLJIT_IMM, (long)value);
-    self.emit_write(slot, self.t0);
+// One write of a batch: the slot, and the constant it receives unless it takes
+// the position.
+struct ReJitWrite {
+    uint slot;
+    bool at_pos;
+    uint value;
+}
+
+// The writes of the `n` instructions from `pc`, in order, into `out` when it is
+// not empty; the count either way.
+fn uint ReAsm.collect_writes(&self, uint pc, uint n, ReJitWrite[] out) {
+    uint count = 0;
+    uint regs = self.prog.capture_count * 2;
+    for (uint i = pc; i < pc + n; i++) {
+        re_native::ReInsn* insn = &self.prog.insns[i];
+        switch (insn.op) {
+            case ReOp.SAVE_START: case ReOp.SAVE_END:
+                if (out.len) out[count] = { (uint)insn.a * 2 + (insn.op == ReOp.SAVE_END ? 1 : 0), true, 0 };
+                count++;
+            case ReOp.SAVE_RESET:
+                for (uint slot = (uint)insn.a * 2; slot <= (uint)insn.b * 2 + 1; slot++) {
+                    if (out.len) out[count] = { slot, false, re_native::RE_UNSET };
+                    count++;
+                }
+            case ReOp.SET_I32:
+                if (out.len) out[count] = { regs + insn.reg, false, (uint)insn.a };
+                count++;
+            case ReOp.SET_CHAR_POS:
+                if (out.len) out[count] = { regs + insn.reg, true, 0 };
+                count++;
+            default:
+                unreachable("not a write");
+        }
+    }
+    return count;
+}
+
+// The `n` write instructions from `pc` as one batch: one check for a frame
+// behind them and one for room, a record per distinct slot holding the value it
+// had before the batch, then the stores. Restoring the records undoes the whole
+// batch, whatever order its writes overwrite each other in.
+fn void ReAsm.emit_writes(&self, uint pc, uint n) {
+    uint count = self.collect_writes(pc, n, {});
+    ReJitWrite[] writes = mem::new_array(ReJitWrite, (sz)count);
+    defer mem::free(writes);
+    self.collect_writes(pc, n, writes);
+    uint captures = self.prog.capture_count * 2;
+    bool any_reg = false;
+    foreach (w : writes) if (w.slot >= captures) any_reg = true;
+    // Only the first write of a slot needs its old value kept.
+    bool[] first = mem::new_array(bool, (sz)count);
+    defer mem::free(first);
+    uint records = 0;
+    foreach (i, w : writes) {
+        first[i] = true;
+        for (sz k = 0; k < i; k++) if (writes[k].slot == w.slot) first[i] = false;
+        if (first[i]) records++;
+    }
+    // With no frame behind it, nothing can resume to before this batch, and the
+    // next attempt resets the captures itself: there is nothing to record.
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
+    void* bare = self.cmp(jit::SLJIT_EQUAL, self.t1, 0, jit::SLJIT_IMM, 0);
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_len);
+    self.mov_u32(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_cap);
+    self.op2(jit::SLJIT_ADD, self.t1, 0, self.t1, 0, jit::SLJIT_IMM, (long)records);
+    void* room = self.cmp(jit::SLJIT_LESS_EQUAL, self.t1, 0, self.t2, 0);
+    self.mov(self.t0, 0, self.s_e, 0);
+    self.mov(self.t1, 0, jit::SLJIT_IMM, (long)records);
+    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW_R,
+                          jit::SLJIT_IMM, (long)(usz)&re_jit_reserve_slots);
+    self.bind(room, self.label());
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_len);
+    self.mov(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo);
+    self.op2(jit::SLJIT_SHL, self.t3, 0, self.t1, 0, jit::SLJIT_IMM, 3);
+    self.op2(jit::SLJIT_ADD, self.t2, 0, self.t2, 0, self.t3, 0);
+    self.op2(jit::SLJIT_ADD, self.t1, 0, self.t1, 0, jit::SLJIT_IMM, (long)records);
+    self.store_u32(self.s_e, self.lay.undo_len, self.t1);
+    self.mov(self.t0, 0, jit::SLJIT_MEM | self.s_e, self.lay.capture);
+    if (any_reg) self.mov(self.t4, 0, jit::SLJIT_MEM | self.s_e, self.lay.regs);
+    long at = 0;
+    foreach (i, w : writes) {
+        if (!first[i]) continue;
+        int base = w.slot < captures ? self.t0 : self.t4;
+        long off = (long)(w.slot < captures ? w.slot : w.slot - captures) * 4;
+        self.mov(self.t3, 0, jit::SLJIT_IMM, (long)w.slot);
+        self.store_u32(self.t2, at, self.t3);
+        self.mov_u32(self.t3, 0, jit::SLJIT_MEM | base, off);
+        self.store_u32(self.t2, at + 4, self.t3);
+        at += 8;
+    }
+    self.bind(bare, self.label());
+    self.mov(self.t0, 0, jit::SLJIT_MEM | self.s_e, self.lay.capture);
+    if (any_reg) self.mov(self.t4, 0, jit::SLJIT_MEM | self.s_e, self.lay.regs);
+    foreach (w : writes) {
+        int base = w.slot < captures ? self.t0 : self.t4;
+        long off = (long)(w.slot < captures ? w.slot : w.slot - captures) * 4;
+        if (w.at_pos) {
+            self.store_u32(base, off, self.s_pos);
+        } else {
+            self.mov(self.t3, 0, jit::SLJIT_IMM, (long)w.value);
+            self.store_u32(base, off, self.t3);
+        }
+    }
 }
 
 // Restore every write recorded above the mark in t1, in place: the walk's undo
@@ -731,15 +855,77 @@ fn void ReAsm.emit_push(&self, int kind, uint target, bool run) {
     self.store_u32(self.s_e, self.lay.depth, self.t1);
 }
 
-// One split: the alternative is pushed and the preferred side runs.
-fn void ReAsm.emit_split(&self, uint pc, re_native::ReInsn* insn, bool target_first) {
-    if (target_first) {
-        self.emit_push(FIX_INSN, pc + 1, false);
-        self.go(insn.target, FIX_INSN);
-    } else {
-        self.emit_push(FIX_INSN, insn.target, false);
-        self.next(pc);
+// The first instruction on the straight path from `pc` that tests the subject,
+// passing over writes and gotos, with its index in *at; null when something else
+// comes first or the test cannot be peeked at.
+fn re_native::ReInsn* ReAsm.first_test(&self, uint pc, uint* at) {
+    for (uint steps = 0; steps < 16 && pc < self.prog.insns.len; steps++) {
+        re_native::ReInsn* insn = &self.prog.insns[pc];
+        switch (insn.op) {
+            case ReOp.GOTO:
+                pc = insn.target;
+            case ReOp.SAVE_START: case ReOp.SAVE_END: case ReOp.SAVE_RESET:
+            case ReOp.SET_I32: case ReOp.SET_CHAR_POS:
+                pc++;
+            case ReOp.CHAR: case ReOp.DOT: case ReOp.SPACE: case ReOp.NOT_SPACE:
+            case ReOp.RANGE: case ReOp.RANGE_I: case ReOp.RANGE32: case ReOp.RANGE32_I:
+                *at = pc;
+                return insn;
+            case ReOp.CHAR_I:
+                if (!((insn.a >= 'a' && insn.a <= 'z') || (insn.a >= 'A' && insn.a <= 'Z'))) return null;
+                *at = pc;
+                return insn;
+            default:
+                return null;
+        }
     }
+    return null;
+}
+
+// Go to `dest` when the code point at the position certainly fails `insn`, at
+// index `pc`, which first_test found: the subject is exhausted, or its unit is
+// outside the test. The position is not consumed. A wide unit above the Latin-1
+// range is left to the test itself, except against a plain character.
+fn void ReAsm.emit_peek(&self, re_native::ReInsn* insn, uint pc, uint dest) {
+    self.add_fix(self.emit_bounds(), dest, FIX_INSN);
+    self.emit_unit(self.t0, self.s_pos);
+    void* above = null;
+    if (self.wide && insn.op != ReOp.CHAR) above = self.cmp(jit::SLJIT_GREATER_EQUAL, self.t0, 0, jit::SLJIT_IMM, 256);
+    switch (insn.op) {
+        case ReOp.CHAR:
+            // A unit that differs differs as a code point too: a pair combines
+            // to a value no 16-bit character equals.
+            self.add_fix(self.cmp(jit::SLJIT_NOT_EQUAL, self.t0, 0, jit::SLJIT_IMM, insn.a), dest, FIX_INSN);
+        case ReOp.CHAR_I:
+            self.op2(jit::SLJIT_OR, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, 0x20);
+            self.add_fix(self.cmp(jit::SLJIT_NOT_EQUAL, self.t0, 0, jit::SLJIT_IMM, insn.a | 0x20), dest, FIX_INSN);
+        case ReOp.DOT:
+            self.add_fix(self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, '\n'), dest, FIX_INSN);
+            self.add_fix(self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, '\r'), dest, FIX_INSN);
+        case ReOp.SPACE: case ReOp.NOT_SPACE:
+            self.emit_bit(self.t0, (usz)&self.data.space_bits[0], self.t3);
+            int cond = insn.op == ReOp.SPACE ? jit::SLJIT_EQUAL : jit::SLJIT_NOT_EQUAL;
+            self.add_fix(self.cmp(cond, self.t3, 0, jit::SLJIT_IMM, 0), dest, FIX_INSN);
+        default:
+            self.emit_bit(self.t0, (usz)&self.data.classes[self.data.class_at[pc]].bits[0], self.t3);
+            self.add_fix(self.cmp(jit::SLJIT_EQUAL, self.t3, 0, jit::SLJIT_IMM, 0), dest, FIX_INSN);
+    }
+    if (above != null) self.bind(above, self.label());
+}
+
+// One split: the alternative is pushed and the preferred side runs. A side whose
+// first test the next code point certainly fails is not tried: the other runs
+// without a frame.
+fn void ReAsm.emit_split(&self, uint pc, re_native::ReInsn* insn, bool target_first) {
+    uint preferred = target_first ? insn.target : pc + 1;
+    uint other = target_first ? pc + 1 : insn.target;
+    uint at;
+    re_native::ReInsn* test = self.first_test(preferred, &at);
+    if (test != null) self.emit_peek(test, at, other);
+    test = self.first_test(other, &at);
+    if (test != null) self.emit_peek(test, at, preferred);
+    self.emit_push(FIX_INSN, other, false);
+    self.go(preferred, FIX_INSN);
 }
 
 // A counted repeat: step the counter down, keep looping while it is above what
@@ -954,6 +1140,18 @@ fn uint ReAsm.run_length(&self, uint pc, bool* target) {
     return n;
 }
 
+// How many write instructions from `pc` form one batch: nothing may branch into
+// the middle of it.
+fn uint ReAsm.write_length(&self, uint pc, bool* target) {
+    uint n = 0;
+    while ((usz)pc + n < self.prog.insns.len) {
+        if (n != 0 && target[pc + n]) break;
+        if (!re_jit_write_op(self.prog.insns[pc + n].op)) break;
+        n++;
+    }
+    return n;
+}
+
 // Emit a run of `n` single-character instructions: one bounds check and one base
 // pointer, then a compare per character, each failing to the backtracking path.
 fn void ReAsm.emit_char_run(&self, uint pc, uint n) {
@@ -1010,19 +1208,9 @@ fn void ReAsm.emit_insn(&self, uint pc) {
             self.emit_word_boundary(false, true);
         case ReOp.NOT_WORD_BOUNDARY_I:
             self.emit_word_boundary(true, true);
-        case ReOp.SAVE_START:
-            self.emit_save((uint)insn.a * 2);
-        case ReOp.SAVE_END:
-            self.emit_save((uint)insn.a * 2 + 1);
-        case ReOp.SAVE_RESET:
-            for (uint group = (uint)insn.a; group <= (uint)insn.b; group++) {
-                self.emit_value(group * 2, re_native::RE_UNSET);
-                self.emit_value(group * 2 + 1, re_native::RE_UNSET);
-            }
-        case ReOp.SET_I32:
-            self.emit_value(self.prog.capture_count * 2 + insn.reg, (uint)insn.a);
-        case ReOp.SET_CHAR_POS:
-            self.emit_write(self.prog.capture_count * 2 + insn.reg, self.s_pos);
+        case ReOp.SAVE_START: case ReOp.SAVE_END: case ReOp.SAVE_RESET:
+        case ReOp.SET_I32: case ReOp.SET_CHAR_POS:
+            self.emit_writes(pc, 1);
         case ReOp.CHECK_ADVANCE:
             self.emit_read_reg(self.prog.capture_count * 2 + insn.reg, self.t0);
             self.fail_if(self.cmp(jit::SLJIT_EQUAL, self.t0, 0, self.s_pos, 0));
@@ -1210,7 +1398,7 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     a.lay = re_layout();
     a.labels = mem::new_array(void*, (sz)n.prog.insns.len);
     defer mem::free(a.labels);
-    a.fixes = mem::new_array(ReJitFix, (sz)n.prog.insns.len * 8 + 64);
+    a.fixes = mem::new_array(ReJitFix, (sz)n.prog.insns.len * 16 + 64);
     defer mem::free(a.fixes);
     a.fix_len = 0;
     a.attempt = null;
@@ -1256,8 +1444,13 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     }
     for (uint pc = a.first_pc; pc < n.prog.insns.len;) {
         a.labels[pc] = a.label();
+        uint writes = a.write_length(pc, target);
         uint run = a.run_length(pc, target);
-        if (run > 1) {
+        if (writes > 1) {
+            a.emit_writes(pc, writes);
+            a.next(pc + writes - 1);
+            pc += writes;
+        } else if (run > 1) {
             a.emit_char_run(pc, run);
             a.next(pc + run - 1);
             pc += run;
@@ -1364,6 +1557,7 @@ fn ReJitData* re_jit_data_build(re_native::ReNative* n) {
     ReJitData* data = mem::new(ReJitData);
     for (uint unit = 0; unit < 256; unit++) {
         if (re_bindings::re_is_space(unit)) re_jit_bit(&data.space_bits, unit);
+        if (re_bindings::re_is_word_byte(unit)) data.word_units[unit] = 1;
         if (n.has_first_set && re_native::re_fs_test(n, unit)) data.first_units[unit] = 1;
     }
     uint classes = 0;

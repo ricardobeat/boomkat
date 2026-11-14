@@ -369,6 +369,43 @@ fn void cases() {
     check("(?:a|)*$", (ushort[]){'a', 'b', 'a'}, 0, true);
     check("a*\\b", (ushort[]){'a', ' ', 'b'}, 0, true);
     check("(?:a|b)*$", (ushort[]){'a', 'b', 'c'}, 0, true);
+    // Batched capture writes: resets and saves of the same group in one batch,
+    // undone by a later failure.
+    check("(?:(a)(b)?c|ab(d))", (ushort[]){'a', 'b', 'd', 'a', 'c'}, 0, true);
+    check("((a)|b)+c", (ushort[]){'a', 'b', 'a', 'x', 'b', 'a', 'c'}, 0, true);
+    check("(((\\w+):\\/\\/)([^\\/:]*)(:(\\d+))?)?([^#?]*)(\\?([^#]*))?(#(.*))?",
+          (ushort[]){'h', ':', '/', '/', 'a', ':', '8', '/', 'p', '?', 'q', '#', 'f'}, 0, true);
+    check("(((\\w+):\\/\\/)([^\\/:]*)(:(\\d+))?)?([^#?]*)(\\?([^#]*))?(#(.*))?",
+          (ushort[]){'h', 't', ':', '/', 'a', ':', 'x', '?', '#'}, 0, true);
+    // Greedy runs whose continuation splits: kept whole only when every branch
+    // rejects what they give back, or one branch matches outright.
+    check("[^#?]*(\\?[^#]*)?(#.*)?", (ushort[]){'a', '?', 'b', '#', 'c'}, 0, true);
+    check("a*(?:b|a)", (ushort[]){'a', 'a', 'a'}, 0, true);
+    check("a*(?:b|$)", (ushort[]){'a', 'a', 'c', 'a'}, 0, true);
+    check("[^:]*(?::x|)y", (ushort[]){'a', 'b', ':', 'x', 'y'}, 0, true);
+    check("\\w+\\b", (ushort[]){' ', 'a', 'b', ' ', 'c'}, 0, true);
+    check("\\b\\w+\\b", (ushort[]){'a', 'b', '-', 'c', 'd'}, 0, true);
+    check("\\w*\\b", (ushort[]){' ', 'a', 'b'}, 0, true);
+    check("[a-z.]+\\b", (ushort[]){'a', 'b', '.', '.'}, 0, true);
+    check("\\w+\\B", (ushort[]){'a', 'b', 'c', ' '}, 0, true);
+    check("\\w+\\b", (ushort[]){0x17F, 'a', 0x212A}, re_bindings::RE_FLAG_IGNORECASE | re_bindings::RE_FLAG_UNICODE, false);
+    // Alternations: a branch whose first unit cannot match is skipped without a
+    // frame; shared prefixes, empty branches, case-folded and class branches.
+    check("qqqq|qqq|qq|q|ZZ|Z|ll|l", (ushort[]){'q', 'q', 'q', 'Z', 'Z', 'l', 'x', 'q'}, 0, true);
+    check("abc|abd|ab|a", (ushort[]){'a', 'b', 'x', 'a', 'b', 'd'}, 0, true);
+    check("x(?:|a|b)y", (ushort[]){'x', 'y', 'x', 'a', 'y', 'x', 'c'}, 0, true);
+    check("(?:a|b|)c", (ushort[]){'c', 'b', 'c'}, 0, true);
+    check("foo|bar|baz", (ushort[]){'B', 'a', 'Z', 'f', 'O', 'o'}, re_bindings::RE_FLAG_IGNORECASE, true);
+    check("[0-9]+|[a-f]+|\\s", (ushort[]){'g', '1', '2', 'a', ' ', 0xe9}, 0, true);
+    check("(?:\\.|x)(a)?", (ushort[]){'\n', '.', 'a', 'x'}, 0, true);
+    check("(?:a|b)(?=c)|ad", (ushort[]){'a', 'd', 'b', 'c'}, 0, true);
+    check("(a)\\1|b", (ushort[]){'a', 'a', 'b'}, 0, true);
+    check("\\u0101|a", (ushort[]){0x101, 'a', 0x201}, 0, false);
+    check("\\u{1F600}|a", (ushort[]){0xD83D, 0xDE00, 'a'}, re_bindings::RE_FLAG_UNICODE, false);
+    check("k|\\u017F", (ushort[]){0x212A, 0x17F, 'K'}, re_bindings::RE_FLAG_IGNORECASE | re_bindings::RE_FLAG_UNICODE, false);
+    check("s|t", (ushort[]){0x17F, 'S'}, re_bindings::RE_FLAG_IGNORECASE | re_bindings::RE_FLAG_UNICODE, false);
+    check("a|b", (ushort[]){'c', 'a', 'b'}, re_bindings::RE_FLAG_STICKY, true);
+    check("\\s?;\\s?", (ushort[]){'a', ' ', ';', 'b', ';', ' '}, 0, true);
 }
 
 // The decoder's own names, for the dump.

@@ -316,9 +316,11 @@ fn void ReExec.unwind(&self, uint mark) @inline {
     }
 }
 
-fn void ReExec.reserve_slots(&self) @inline {
-    if (self.undo_len < self.undo_cap) return;
+// Room for `n` more write records.
+fn void ReExec.reserve_slots(&self, uint n = 1) @inline {
+    if (self.undo_len + n <= self.undo_cap) return;
     uint cap = self.undo_cap * 2;
+    while (self.undo_len + n > cap) cap *= 2;
     ReSlot* grew;
     if (self.heap_undo == null) {
         grew = mem::new_array(ReSlot, (sz)cap).ptr;
