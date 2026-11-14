@@ -874,7 +874,19 @@ fn void Asm.emit_call_body(&self) {
     self.mov(R0, 0, ds, 0);
     self.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_regexp);
     done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    void* declined = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_regexp, sljit_emit_label(c));
+    // String.prototype.replace and replaceAll with a RegExp try vm::jit_call_string_regexp.
+    void* replace = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, builtins::Builtin.STRING_PROTO_REPLACE.ordinal);
+    void* not_replace = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal);
+    sljit_set_label(replace, sljit_emit_label(c));
+    self.mov(R2, 0, R4, 0);
+    self.mov(R1, 0, m | self.la, k.act_curr_pc);
+    self.mov(R0, 0, ds, 0);
+    self.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_string_regexp);
+    done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(not_replace, sljit_emit_label(c));
+    sljit_set_label(declined, sljit_emit_label(c));
     self.mov(R1, 0, m | self.la, k.act_curr_pc);
     self.mov(R0, 0, ds, 0);
     self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);
