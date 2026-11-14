@@ -864,6 +864,17 @@ fn void Asm.emit_call_body(&self) {
     // site continues at its resume point without the thunk. The helper declines
     // every other call shape, and every other callee keeps the slow path.
     void* compiled = sljit_emit_cmp(c, SLJIT_SIG_LESS, R4, 0, SLJIT_IMM, 0);
+    // RegExp.prototype.test and exec, adjacent builtin numbers, try
+    // vm::jit_call_regexp first, which runs them without the builtin's frame.
+    $assert builtins::Builtin.REGEXP_PROTO_EXEC.ordinal == builtins::Builtin.REGEXP_PROTO_TEST.ordinal + 1;
+    sljit_emit_op2(c, SLJIT_SUB, R0, 0, R4, 0, SLJIT_IMM, builtins::Builtin.REGEXP_PROTO_TEST.ordinal);
+    void* not_regexp = sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, 1);
+    self.mov(R2, 0, R4, 0);
+    self.mov(R1, 0, m | self.la, k.act_curr_pc);
+    self.mov(R0, 0, ds, 0);
+    self.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_regexp);
+    done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(not_regexp, sljit_emit_label(c));
     self.mov(R1, 0, m | self.la, k.act_curr_pc);
     self.mov(R0, 0, ds, 0);
     self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);

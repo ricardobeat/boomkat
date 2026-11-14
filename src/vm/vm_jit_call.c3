@@ -1163,6 +1163,44 @@ fn bool jit_call_builtin_method(Dispatch* ds, Instruction* next, OpStatus* statu
     return true;
 }
 
+// A builtin CALL a baseline call site makes of RegExp.prototype.exec or test
+// (`builtin`) on a RegExp builtins::regexp_plain accepts, with a string
+// argument: RegExpBuiltinExec runs without a builtin frame, and its value lands
+// in the call's register. 0 continues at `next`; JIT_CALL_SLOW, having run
+// nothing, leaves the call to jit_call_builtin_native.
+fn long jit_call_regexp(Dispatch* ds, Instruction* next, long builtin) {
+    Instruction* pc = next - 1;
+    TVal* regs = ds.regs_base;
+    if (pc.op != Opcode.CALL || pc.c == 0 || ds.ic_base == null) return JIT_CALL_SLOW;
+    TVal recv = regs[pc.b + 1];
+    HString* s = builtins::regexp_plain_input(&regs[pc.b + 2]);
+    if (s == null || !recv.is_object()) return JIT_CALL_SLOW;
+    HObject* rx = (HObject*)recv.get_heapptr();
+    Heap* heap = ds.heap;
+    if (rx == null || !builtins::regexp_plain(heap, rx)) return JIT_CALL_SLOW;
+    // test runs RegExpExec, whose Get(R, "exec") must find the intrinsic.
+    bool test = builtin == builtins::Builtin.REGEXP_PROTO_TEST.ordinal;
+    if (test && !builtins::regexp_inherits_exec(heap, rx)) return JIT_CALL_SLOW;
+    if (heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
+    hobject::ic_note_callee((hobject::ICEntry*)ds.ic_base + (pc - ds.code_base), hobject::IC_BUILTIN_TARGET | (uint)builtin);
+    // The match array is allocated with the frame's registers published (the
+    // site has stored its resume point).
+    Vm* vm = ds.vm;
+    TVal* top = ds.act.bottom + vm.current_func.num_regs + FRAME_SCRATCH_SLOTS;
+    if (top > vm.valstack_top) vm.valstack_top = top;
+    TVal result;
+    result.set_undefined();
+    if (!builtins::regexp_exec_plain(heap, rx, s, test, &result)) return JIT_CALL_SLOW;
+    if (result.is_object()) {
+        heap.store_builtin_result(regs + pc.a, &result);
+        track_heap_store(ds.act, regs + pc.a, pc.a);
+    } else {
+        regs[pc.a] = result;
+    }
+    ds.curr_pc = next;
+    return 0;
+}
+
 // A CALL, CALL_UNDEF_THIS or CALL_GLOBAL whose callee is a builtin, through th_call_native
 // as the threaded burst runs it (identity fast paths such as charCodeAt, then
 // the builtin's own dispatch) instead of op_call. False when it declined before
