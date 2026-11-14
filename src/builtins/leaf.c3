@@ -12,10 +12,17 @@ import std::math;
 
 alias LeafFn = fn bool(Heap* h, TVal this_val, TVal* args, uint argc, TVal* dst);
 
+LeafFn[Builtin::values.len] leaf_table @private;
+
 // The leaf of builtin number `builtin`, or null.
-fn LeafFn leaf_of(uint builtin) {
-    if (builtin >= Builtin::values.len) return null;
-    switch ((Builtin)builtin) {
+fn LeafFn leaf_of(uint builtin) @inline => builtin < leaf_table.len ? leaf_table[builtin] : null;
+
+fn void init_leaf_table() {
+    foreach (i, &leaf : leaf_table) *leaf = leaf_entry((Builtin)i);
+}
+
+fn LeafFn leaf_entry(Builtin builtin) @private {
+    switch (builtin) {
         case STRING_PROTO_CHARAT: return &leaf_char_at;
         case STRING_PROTO_CHARCODEAT: return &leaf_char_code_at;
         case STRING_FROMCHARCODE: return &leaf_from_char_code;

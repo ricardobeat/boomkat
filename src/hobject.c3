@@ -2654,36 +2654,53 @@ fn bool HObject.move_dense(&self, uint to, uint from, uint count, heap::Heap* h)
     PropValue* part = self.array_part();
     // A source past the dense part is all holes.
     uint have = from >= self.array_size ? 0 : min(count, self.array_size - from);
-    // Reference the copies before releasing what they overwrite, which may be
-    // among them. The values stay in this object, so the only barrier needed is
-    // the marker's: a copy may land in a slot it has already scanned.
-    bool marking = h.gc_phase == heap::GcPhase.MARK;
-    for (uint i = 0; i < have; i++) {
-        TVal v = part[from + i].get();
-        if (v.is_heap_allocated() && v.get_heapptr() != null) ((types::HeapHeader*)v.get_heapptr()).incref();
-        if (marking && v.is_traced()) h.shade_value(v);
+    // Only the counts outside the overlap change: a source the move leaves in place appears twice,
+    // and a target that held no source loses its value. Reference the former before releasing the
+    // latter, which may hold the same values. The values stay in this object, so the only barrier
+    // needed is the marker's: a copy may land in a slot it has already scanned.
+    if (h.gc_phase == heap::GcPhase.MARK) {
+        for (uint i = 0; i < have; i++) {
+            TVal v = part[from + i].get();
+            if (v.is_traced()) h.shade_value(v);
+        }
     }
-    for (uint i = 0; i < count; i++) {
-        PropValue* slot = &part[to + i];
-        if (slot.get().is_undefined()) continue;
-        self.array_used--;
-        slot.release_ref(h);
-    }
+    uint src_end = from + have;
+    uint dst_end = to + count;
+    self.move_dense_counts(part, from, min(src_end, to), true, h);
+    self.move_dense_counts(part, max(from, dst_end), src_end, true, h);
+    self.move_dense_counts(part, to, min(dst_end, from), false, h);
+    self.move_dense_counts(part, max(to, src_end), dst_end, false, h);
     mem::move(&part[to], &part[from], (sz)((usz)have * PropValue::size));
     TVal hole;
     hole.set_undefined();
     for (uint i = have; i < count; i++) part[to + i].set_untraced(hole);
     uint last_present = 0;
-    for (uint i = 0; i < have; i++) {
-        if (part[to + i].get().is_undefined()) continue;
-        self.array_used++;
-        last_present = to + i + 1;
+    for (uint i = have; i > 0; i--) {
+        if (part[to + i - 1].get().is_undefined()) continue;
+        last_present = to + i;
+        break;
     }
     if (self.flags.exotic_array && last_present > *self.array_len_ptr()) {
         *self.array_len_ptr() = last_present;
         self.sync_named_length(h);
     }
     return true;
+}
+
+// The count and presence changes of move_dense for the slots [start, end) of `part`: each value
+// referenced once more when `copied`, else released.
+fn void HObject.move_dense_counts(&self, PropValue* part, uint start, uint end, bool copied, heap::Heap* h) @inline {
+    for (uint i = start; i < end; i++) {
+        TVal v = part[i].get();
+        if (v.is_undefined()) continue;
+        if (copied) {
+            self.array_used++;
+            if (v.is_heap_allocated() && v.get_heapptr() != null) ((types::HeapHeader*)v.get_heapptr()).incref();
+        } else {
+            self.array_used--;
+            part[i].release_ref(h);
+        }
+    }
 }
 
 // ============================================================================
