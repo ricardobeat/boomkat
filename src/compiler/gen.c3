@@ -2800,6 +2800,33 @@ fn bool CompilerContext.gen_constant_array(&self, ast::Ast* tree, uint elems, us
     return true;
 }
 
+// A short literal with no holes or spreads: its elements in the registers
+// above `dst`, then one NEWARR_FILL builds the array from them.
+fn bool? CompilerContext.gen_filled_array(&self, ast::Ast* tree, uint elems, ushort dst) {
+    uint count = tree.list_len(elems);
+    if (count == 0 || count > hobject::ARRAY_INLINE_MAX_CAPACITY || (uint)dst + count > 0xFF) return false;
+    for (uint i = 0; i < count; i++) {
+        uint e = tree.list_item(elems, i);
+        if (e == 0 || tree.tags.data[e] == NodeTag.SPREAD) return false;
+    }
+    ushort first = dst + 1;
+    for (uint i = 0; i < count; i++) {
+        uint e = tree.list_item(elems, i);
+        Val elem = self.gen_expr(e, 0)!;
+        self.gen_line_end(e);
+        ushort expected = first + (ushort)i;
+        if (elem.reg != expected) {
+            self.emit_abc(Opcode.LDREG, (uint)expected, (uint)elem.reg, 0);
+            self.free_reg(elem.reg);
+            if (self.next_reg <= expected) self.next_reg = expected + 1;
+            if (self.next_reg > self.max_reg) self.max_reg = self.next_reg;
+        }
+    }
+    self.emit_abc(Opcode.NEWARR_FILL, (uint)dst, (uint)first, count);
+    self.free_regs_to(dst + 1);
+    return true;
+}
+
 fn Val? CompilerContext.gen_array(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint elems = tree.lhs.data[n];
@@ -2808,6 +2835,7 @@ fn Val? CompilerContext.gen_array(&self, uint n) {
     self.gen_line_main(n);
     ushort arr_reg = self.alloc_reg();
     if (self.gen_constant_array(tree, elems, arr_reg)) return { arr_reg, false, 0 };
+    if (self.gen_filled_array(tree, elems, arr_reg)!) return { arr_reg, false, 0 };
     uint newarr_pc = self.emit_a_bc(Opcode.NEWARR, (uint)arr_reg, 0);
     uint index = 0;
     ushort idx_reg = REG_NONE;

@@ -3765,6 +3765,43 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     return obj;
 }
 
+// A fresh array of `count` elements and that length, in its header block when
+// they fit. The caller writes every element slot before anything else can
+// allocate or observe the array, an `undefined` one only in a packed array.
+fn HObject*? Heap.alloc_dense_array(&self, uint count) {
+    HObject* obj;
+    if (count > 0 && count <= hobject::ARRAY_INLINE_MAX_CAPACITY) {
+        obj = self.alloc_inline_array_uninit(0, count)!;
+    } else {
+        obj = self.alloc_object(hobject::ObjClass.ARRAY)!;
+        if (!obj.reserve_array_storage(0, count, self)) return HEAP_ALLOC_FAULT~;
+    }
+    obj.prototype = self.array_proto;
+    obj.array_used = count;
+    obj.array_len_ptr()[0] = count;
+    return obj;
+}
+
+// A fresh array holding `values[:count]` as its elements, each slot written
+// once and counted. An `undefined` value is an element, which makes the array
+// packed.
+fn HObject*? Heap.alloc_array_of(&self, TVal* values, uint count) {
+    HObject* obj = self.alloc_dense_array(count)!;
+    hobject::PropValue* part = obj.array_part();
+    uint holes = 0;
+    for (uint i = 0; i < count; i++) {
+        if (values[i].is_undefined()) {
+            part[i].set_untraced(values[i]);
+            holes++;
+        } else {
+            self.init_slot_ref(obj, &part[i], &values[i]);
+        }
+    }
+    obj.array_used = count - holes;
+    obj.gc.packed = holes != 0;
+    return obj;
+}
+
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);

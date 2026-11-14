@@ -139,6 +139,8 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             return reg >= (uint)ins.a && reg <= (uint)ins.a + 1 + (uint)ins.b;
         case Opcode.INIT_SLOT:
             return (uint)ins.a == reg || (uint)ins.c == reg;
+        case Opcode.NEWARR_FILL:
+            return reg >= (uint)ins.b && reg < (uint)ins.b + (uint)ins.c;
         case Opcode.DESTRUCT_ARRAY_FAST:
             // A is the source register. B..B+C-1 are conditional outputs;
             // treating them as live here is a conservative barrier because
