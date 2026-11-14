@@ -1106,8 +1106,10 @@ fn void Asm.emit_return_body(&self) {
     sljit_set_label(site, sljit_emit_label(c));
     if (site_value != null) sljit_set_label(site_value, sljit_emit_label(c));
     void* site_inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+    void* site_string = self.emit_result_string(&helper);
     self.emit_result_object(&helper);
     sljit_set_label(site_inert, sljit_emit_label(c));
+    sljit_set_label(site_string, sljit_emit_label(c));
     // th_pop_frame: the caller is the record below, which becomes the record register's; the
     // activation count and the rest of the VM's frame state wait for vm::jit_sync. A frame state
     // synced for the popped record describes it no more, and the next frame pushed here must not
@@ -1123,6 +1125,26 @@ fn void Asm.emit_return_body(&self) {
     helper.bind(sljit_emit_label(c));
     self.mov(R0, 0, SLJIT_IMM, 0);
     sljit_set_label(done, sljit_emit_label(c));
+}
+
+// A string result R0 the site may store as Asm.publish stores one (emit_publish_body): one the
+// queue or a counted holder has already, so it needs no ZCT entry. The jump returned is taken for
+// it; another string joins `helper`, anything else falls through. Clobbers R1 and R3.
+fn void* Asm.emit_result_string(&self, Jumps* helper) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.str_flags);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.interned_mask | l.queued_mask);
+    void* queued = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, l.queued_mask);
+    sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R3, 0, SLJIT_IMM, l.interned_shift);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | R1, l.str_refcount);
+    helper.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, R3, 0));
+    sljit_set_label(queued, sljit_emit_label(c));
+    void* ok = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_string, sljit_emit_label(c));
+    return ok;
 }
 
 // The return's heap result R0 (no inert value): an object, while the collector is not marking,
