@@ -1537,7 +1537,21 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     }
     int* caps = bounds.items;
     int pos = 0;
-    while (pos <= input_len) {
+    char[] lit = re_bindings::re_whole_literal(re_data);
+    if (lit.len > 0) {
+        // Each match is the next occurrence of the literal, which is never empty.
+        while (pos <= input_len) {
+            int at = regexp_find_literal(s_hstr, lit, (uint)pos);
+            if (at < 0) break;
+            pos = at + (int)lit.len;
+            if (!spans.push(at) || !spans.push(pos)) {
+                builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
+                return false;
+            }
+            if (!global) break;
+        }
+    }
+    while (lit.len == 0 && pos <= input_len) {
         if (regexp_run(ctx, re_data, s_hstr, pos, caps, (int)(2 * ncap + 2)) != re_bindings::RE_MATCH) {
             if (ctx.should_throw) return false;
             break;
@@ -1564,6 +1578,18 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
         regexp_fast_last_index_write(ctx, rx, heap.str(heap::BuiltinStr.LAST_INDEX), &zero);
     }
     return true;
+}
+
+// The first occurrence of the ASCII `lit` in `s` at or after `from`, or -1.
+fn int regexp_find_literal(HString* s, char[] lit, uint from) {
+    if (!s.is_wide()) return hstring::find_bytes(s.latin1(), lit, from);
+    ushort* data = (ushort*)s.data_ptr();
+    for (uint i = from; i + lit.len <= s.length; i++) {
+        usz k = 0;
+        while (k < lit.len && data[i + k] == lit[k]) k++;
+        if (k == lit.len) return (int)i;
+    }
+    return -1;
 }
 
 // @@replace for a pristine receiver whose pattern has no named groups. The
@@ -1600,6 +1626,8 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
         return;
     }
     StrSlice[] cap_slices = slices.items[:ncap];
+    // A template without `$` is its own substitution.
+    bool plain = !replace_is_fn && !replace_hs.is_wide() && hstring::find_bytes(replace_hs.latin1(), "$") < 0;
     for (usz at = 0; at < spans.len; at += stride) {
         uint m_start = (uint)spans.items[at];
         uint m_end = (uint)spans.items[at + 1];
@@ -1633,6 +1661,8 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
             HString* rep = builtin_to_string_vm(ctx, &res);
             if (ctx.should_throw) return;
             if (rep == null) { out.append_latin1("undefined"); } else { out.append_hstring(rep); }
+        } else if (plain) {
+            out.append_hstring(replace_hs);
         } else {
             TVal no_groups; no_groups.set_undefined();
             rr_get_substitution(ctx, &out, { s_hstr, m_start, m_end }, s_hstr, m_start, m_end,

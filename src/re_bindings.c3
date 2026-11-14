@@ -34,6 +34,15 @@ fn int re_group_count(void* re) @inline {
     return n == null ? RE_MAX_CAPTURES : (int)n.prog.capture_count;
 }
 
+// The pattern behind `re` when it is one ASCII literal that may match
+// anywhere, so that finding its matches is a substring search; else empty.
+// Known once a run has prepared the pattern.
+fn char[] re_whole_literal(void* re) {
+    re_native::ReNative* n = *(re_native::ReNative**)re;
+    if (n == null || !n.lit_whole || n.lit_where != RE_LIT_PREFIX) return {};
+    return n.lit[:n.lit_len];
+}
+
 /* The literal every run of `re` is checked against (re_wrapper.h). */
 extern fn int re_literal(void* re, char* out, int* rare, int* where, int* whole);
 
