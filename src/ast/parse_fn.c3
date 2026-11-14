@@ -4,6 +4,34 @@ module boomkat::ast;
 import boomkat::features;
 
 import boomkat::lexer;
+import boomkat::frontendstats;
+import boomkat::bytecode;
+import boomkat::ast::vec;
+import std::time;
+
+
+// ---- deferred-body index ----
+//
+// A function body `gen` keeps as a deferred template is parsed with full grammar
+// but its nodes are discarded. These flags and the recorded references on its
+// stub are what an enclosing compile needs: the resolver marks a binding captured
+// when the body references it, and a dynamic scope inside the body reaches every
+// function around it.
+const uint BODY_HAS_EVAL = 1;
+const uint BODY_HAS_WITH = 2;
+// The body mentions an identifier spelled with a Unicode escape, so its
+// references cannot be matched to a binding by text: the enclosing compile
+// has to assume every binding it could reach is captured.
+const uint BODY_HAS_ESCAPE = 4;
+// On a recorded reference: the body cannot be shown to reach the name only by
+// plain reads and writes of its own. A nested function mentions it, or the body
+// declares the name itself. The enclosing function then keeps the binding in
+// its environment, where a lookup by name finds it.
+const uint REF_INDIRECT = 0x80000000;
+// Set on a function body's BLOCK node that holds only a stub: `gen` must keep it
+// as a template, and the resolver takes its references from the stub's record
+// instead of from nodes that are not there.
+const char BODY_RECORDED = 0x80;
 
 // ---- functions ----
 
@@ -42,11 +70,18 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
         if (!ok) return self.unexpected()~;
         name = self.ident_node(nt);
         self.next()!;
+        if (decl) {
+            DeclKind dk = self.dv_is_func_scope() ? DeclKind.FUNC : DeclKind.FUNC_BLOCK;
+            bool plain = !self.ctx.strict && (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0;
+            self.dv_declare(self.ast.lhs.data[name], dk, self.ast.main_tok.data[name], false, plain);
+        }
     } else if (decl && !anonymous_ok) {
         return self.unexpected()~;
     }
     if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
-    uint rec = self.function_tail(start, fnf)!;
+    uint body_kind = decl ? frontendstats::FS_BODY_DECL
+        : (name == 0 ? frontendstats::FS_BODY_UEXPR : frontendstats::FS_BODY_NEXPR);
+    uint rec = self.function_tail(start, fnf, body_kind)!;
     if (self.ast.field(rec, FN_BODY) == 0) {
         if (!decl) return self.unexpected()~;
         return self.node(NodeTag.EMPTY_STMT, start);
@@ -56,14 +91,16 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
 
 // An object or class method: the parameter list and body, returned as a nameless FUNC_EXPR.
 fn uint? Parser.method_function(&self, uint start, uint fnf, bool unused) {
-    uint rec = self.function_tail(start, fnf)!;
+    uint rec = self.function_tail(start, fnf, frontendstats::FS_BODY_OTHER)!;
     return self.node(NodeTag.FUNC_EXPR, start, 0, rec);
 }
 
 // Parameters and body of a function whose `(` is the current token. Returns the function record.
-fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
+fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
     if (!features::ASYNC_GENERATORS && (fnf_in & (FNF_ASYNC | FNF_GENERATOR)) != 0) return self.unexpected()~;
     self.check_stack()!;
+    sz ref_mark = self.dv_refs.len;
+    defer self.dv_refs_nested(ref_mark);
     uint fnf = fnf_in;
     FnCtx saved = self.ctx;
     bool saved_no_in = self.no_in;
@@ -95,11 +132,26 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
     self.ctx.in_params = false;
     self.ts_annotation()!;
     uint body = 0;
+    bool skip_ok = self.defer_bodies
+        && body_kind != frontendstats::FS_BODY_OTHER
+        && (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0
+        && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled
+        && self.params_are_simple(params);
+    $if $feat(FRONTEND_STATS):
+        time::Time fs_start = time::now();
+        uint fs_nodes = (uint)self.ast.tags.len;
+        frontendstats::fs_body_enter();
+    $endif
     if (self.lex.ts_mode && self.tok.type != TokenType.LBRACE) {
         self.semicolon()!;
     } else {
-        body = self.function_block(&fnf)!;
+        body = self.function_block(&fnf, skip_ok, params,
+            body_kind != frontendstats::FS_BODY_DECL)!;
     }
+    $if $feat(FRONTEND_STATS):
+        frontendstats::fs_body_leave(body_kind, (uint)self.ast.tags.len - fs_nodes,
+            (ulong)(time::now() - fs_start));
+    $endif
     if (props != 0 && body != 0) {
         uint list = self.ast.lhs.data[body];
         self.ast.lhs.data[body] = self.ts_param_prop_body(list, props, (fnf & FNF_DERIVED_CTOR) != 0)!;
@@ -154,21 +206,128 @@ fn uint? Parser.formal_params(&self) {
     return self.scratch_list(mark);
 }
 
+// Whether `fn`'s body was recorded rather than parsed, so `gen` can only compile
+// it through its template and the resolver has to read the body index.
+fn bool Ast.body_was_recorded(&self, uint fn_node) {
+    uint rec = self.rhs.data[fn_node];
+    if (rec == 0) return false;
+    uint body = self.field(rec, FN_BODY);
+    if (body == 0 || self.tags.data[body] != NodeTag.BLOCK) return false;
+    return (self.flags.data[body] & BODY_RECORDED) != 0;
+}
+
+// Whether a call follows the function body that just closed, so the function is
+// the callee `(function () { })()`. `gen` compiles such a callee in place, so
+// recording its body would add a second parse of its whole subtree the first time
+// it runs, which costs more than the nodes the walk skipped. The decision is made
+// with the body's nodes still present; only the grammar after them is in doubt.
+fn bool Parser.call_follows(&self) {
+    if (self.tok.type == TokenType.LPAREN) return true;
+    if (self.tok.type != TokenType.RPAREN) return false;
+    // `(function () { })()` and one nesting parenthesis: look past the `)`.
+    Token save = self.tok;
+    Span save_prev = self.prev;
+    // A speculative look-ahead must not latch a lexical fault: the tokens it
+    // passes are parsed for real afterwards, and a stale `failed` would abort
+    // the body with the wrong error position.
+    bool saved_failed = self.failed;
+    uint saved_err_pos = self.err_pos;
+    uint saved_err_len = self.err_len;
+    bool invoked = false;
+    uint closes = 0;
+    while (closes < 2) {
+        closes++;
+        if (catch err = self.advance()) break;
+        if (self.tok.type == TokenType.LPAREN) { invoked = true; break; }
+        if (self.tok.type != TokenType.RPAREN) break;
+    }
+    self.lex_from(save);
+    self.prev = save_prev;
+    self.failed = saved_failed;
+    self.err_pos = saved_err_pos;
+    self.err_len = saved_err_len;
+    return invoked;
+}
+
+// Put the parser back on `tok`, which a look-ahead advanced past.
+fn void Parser.lex_from(&self, Token tok) {
+    self.lex.seek_to_token(tok);
+    self.has_peek = false;
+    self.tok = tok;
+    // Re-read the token so the lexer sits after it again. A lexical error here is
+    // the body's own to report, at the same offset.
+    Token? t = self.lex_one();
+    if (catch err = t) {}
+}
+
 // `{ directives statements }` of a function body. Sets FNF_USE_STRICT and FNF_STRICT.
-fn uint? Parser.function_block(&self, uint* fnf) {
+fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint params = 0, bool callee = false) {
     uint pos = self.tok.pos;
     self.expect(TokenType.LBRACE)!;
     uint mark = self.scratch_mark();
+    AstMark amark = self.ast.mark();
+    uint saved_track = self.dv_track;
+    bool saved_on = self.dv_on;
+    // Every body in a deferred subtree is validated inline: the enclosing
+    // recorded body discards its nodes, so the whole-unit Early pass never sees
+    // them. Give each body its own scope tree, whether or not its own nodes are
+    // kept, and start before the directive prologue so its references count.
+    bool track = skip_ok || saved_on;
+    uint ref0 = 0;
+    if (track) {
+        self.dv_on = true;
+        self.dv_body_enter(params);
+        ref0 = self.dv_ref_base;
+    }
+    defer {
+        self.dv_track = saved_track;
+        self.dv_on = saved_on;
+    }
     char flags = 0;
     self.directive_prologue(mark, &flags)!;
     if ((flags & PROGRAM_STRICT) != 0) *fnf |= FNF_USE_STRICT;
+    // The compiler compiles class code in place, and a body anywhere inside a
+    // class may name its private names, which the body's own source cannot show.
+    bool defer_body = skip_ok && self.class_depth == 0;
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
         self.scratch_push(self.statement_list_item_in_block()!);
     }
     if (self.ctx.strict) *fnf |= FNF_STRICT;
     self.next()!;
-    return self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
+    // A callee `gen` compiles in place keeps its nodes: recording it would parse
+    // the whole subtree a second time on the first call.
+    if (defer_body && callee && self.call_follows()) defer_body = false;
+    uint nrefs = 0;
+    if (track) {
+        if (defer_body) {
+            nrefs = self.dv_unique_refs(ref0, (uint)self.dv_refs.len - ref0,
+                self.dv_marks.data[self.dv_marks.len - 3]);
+        }
+        // Check this body's redeclaration errors, whether or not it is recorded.
+        if (!self.dv_body_leave()) return self.fail_at(self.err_pos, "invalid function body")~;
+    }
+    if (defer_body) {
+        // Keep only the references and dynamic-scope facts its enclosing compile
+        // needs. The body re-parses this source on first call.
+        char body_flags = self.dv_flags;
+        if (!self.early.body(self.scratch.data[mark:(sz)self.scratch.len - mark], self.ctx.strict)) {
+            return self.fail_at(self.early.err_pos, self.early.error_message())~;
+        }
+        self.ast.truncate(amark);
+        self.scratch.truncate(mark);
+        uint at = self.ast.add_record(2 + nrefs);
+        self.ast.set_field(at, 0, body_flags);
+        self.ast.set_field(at, 1, nrefs);
+        for (uint i = 0; i < nrefs; i++) {
+            self.ast.set_field(at, 2 + i, self.dv_refs.data[ref0 + i]);
+        }
+        uint stub = self.node(NodeTag.BLOCK, pos, 0, at);
+        self.ast.set_flags(stub, BODY_RECORDED);
+        return stub;
+    }
+    uint block = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
+    return block;
 }
 
 // ---- binding patterns ----
@@ -374,6 +533,9 @@ fn uint? Parser.class_decl(&self, bool anonymous_ok = false) {
     } else if (!anonymous_ok) {
         return self.unexpected()~;
     }
+    if (name != 0) {
+        self.dv_declare(self.ast.lhs.data[name], DeclKind.CLASS, self.ast.main_tok.data[name]);
+    }
     uint rec = self.class_tail(start)!;
     return self.node(NodeTag.CLASS_DECL, start, name, rec);
 }
@@ -434,8 +596,15 @@ fn uint? Parser.class_tail(&self, uint start) {
     bool saved_strict = self.ctx.strict;
     bool saved_no_in = self.no_in;
     bool saved_sloppy = self.class_in_sloppy;
+    uint saved_track = self.dv_track;
+    self.dv_track = 0;   // a class body is strict and eager: its decls do not bind in a deferred body
+    defer self.dv_track = saved_track;
     self.class_in_sloppy = !saved_strict;
     defer self.class_in_sloppy = saved_sloppy;
+    self.class_depth++;
+    defer self.class_depth--;
+    sz ref_mark = self.dv_refs.len;
+    defer self.dv_refs_nested(ref_mark);
     self.ctx.strict = true;
     self.no_in = false;
     uint heritage = 0;

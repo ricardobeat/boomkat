@@ -340,7 +340,7 @@ fn bool own_has_enum_string_key(Heap* heap, HObject* obj) {
     return false;
 }
 
-fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf, bool require_enumerable = true) {
+fn uint collect_own_string_keys(Heap* heap, HObject* obj, HString** key_buf, bool require_enumerable = true) {
     uint key_count = 0;
 
     // STRING exotic: integer indices [0, clen) are enumerable own properties
@@ -461,13 +461,18 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
             }
         }
     }
+    // An ARRAY exotic's "length" lives in array_len_ptr, not the named table
+    // (see HObject.sync_named_length), and precedes every other non-index key.
+    if (!require_enumerable && obj.flags.exotic_array) {
+        key_buf[key_count++] = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    }
     // Phase 2: non-index named properties (insertion order)
     for (uint i = 0; i < obj.prop_count; i++) {
         if ((!require_enumerable || obj.get_prop_flags(i, heap).enumerable) && obj.prop_key_at(i, heap) != null) {
             HString* key = (HString*)obj.prop_key_at(i, heap);
             if (key.is_symbol()) continue;  // only String keys
             if (key.is_arridx()) continue;
-            if (obj.flags.exotic_stringobj && (void*)key == (void*)heap.strs[heap::BuiltinStr.LENGTH]) continue;
+            if (require_enumerable && obj.flags.exotic_stringobj && (void*)key == (void*)heap.strs[heap::BuiltinStr.LENGTH]) continue;
             if (obj.flags.exotic_array && (void*)key == (void*)heap.strs[heap::BuiltinStr.LENGTH]) continue;
             key_buf[key_count++] = key;
         }
@@ -603,7 +608,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         uint max_keys = own_key_buf_capacity(obj);
         key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
         if (key_buf == null) { ctx.result_undefined(); return; }
-        key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf);
+        key_count = collect_own_string_keys(ctx.heap, obj, key_buf);
         // Module Namespace Exotic: EnumerableOwnProperties (§7.3.23) calls
         // [[GetOwnProperty]] for each string key, which reads the live binding
         // and throws ReferenceError for a TDZ export (§10.4.6.5 step 4).
@@ -741,7 +746,6 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     }
     HObject* arr = arr_raw;
     ctx.heap.set_prototype(arr, ctx.heap.array_proto);
-    uint idx = 0;
 
     // Collect keys into a temporary buffer, then write them into the result
     // array as named properties (using put_prop with string index keys) so
@@ -751,145 +755,8 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     uint max_keys = own_key_buf_capacity(obj);
     HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
     if (key_buf == null) { ctx.result_undefined(); return; }
-    uint key_count = 0;
     defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
-
-    // STRING exotic: integer indices [0, clen) are own properties (enumerable by spec).
-    if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
-        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null) {
-            for (uint i = 0; i < prim.unit_len(); i++) {
-                HString* k = ctx.heap.int_to_hstring((long)i);
-                if (k == null) { ctx.result_undefined(); return; }
-                key_buf[key_count++] = k;
-            }
-        }
-    }
-
-    // TypedArray (Integer-Indexed exotic): [0, [[ArrayLength]]) are own
-    // properties, ascending.
-    if (is_typed_array_class(obj.get_class())) {
-        uint ta_len = ta_element_count(obj);
-        for (uint i = 0; i < ta_len; i++) {
-            HString* k = ctx.heap.int_to_hstring((long)i);
-            if (k == null) { ctx.result_undefined(); return; }
-            key_buf[key_count++] = k;
-        }
-    }
-
-    // Phase 1: ALL integer-indexed properties merged from named props + dense
-    // array, sorted by numeric index (ECMA-262 §9.1.11.1 OrdinaryOwnPropertyKeys).
-    {
-        // Count integer-indexed named properties
-        uint named_int_count = 0;
-        for (uint i = 0; i < obj.prop_count; i++) {
-            if (obj.prop_key_at(i, ctx.heap) != null && ((HString*)obj.prop_key_at(i, ctx.heap)).is_arridx()) {
-                named_int_count++;
-            }
-        }
-        // Count dense array indices not in named property table
-        uint dense_int_count = 0;
-        // ARRAY and ARGUMENTS exotics surface array_part as indexed own
-        // properties (mirroring get_prop, which consults array_part for both
-        // classes). Map/Set/WeakMap/WeakSet/WeakRef/FinalizationRegistry keep
-        // their entries in array_part as internal storage, not own properties.
-        bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
-        if (obj.array_size > 0 && array_part_is_indexed) {
-            for (uint i = 0; i < obj.array_size; i++) {
-                if (obj.dense_idx_present(i)) {
-                    HString* ki = ctx.heap.int_to_hstring((long)i);
-                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
-                    dense_int_count++;
-                }
-            }
-        }
-        uint total_int = named_int_count + dense_int_count;
-        if (total_int > 0) {
-            usz sort_size = (usz)(total_int * 3 * 4);
-            uint* sort_buf = (uint*)ctx.heap.alloc_func(ctx.heap.heap_udata, sort_size);
-            if (sort_buf != null) {
-                uint p = 0;
-                // Add integer-indexed named properties, enumerable or not, since
-                // this is getOwnPropertyNames
-                for (uint i = 0; i < obj.prop_count; i++) {
-                    if (obj.prop_key_at(i, ctx.heap) != null) {
-                        HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
-                        if (key.is_arridx()) {
-                            sort_buf[p * 3] = key.array_index();
-                            sort_buf[p * 3 + 1] = i;
-                            sort_buf[p * 3 + 2] = 0;  // source: named prop
-                            p++;
-                        }
-                    }
-                }
-                // Add dense array indices
-                for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (obj.dense_idx_present(i)) {
-                        HString* ki = ctx.heap.int_to_hstring((long)i);
-                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
-                        sort_buf[p * 3] = (uint)i;
-                        sort_buf[p * 3 + 1] = i;
-                        sort_buf[p * 3 + 2] = 1;  // source: dense array
-                        p++;
-                    }
-                }
-                total_int = p;
-                // Insertion sort by numeric index
-                for (uint i = 1; i < total_int; i++) {
-                    uint t0 = sort_buf[i * 3];
-                    uint t1 = sort_buf[i * 3 + 1];
-                    uint t2 = sort_buf[i * 3 + 2];
-                    uint j = i;
-                    while (j > 0 && sort_buf[(j - 1) * 3] > t0) {
-                        sort_buf[j * 3] = sort_buf[(j - 1) * 3];
-                        sort_buf[j * 3 + 1] = sort_buf[(j - 1) * 3 + 1];
-                        sort_buf[j * 3 + 2] = sort_buf[(j - 1) * 3 + 2];
-                        j--;
-                    }
-                    sort_buf[j * 3] = t0;
-                    sort_buf[j * 3 + 1] = t1;
-                    sort_buf[j * 3 + 2] = t2;
-                }
-                for (uint i = 0; i < total_int; i++) {
-                    uint src_type = sort_buf[i * 3 + 2];
-                    if (src_type == 0) {
-                        uint prop_idx = sort_buf[i * 3 + 1];
-                        HString* key = (HString*)obj.prop_key_at(prop_idx, ctx.heap);
-                        if (key.is_symbol()) continue;
-                        key_buf[key_count++] = key;
-                    } else {
-                        HString* key = ctx.heap.int_to_hstring((long)sort_buf[i * 3]);
-                        if (key == null) { ctx.heap.free_func(ctx.heap.heap_udata, sort_buf); ctx.result_undefined(); return; }
-                        key_buf[key_count++] = key;
-                    }
-                }
-                ctx.heap.free_func(ctx.heap.heap_udata, sort_buf);
-            }
-        }
-    }
-    // An ARRAY exotic's "length" normally lives in array_len_ptr with no
-    // named-table entry (see HObject.sync_named_length), so the prop_count
-    // walk below cannot see it. It is still an own property and must be
-    // listed, ahead of any other non-index key: it exists from creation,
-    // before any property the program adds. Emit it here, and skip the
-    // materialised copy below so arrays that do have one are not listed twice.
-    if (obj.flags.exotic_array) {
-        key_buf[key_count++] = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-    }
-
-    // Phase 2: non-index named properties (insertion order)
-    // ECMA-262 §15.2.3.4: getOwnPropertyNames returns ONLY string keys (no symbols)
-    for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i, ctx.heap) != null) {
-            HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
-            if (key.is_arridx()) continue;
-            if (key.is_symbol()) continue;  // Skip symbol keys
-            // Already emitted above from array_len_ptr.
-            if (obj.flags.exotic_array
-                && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
-            key_buf[key_count++] = key;
-        }
-    }
+    uint key_count = collect_own_string_keys(ctx.heap, obj, key_buf, false);
 
     // Write collected keys into the result array as named properties.
     for (uint i = 0; i < key_count; i++) {
@@ -1032,133 +899,8 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
     uint max_keys = own_key_buf_capacity(obj);
     HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
     if (key_buf == null) { ctx.result_undefined(); return; }
-    uint key_count = 0;
     defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
-
-    // STRING exotic: integer indices [0, clen) are own properties.
-    if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
-        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null) {
-            for (uint i = 0; i < prim.unit_len(); i++) {
-                HString* k = ctx.heap.int_to_hstring((long)i);
-                if (k == null) { ctx.result_undefined(); return; }
-                key_buf[key_count++] = k;
-            }
-        }
-    }
-
-    // TypedArray (Integer-Indexed exotic): [0, [[ArrayLength]]) are own
-    // properties, ascending, before any named/symbol keys (ECMA-262 §10.4.5.12).
-    if (is_typed_array_class(obj.get_class())) {
-        uint ta_len = ta_element_count(obj);
-        for (uint i = 0; i < ta_len; i++) {
-            HString* k = ctx.heap.int_to_hstring((long)i);
-            if (k == null) { ctx.result_undefined(); return; }
-            key_buf[key_count++] = k;
-        }
-    }
-
-    // Phase 1: integer-indexed properties merged from named props + dense array, sorted.
-    {
-        uint named_int_count = 0;
-        for (uint i = 0; i < obj.prop_count; i++) {
-            if (obj.prop_key_at(i, ctx.heap) != null && ((HString*)obj.prop_key_at(i, ctx.heap)).is_arridx()) {
-                named_int_count++;
-            }
-        }
-        uint dense_int_count = 0;
-        // ARRAY and ARGUMENTS exotics surface array_part as indexed own
-        // properties (mirroring get_prop, which consults array_part for both
-        // classes). Map/Set/WeakMap/WeakSet/WeakRef/FinalizationRegistry keep
-        // their entries in array_part as internal storage, not own properties.
-        bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
-        if (obj.array_size > 0 && array_part_is_indexed) {
-            for (uint i = 0; i < obj.array_size; i++) {
-                if (obj.dense_idx_present(i)) {
-                    HString* ki = ctx.heap.int_to_hstring((long)i);
-                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
-                    dense_int_count++;
-                }
-            }
-        }
-        uint total_int = named_int_count + dense_int_count;
-        if (total_int > 0) {
-            usz sort_size = (usz)(total_int * 3 * 4);
-            uint* sort_buf = (uint*)ctx.heap.alloc_func(ctx.heap.heap_udata, sort_size);
-            if (sort_buf != null) {
-                uint p = 0;
-                for (uint i = 0; i < obj.prop_count; i++) {
-                    if (obj.prop_key_at(i, ctx.heap) != null) {
-                        HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
-                        if (key.is_arridx()) {
-                            sort_buf[p * 3] = key.array_index();
-                            sort_buf[p * 3 + 1] = i;
-                            sort_buf[p * 3 + 2] = 0;  // named prop
-                            p++;
-                        }
-                    }
-                }
-                for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (obj.dense_idx_present(i)) {
-                        HString* ki = ctx.heap.int_to_hstring((long)i);
-                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
-                        sort_buf[p * 3] = i;
-                        sort_buf[p * 3 + 1] = i;
-                        sort_buf[p * 3 + 2] = 1;  // dense array
-                        p++;
-                    }
-                }
-                total_int = p;
-                for (uint i = 1; i < total_int; i++) {
-                    uint t0 = sort_buf[i * 3];
-                    uint t1 = sort_buf[i * 3 + 1];
-                    uint t2 = sort_buf[i * 3 + 2];
-                    uint j = i;
-                    while (j > 0 && sort_buf[(j - 1) * 3] > t0) {
-                        sort_buf[j * 3] = sort_buf[(j - 1) * 3];
-                        sort_buf[j * 3 + 1] = sort_buf[(j - 1) * 3 + 1];
-                        sort_buf[j * 3 + 2] = sort_buf[(j - 1) * 3 + 2];
-                        j--;
-                    }
-                    sort_buf[j * 3] = t0;
-                    sort_buf[j * 3 + 1] = t1;
-                    sort_buf[j * 3 + 2] = t2;
-                }
-                for (uint i = 0; i < total_int; i++) {
-                    uint src_type = sort_buf[i * 3 + 2];
-                    HString* key;
-                    if (src_type == 0) {
-                        key = (HString*)obj.prop_key_at(sort_buf[i * 3 + 1], ctx.heap);
-                        if (key.is_symbol()) continue;
-                    } else {
-                        key = ctx.heap.int_to_hstring((long)sort_buf[i * 3]);
-                        if (key == null) { ctx.result_undefined(); return; }
-                    }
-                    key_buf[key_count++] = key;
-                }
-                ctx.heap.free_func(ctx.heap.heap_udata, sort_buf);
-            }
-        }
-    }
-
-    // See the getOwnPropertyNames counterpart: an ARRAY exotic's "length"
-    // lives in array_len_ptr, not the named table, and must still be listed
-    // ahead of the other non-index keys.
-    if (obj.flags.exotic_array) {
-        key_buf[key_count++] = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-    }
-
-    // Phase 2: non-index string properties (insertion order).
-    for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i, ctx.heap) != null) {
-            HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
-            if (key.is_arridx() || key.is_symbol()) continue;
-            // Already emitted above from array_len_ptr.
-            if (obj.flags.exotic_array
-                && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
-            key_buf[key_count++] = key;
-        }
-    }
+    uint key_count = collect_own_string_keys(ctx.heap, obj, key_buf, false);
 
     // Phase 3: symbol properties (insertion order).
     for (uint i = 0; i < obj.prop_count; i++) {
@@ -2328,7 +2070,7 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
 }
 
 // Re-checks whether `key`, already known to be an own String-keyed
-// property of `obj` (as produced by collect_own_enum_string_keys with
+// property of `obj` (as produced by collect_own_string_keys with
 // require_enumerable = false), is *currently* enumerable.  Object.entries/
 // values must call this immediately before [[Get]]ing each key, since an
 // earlier key's getter may have changed a later key's enumerability
@@ -2337,10 +2079,11 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
 // Dense array indices, String-exotic character indices, and TypedArray
 // indices are always enumerable by spec and can't be redefined non-
 // enumerable without leaving the property table, so only named
-// properties need a fresh flags lookup.
+// properties need a fresh flags lookup. The one non-index key outside the
+// table is an ARRAY exotic's "length", which is never enumerable.
 fn bool key_is_currently_enumerable(HObject* obj, hstring::HString* key, Heap* h) {
     int idx = obj.find_prop_idx(key, h);
-    if (idx < 0) return true;
+    if (idx < 0) return key.is_arridx();
     return obj.get_prop_flags((uint)idx, h).enumerable;
 }
 
@@ -4005,106 +3748,17 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
 // ============================================================================
 // Returns an array of the given object's own enumerable string-keyed property
 // [key, value] pairs.
-fn void builtin_object_entries(BuiltinContext* ctx) {
-    // A missing argument is `undefined`, which the checks below
-    // handle; returning early here would skip them.
-    TVal arg = builtin_arg(ctx, 0);
-    // TypeError if argument is null or undefined
-    if (arg.is_null() || arg.is_undefined()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
-        return;
-    }
-    HObject* obj;
-    if (arg.is_object()) {
-        obj = (HObject*)arg.get_heapptr();
-    } else {
-        if (!builtin_to_object(ctx, arg)) { ctx.result_undefined(); return; }
-        obj = (HObject*)ctx.result.get().get_heapptr();
-    }
-
-    HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err3 = arr_raw) { ctx.result_undefined(); return; }
-    HObject* arr = arr_raw;
-    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
-    uint idx = 0;
-
-    if (obj.is_proxy()) {
-        // EnumerableOwnProperties §7.3.21: for each key interleave
-        // [[GetOwnProperty]] (descriptor) then [[Get]] (value) before next key.
-        HObject* keys_arr;
-        if (!proxy_mop_own_keys(ctx.vm, ctx.heap, obj, &keys_arr)) { proxy_ctx_ok(ctx); return; }
-        uint n = keys_arr.array_used;
-        for (uint i = 0; i < n; i++) {
-            TVal el = keys_arr.array_part()[i].get();
-            if (!el.is_string()) continue;
-            HString* k = (HString*)el.get_heapptr();
-            if (k.is_symbol()) continue;
-            ProxyDesc d;
-            if (!proxy_mop_get_own(ctx.vm, ctx.heap, obj, k, &d)) { proxy_ctx_ok(ctx); return; }
-            if (!d.found || !d.enumerable) continue;
-            TVal val;
-            TVal recv; recv.set_object(obj);
-            if (!proxy_mop_get(ctx.vm, ctx.heap, obj, k, recv, &val)) { proxy_ctx_ok(ctx); return; }
-            HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (catch e4 = pair_raw) { ctx.result_undefined(); return; }
-            HObject* pair = pair_raw;
-            ctx.heap.set_prototype(pair, ctx.heap.array_proto);
-            TVal key_tv; key_tv.set_string_borrowed(k);
-            array_set_elem(pair, 0, key_tv, ctx.heap);
-            array_set_elem(pair, 1, val, ctx.heap);
-            TVal len_tv; len_tv.set_fastint(2);
-            HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-            TVal pair_tv; pair_tv.set_object(pair);
-            array_set_elem(arr, idx, pair_tv, ctx.heap);
-            idx++;
-        }
-    } else {
-        // Non-proxy: snapshot ALL own string keys first (regardless of
-        // enumerability), then re-check each key's enumerable attribute
-        // immediately before its [[Get]] (EnumerableOwnPropertyNames
-        // interleaves the two per key, so a getter earlier in the walk can
-        // make a later key non-enumerable before that key is reached).
-        uint max_keys = own_key_buf_capacity(obj);
-        HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
-        if (key_buf == null) { ctx.result_undefined(); return; }
-        defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
-        uint key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf, false);
-        for (uint i = 0; i < key_count; i++) {
-            HString* key = key_buf[i];
-            if (!key_is_currently_enumerable(obj, key, ctx.heap)) continue;
-            TVal val;
-            if (!desc_get_enum(ctx, obj, key, &val)) {
-                if (ctx.should_throw) { return; }
-                continue;
-            }
-            HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (catch err4 = pair_raw) { ctx.result_undefined(); return; }
-            HObject* pair = pair_raw;
-            ctx.heap.set_prototype(pair, ctx.heap.array_proto);
-            TVal key_tv; key_tv.set_string_borrowed(key);
-            array_set_elem(pair, 0, key_tv, ctx.heap);
-            array_set_elem(pair, 1, val, ctx.heap);
-            TVal len_tv; len_tv.set_fastint(2);
-            HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-            TVal pair_tv; pair_tv.set_object(pair);
-            array_set_elem(arr, idx, pair_tv, ctx.heap);
-            idx++;
-        }
-    }
-
-    TVal rlen_tv; rlen_tv.set_fastint((long)idx);
-    HString* rlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    ctx.result_object(arr);
-}
 
 // ============================================================================
 // Object.values, ECMA-262 §19.1.2.22
 // ============================================================================
 // Returns an array of the given object's own enumerable string-keyed property values.
-fn void builtin_object_values(BuiltinContext* ctx) {
+fn void builtin_object_entries(BuiltinContext* ctx) => object_entries_or_values(ctx, true);
+fn void builtin_object_values(BuiltinContext* ctx) => object_entries_or_values(ctx, false);
+
+// Object.entries and Object.values: EnumerableOwnProperties with kind
+// key+value or value.
+fn void object_entries_or_values(BuiltinContext* ctx, bool entries) {
     // A missing argument is `undefined`, which the checks below
     // handle; returning early here would skip them.
     TVal arg = builtin_arg(ctx, 0);
@@ -4143,17 +3797,19 @@ fn void builtin_object_values(BuiltinContext* ctx) {
             TVal val;
             TVal recv; recv.set_object(obj);
             if (!proxy_mop_get(ctx.vm, ctx.heap, obj, k, recv, &val)) { proxy_ctx_ok(ctx); return; }
+            if (entries && !object_entry_pair(ctx, k, &val)) return;
             array_set_elem(arr, idx, val, ctx.heap);
             idx++;
         }
     } else {
-        // Snapshot ALL own string keys, then re-check enumerability per key
-        // right before its [[Get]], see the comment in builtin_object_entries.
+        // Snapshot ALL own string keys, then re-check each key's enumerable
+        // attribute immediately before its [[Get]]: a getter earlier in the
+        // walk can make a later key non-enumerable before it is reached.
         uint max_keys = own_key_buf_capacity(obj);
         HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
         if (key_buf == null) { ctx.result_undefined(); return; }
         defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
-        uint key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf, false);
+        uint key_count = collect_own_string_keys(ctx.heap, obj, key_buf, false);
         for (uint i = 0; i < key_count; i++) {
             HString* key = key_buf[i];
             if (!key_is_currently_enumerable(obj, key, ctx.heap)) continue;
@@ -4162,6 +3818,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
                 if (ctx.should_throw) { return; }
                 continue;
             }
+            if (entries && !object_entry_pair(ctx, key, &val)) return;
             array_set_elem(arr, idx, val, ctx.heap);
             idx++;
         }
@@ -4171,6 +3828,21 @@ fn void builtin_object_values(BuiltinContext* ctx) {
     HString* rlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result_object(arr);
+}
+
+// Replace *val with the array [key, *val].
+fn bool object_entry_pair(BuiltinContext* ctx, HString* key, TVal* val) {
+    HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = pair_raw) { ctx.result_undefined(); return false; }
+    HObject* pair = pair_raw;
+    ctx.heap.set_prototype(pair, ctx.heap.array_proto);
+    TVal key_tv; key_tv.set_string_borrowed(key);
+    array_set_elem(pair, 0, key_tv, ctx.heap);
+    array_set_elem(pair, 1, *val, ctx.heap);
+    TVal len_tv; len_tv.set_fastint(2);
+    pair.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    val.set_object(pair);
+    return true;
 }
 
 // ============================================================================

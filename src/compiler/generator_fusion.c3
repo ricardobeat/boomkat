@@ -1,9 +1,9 @@
 module boomkat::compiler;
 
+import boomkat::ast::vec;
 import boomkat::ast;
 import boomkat::bytecode;
 import boomkat::heap;
-import std::collections::list;
 
 // Generator fusion: `for (const x of g(args)) body` where `g` is a closed local
 // generator compiles to g's body inlined in the loop's frame, with each
@@ -25,14 +25,14 @@ struct FuseState {
     bool renaming;
     // Distinguishes the renamed names of a fusion nested in another's loop body.
     char depth;
-    List{char[]} names;
+    Vec{char[]} names;
     ushort binding;
     uint name_idx;
     bool constant;
     uint body;
     // cur_lex_depth when the generator body started; leaving it pops the rest.
     int lex_base;
-    List{uint} exits;
+    Vec{uint} exits;
 }
 
 const uint FUSE_MAX_YIELDS = 3;
@@ -174,8 +174,6 @@ fn bool? CompilerContext.gen_fused_generator(&self, uint n, char[] name, bool co
     if (decl == 0) return false;
     FuseState st;
     st.depth = (char)(self.fuse_depth + 1);
-    st.names.init(mem);
-    st.exits.init(mem);
     defer { st.names.free(); st.exits.free(); }
     if (!self.fuse_generator_closed(decl, &st)) return false;
 

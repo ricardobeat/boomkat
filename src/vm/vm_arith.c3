@@ -23,14 +23,16 @@ import std::math;
 // silent-drop of non-writable bindings (a named fnexpr's own name, the
 // built-in global immutables). The write is dropped but the expression still
 // evaluates to the incremented value (ECMA-262 declarative SetMutableBinding, step 5.2).
-// ToNumeric for the operand of ++ and -- (ECMA-262 UpdateExpression step 2):
-// an object is converted before the step, so one whose valueOf yields a BigInt
-// steps as a BigInt. Returns false with the throw pending.
+// ToNumeric for the operand of ++ and -- (ECMA-262 UpdateExpression step 2),
+// which leaves a Number or a BigInt in *old_val: an object is converted before
+// the step, so one whose valueOf yields a BigInt steps as a BigInt, and a
+// Symbol throws before the binding is written. Returns false with the throw
+// pending.
 fn bool incdec_to_numeric(Vm* vm, TVal* old_val) @inline {
-    if (!old_val.is_object()) return true;
-    TVal prim = to_primitive_value(vm, old_val, 2);
-    if (vm.throw_pending) return false;
-    *old_val = prim;
+    if (old_val.is_fastint() || old_val.is_number() || old_val.is_bigint() || env::is_tdz_sentinel(old_val)) return true;
+    TVal numeric;
+    if (!vm_to_numeric(vm, old_val, &numeric)) return false;
+    *old_val = numeric;
     return true;
 }
 
@@ -213,8 +215,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (vm_bigint_incdec(vm, ra, true) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                 }
-            } else if (ra.is_object()) {
-                // ToNumeric first: a BigInt result steps as a BigInt.
+            } else if (!ra.is_number()) {
+                // ToNumeric first: a BigInt result steps as a BigInt, and a
+                // throw leaves the register as it was.
                 TVal prim;
                 if (!vm_to_numeric(vm, ra, &prim)) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -245,8 +248,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (vm_bigint_incdec(vm, ra, false) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                 }
-            } else if (ra.is_object()) {
-                // ToNumeric first: a BigInt result steps as a BigInt.
+            } else if (!ra.is_number()) {
+                // ToNumeric first: a BigInt result steps as a BigInt, and a
+                // throw leaves the register as it was.
                 TVal prim;
                 if (!vm_to_numeric(vm, ra, &prim)) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);

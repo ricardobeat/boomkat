@@ -285,11 +285,7 @@ fn int main(String[] args) {
     bytecode::SourceBuf* source_buf = bytecode::source_buf_adopt(source);
     lx.source_buf = source_buf;
     defer bytecode::source_buf_release(source_buf);
-    compiler::CompModuleDef module_dump = {
-        .imports = { .allocator = mem }, .exports = { .allocator = mem },
-        .star_exports = { .allocator = mem }, .req_modules = { .allocator = mem },
-        .func_decls = { .allocator = mem },
-    };
+    compiler::CompModuleDef module_dump;
     defer module_dump.imports.free();
     defer module_dump.exports.free();
     defer module_dump.star_exports.free();

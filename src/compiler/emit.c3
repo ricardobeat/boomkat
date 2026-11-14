@@ -148,15 +148,14 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
     if (self.is_global || self.is_module || self.func_ast_scope == 0 || self.in_eval_code) return false;
     if (self.has_direct_eval || self.has_with_stmt || self.outer_with) return false;
     ast::AstIndex* idx = ast::index_state;
-    if (idx == null || !idx.use || idx.unknown_outer) return false;
+    if (idx == null || !idx.use) return false;
     HString* name = (HString*)self.constants[name_idx].get_heapptr();
     uint atom = idx.tree.atoms.find(self.name_text(name));
     // A name the source never wrote (a synthetic one) has no binding to find.
     if (atom == 0 || atom == idx.res.atom_arguments) return false;
+    if (idx.unknown_outer && outer_may_bind(idx, atom)) return false;
     // A binding of this function still in its temporal dead zone is read by name.
-    for (uint i = 0; i < self.scope_depth; i++) {
-        if (str_eq(self.scope_stack[i].name, self.name_text(name))) return false;
-    }
+    if (self.scope_entry_of(name) != null) return false;
     uint s = self.func_ast_scope;
     while (s != 0) {
         ast::Scope* sc = &idx.res.scopes.data[s];
@@ -166,6 +165,27 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
         s = sc.parent;
     }
     return true;
+}
+
+// True when `name_idx` names a binding the enclosing function keeps in a cell,
+// which this function, compiled alone from its own source, reaches only
+// through a capture slot. adopt_capture_slots moves the plain reads and writes
+// to the slot, so no other by-name form may be emitted for such a name. The
+// parent picks a cell only for a name every reference here is free to reach.
+fn bool CompilerContext.is_outer_cell(&self, uint name_idx) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx.reparsed == null || idx.reparsed.capture_cells == null) return false;
+    uint atom = idx.tree.atoms.find(self.name_text((HString*)self.constants[name_idx].get_heapptr()));
+    return (idx.outer.data[atom] & ast::OUTER_CELL) != 0;
+}
+
+// Store `value` to the outer cell `name_idx` by the plain form, which takes the
+// value out of its register. Returns a register that still holds it.
+fn ushort CompilerContext.emit_cell_store(&self, ushort value, uint name_idx) {
+    ushort kept = self.alloc_reg();
+    self.emit_abc(Opcode.LDREG, (uint)kept, (uint)value, 0);
+    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)value, name_idx);
+    return kept;
 }
 
 // Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.

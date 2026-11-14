@@ -29,6 +29,21 @@ of commits since the previous release. Newest first.
 - `Array.prototype.toSorted` now shares `.sort` merge sort code path
 - Added 32-bit RISCV builds and ESP32 example
 - Improved embedding API for managing promises
+- Function bodies in classic scripts and `eval` code are compiled on first
+  call; a body that cannot be compiled then throws a `SyntaxError`
+- Faster lexer: no per-token line and column tracking, quicker integer
+  literals and line-start scanning
+- Compile time is linear in the number of locals, captures, constants,
+  private names and array-pattern elements in a function
+- Fixed `+` and `<` on two objects reading a freed string: `[1, 2] + [3, 4]`
+  gave `"3,43,4"`
+- Fixed `-`, `*`, `/`, `%`, `**`, `++` and `--` throwing on objects that convert
+  to a BigInt
+- Fixed `++` and `--` overwriting a variable with NaN, or crashing, when its
+  conversion throws
+- Fixed `for-of`, array destructuring and `using` over a non-array iterable in
+  a function with more than 255 constants
+- Fixed a use-after-free of private names kept for a later `eval`
 
 ## [0.3.0] - 2026-10-30 · 259 commits
 

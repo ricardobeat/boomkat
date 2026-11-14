@@ -24,7 +24,7 @@ fn bool Parser.ts_word_names_ahead(&self, String word) {
     self.has_peek = false;
     self.peek_failed = false;
     self.tok = first;
-    self.prev = first;
+    self.prev = first.span();
     if (catch err_c = self.next()) return false;
     return named;
 }
@@ -50,7 +50,7 @@ fn bool Parser.ts_ambient_module_ahead(&self) {
     self.has_peek = false;
     self.peek_failed = false;
     self.tok = first;
-    self.prev = first;
+    self.prev = first.span();
     if (catch err_c = self.next()) return false;
     return ambient;
 }
@@ -276,7 +276,7 @@ fn bool Parser.ts_import_equals_ahead(&self) {
     self.has_peek = false;
     self.peek_failed = false;
     self.tok = first;
-    self.prev = first;
+    self.prev = first.span();
     if (catch err_c = self.next()) return false;
     return found;
 }

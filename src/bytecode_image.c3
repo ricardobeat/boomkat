@@ -1,13 +1,13 @@
 // Portable scalar encoding for the experimental bytecode tools.
 module boomkat::image;
 
+import boomkat::ast::vec;
 import boomkat::bytecode;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::features;
-import std::collections::list;
 
 faultdef INVALID_IMAGE, IMAGE_NOMEM, UNSUPPORTED_CONSTANT;
 
@@ -45,8 +45,8 @@ struct ModuleDecl {
 }
 
 struct Writer {
-    List{char} bytes;
-    List{CompiledFunction*} functions;
+    Vec{char} bytes;
+    Vec{CompiledFunction*} functions;
 }
 
 fn void Writer.word(&self, uint value) {
@@ -79,7 +79,7 @@ fn uint Writer.function_id(&self, CompiledFunction* f) {
     if (f == null) return NONE;
     foreach (i, existing : self.functions) if (existing == f) return (uint)i;
     self.functions.push(f);
-    return (uint)self.functions.len() - 1;
+    return (uint)self.functions.len - 1;
 }
 fn void Writer.string_ref(&self, void* raw) {
     self.word(raw != null ? 1 : 0);
@@ -124,23 +124,21 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
         return INVALID_IMAGE~;
     }
     Writer w;
-    w.bytes.init(mem);
-    w.functions.init(mem);
     defer w.functions.free();
     defer w.bytes.free();
     w.function_id(root);
     // Discover the graph before records: field initializers may share templates.
-    for (sz i = 0; i < w.functions.len(); i++) {
+    for (sz i = 0; i < w.functions.len; i++) {
         CompiledFunction* f = w.functions[i];
         foreach (inner : f.inner_funcs[:f.inner_count]) w.function_id(inner);
         w.function_id(f.field_init_func);
-        if ((usz)w.functions.len() > MAX_FUNCTIONS) return INVALID_IMAGE~;
+        if ((usz)w.functions.len > MAX_FUNCTIONS) return INVALID_IMAGE~;
     }
     w.text("BKBC");
     w.word(VERSION);
     w.word(OPCODE_SIGNATURE);
     w.word(CAPABILITIES);
-    w.word((uint)w.functions.len());
+    w.word((uint)w.functions.len);
     foreach (f : w.functions) {
         // These compiler-only contexts need a separate portable representation.
         if (f.eval_private_name_count != 0 || f.lazy_paren != 0) return UNSUPPORTED_CONSTANT~;
@@ -206,8 +204,8 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
         w.text(decl.name);
         w.word(w.function_id(decl.template));
     }
-    if ((usz)w.bytes.len() > MAX_IMAGE_BYTES) return INVALID_IMAGE~;
-    return mem::@clone_slice(w.bytes.entries[:w.bytes.len()]);
+    if ((usz)w.bytes.len > MAX_IMAGE_BYTES) return INVALID_IMAGE~;
+    return mem::@clone_slice(w.bytes.data[:w.bytes.len]);
 }
 
 struct Reader {
@@ -321,7 +319,7 @@ fn uint? Reader.literal_shape(&self) {
 
 // Images come from the matching host tool. Structural validation catches damaged
 // files; instruction operands require trusted compiler output.
-fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declarations) {
+fn CompiledFunction*? decode(Heap* heap, char[] bytes, Vec{ModuleDecl}* declarations) {
     if (bytes.len > MAX_IMAGE_BYTES) return INVALID_IMAGE~;
     Reader r = { .bytes = bytes, .heap = heap };
     if (r.text()! != (char[])"BKBC" || r.word()! != VERSION || r.word()! != OPCODE_SIGNATURE) return INVALID_IMAGE~;

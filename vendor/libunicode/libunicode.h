@@ -95,6 +95,10 @@ int cr_op1(CharRange *cr, const uint32_t *b_pt, int b_len, int op);
 static inline int cr_union_interval(CharRange *cr, uint32_t c1, uint32_t c2)
 {
     uint32_t b_pt[2];
+    /* boomkat: an interval past the last one appends in place, so a class
+       written in code point order builds in linear time. */
+    if (cr->len == 0 || c1 > cr->points[cr->len - 1])
+        return cr_add_interval(cr, c1, c2 + 1);
     b_pt[0] = c1;
     b_pt[1] = c2 + 1;
     return cr_op1(cr, b_pt, 2, CR_OP_UNION);

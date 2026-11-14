@@ -74,7 +74,18 @@ fn void check_descendant_cell_uses(CompiledFunction* inner,
                                    CellCandidate* candidates, uint count,
                                    bool immediate) {
     if (inner == null) return;
-    if (inner.lazy_paren != 0) { reject_all_cells(candidates, count); return; }
+    if (inner.lazy_paren != 0) {
+        // A deferred body has no code to check. Its template lists the outer
+        // names it mentions; the ones it reaches only by plain reads and writes
+        // of its own became capture slots, and those alone can follow a cell.
+        if (!inner.lazy_outer_known) { reject_all_cells(candidates, count); return; }
+        for (uint i = 0; i < inner.const_count; i++) {
+            void* key = inner.constants[i].get_heapptr();
+            int ci = find_cell_candidate(candidates, count, key);
+            if (ci >= 0 && !(immediate && child_captures_key(inner, key))) candidates[ci].selected = false;
+        }
+        return;
+    }
     for (uint pc = 0; pc < inner.code_count; pc++) {
         Instruction ins = inner.code[pc];
         if (ins.op == Opcode.WIDE || ins.op == Opcode.GETBOUND) {
@@ -151,7 +162,7 @@ fn bool cell_lowering_eligible(CompilerContext* ctx, CompiledFunction* func) {
         && !ctx.is_arrow && !ctx.is_async && !ctx.is_generator
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
         && !ctx.capture_all && !ctx.uses_arguments && !ctx.has_rest
-        && ctx.defaults.len() == 0 && ctx.destruct_defaults.len() == 0
+        && ctx.defaults.len == 0 && ctx.destruct_defaults.len == 0
         && !ctx.has_destructured_param && !ctx.is_named_func_expr
         && !ctx.in_class_body && !func.flags.is_class_ctor;
 }
@@ -266,25 +277,28 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
         has_var_capture |= binding.is_captured && binding.kind == ScopeKind.VAR
             && !binding.is_catch_param;
     }
-    foreach (binding : ctx.bindings) {
-        if (!binding.is_captured || binding.is_catch_param
-            || (binding.kind != ScopeKind.VAR && (has_var_capture || binding.kind != ScopeKind.LET))) continue;
-        lexical |= binding.kind == ScopeKind.LET;
-        void* key = context_name_key(ctx, binding.name_idx);
-        if (key == null) return;
-
-        uint same_name_count = 0;
-        foreach (other : ctx.bindings) {
-            if (context_name_key(ctx, other.name_idx) == key) same_name_count++;
+    @pool() {
+        uint[] by_name = mem::temp_array(uint, (sz)ctx.const_count + 1);
+        bindings_by_name(ctx, by_name);
+        foreach (bi, binding : ctx.bindings) {
+            if (!binding.is_captured || binding.is_catch_param
+                || (binding.kind != ScopeKind.VAR && (has_var_capture || binding.kind != ScopeKind.LET))) continue;
+            lexical |= binding.kind == ScopeKind.LET;
+            void* key = context_name_key(ctx, binding.name_idx);
+            if (key == null) return;
+            if (by_name[name_slot(ctx, binding.name_idx)] != (uint)bi + 1) continue;
+            if (candidate_count == MAX_LOWERED_CELLS) return;
+            candidates[candidate_count++] = {
+                .key = key,
+                .selected = true,
+            };
         }
-        if (same_name_count != 1) continue;
-        if (candidate_count == MAX_LOWERED_CELLS) return;
-        candidates[candidate_count++] = {
-            .key = key,
-            .selected = true,
-        };
-    }
+    };
     if (candidate_count == 0) return;
+    // The lexical forms are proved from the children's code.
+    for (uint i = 0; lexical && i < func.inner_count; i++) {
+        if (func.inner_funcs[i].lazy_paren != 0) return;
+    }
     uint lexical_init = 0;
     if (lexical && (candidate_count != 1
         || !lexical_cell_layout(func, candidates[0].key, &lexical_init))) return;

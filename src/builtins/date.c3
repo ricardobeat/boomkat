@@ -166,6 +166,15 @@ fn long date_break_time_local_fields(double time_val, long* year, long* month, l
     return offset;
 }
 
+const String[7] DAY_NAMES = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+const String[12] MONTH_NAMES = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+// The year as Date's string forms write it (§21.4.4.41.2 DateString): four
+// digits at least, with a minus sign before a negative year.
+fn void date_year_text(char[24]* out, long year) {
+    (void)io::bprintf(out, year < 0 ? "-%04d" : "%04d", year < 0 ? -year : year);
+}
+
 // Format a Date as a string like "Mon Jan 01 2024 12:00:00 GMT+0000".
 fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
     // For NaN, return "Invalid Date"
@@ -183,49 +192,12 @@ fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
         offs_mins = -offs_mins;
     }
 
-    // String constants for weekday/month names
-    char* wday_name;
-    switch (wday) {
-        case 0: wday_name = "Sun"; break;
-        case 1: wday_name = "Mon"; break;
-        case 2: wday_name = "Tue"; break;
-        case 3: wday_name = "Wed"; break;
-        case 4: wday_name = "Thu"; break;
-        case 5: wday_name = "Fri"; break;
-        case 6: wday_name = "Sat"; break;
-        default: wday_name = "???"; break;
-    }
-    char* mon_name;
-    switch (month) {
-        case 0: mon_name = "Jan"; break;
-        case 1: mon_name = "Feb"; break;
-        case 2: mon_name = "Mar"; break;
-        case 3: mon_name = "Apr"; break;
-        case 4: mon_name = "May"; break;
-        case 5: mon_name = "Jun"; break;
-        case 6: mon_name = "Jul"; break;
-        case 7: mon_name = "Aug"; break;
-        case 8: mon_name = "Sep"; break;
-        case 9: mon_name = "Oct"; break;
-        case 10: mon_name = "Nov"; break;
-        case 11: mon_name = "Dec"; break;
-        default: mon_name = "???"; break;
-    }
 
-    // ES6 §21.4.3.4 ToDateString: positive years use 4-digit zero-padded,
-    // negative years in [-9999, 0) use "-%04d" (5 chars with sign + 4 digits).
-    // For abs(year) >= 10000 use the full integer width (no padding).
     char[24] year_str;
-    if (year_val < 0 && year_val > -10000) {
-        (void)io::bprintf(&year_str, "-%04d", -year_val);
-    } else if (year_val <= -10000) {
-        (void)io::bprintf(&year_str, "%d", year_val);
-    } else {
-        (void)io::bprintf(&year_str, "%04d", year_val);
-    }
+    date_year_text(&year_str, year_val);
 
     return (usz)(io::bprintf(buf[:buf_size], "%s %s %02d %s %02d:%02d:%02d GMT%c%02d%02d",
-        (ZString)wday_name, (ZString)mon_name,
+        (String)DAY_NAMES[wday], (String)MONTH_NAMES[month],
         (int)day, (ZString)&year_str[0],
         (int)hour, (int)minute, (int)second,
         tz_sign, offs_hours, offs_mins) ?? buf[:0]).len;
@@ -1017,48 +989,11 @@ fn void builtin_date_proto_toDateString(BuiltinContext* ctx) {
     }
     long year, month, day, wday, hour, min, sec;
     date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
-    char* wday_name;
-    switch (wday) {
-        case 0: wday_name = "Sun"; break;
-        case 1: wday_name = "Mon"; break;
-        case 2: wday_name = "Tue"; break;
-        case 3: wday_name = "Wed"; break;
-        case 4: wday_name = "Thu"; break;
-        case 5: wday_name = "Fri"; break;
-        case 6: wday_name = "Sat"; break;
-        default: wday_name = "???"; break;
-    }
-    char* mon_name;
-    switch (month) {
-        case 0: mon_name = "Jan"; break;
-        case 1: mon_name = "Feb"; break;
-        case 2: mon_name = "Mar"; break;
-        case 3: mon_name = "Apr"; break;
-        case 4: mon_name = "May"; break;
-        case 5: mon_name = "Jun"; break;
-        case 6: mon_name = "Jul"; break;
-        case 7: mon_name = "Aug"; break;
-        case 8: mon_name = "Sep"; break;
-        case 9: mon_name = "Oct"; break;
-        case 10: mon_name = "Nov"; break;
-        case 11: mon_name = "Dec"; break;
-        default: mon_name = "???"; break;
-    }
     char[types::FORMAT_BUF] buf;
-    // ES6 §21.4.3.4 ToDateString year format: 4-digit zero-padded positive;
-    // "-%04d" for negative year in [-9999, 0); full integer for |y| >= 10000.
-    // We write the year into a temp buffer first to support all forms, then
-    // copy into buf. Use bprintf with the appropriate width format.
     char[24] year_str;
-    if (year < 0 && year > -10000) {
-        (void)io::bprintf(&year_str, "-%04d", -year);
-    } else if (year <= -10000) {
-        (void)io::bprintf(&year_str, "%d", year);
-    } else {
-        (void)io::bprintf(&year_str, "%04d", year);
-    }
+    date_year_text(&year_str, year);
     usz len = (usz)(io::bprintf(&buf, "%s %s %02d %s",
-        (ZString)wday_name, (ZString)mon_name, (int)day, (ZString)&year_str[0]) ?? buf[:0]).len;
+        (String)DAY_NAMES[wday], (String)MONTH_NAMES[month], (int)day, (ZString)&year_str[0]) ?? buf[:0]).len;
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result_string(result);
 }
@@ -1815,22 +1750,12 @@ fn void builtin_date_proto_toUTCString(BuiltinContext* ctx) {
     if (math::is_nan(tv)) { ctx.result_string(builtin_intern_string(ctx.heap, "Invalid Date")); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    char[7][] day_names = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-    char[12][] mon_names = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-    // ES6 §21.4.3.4 ToDateString year format: 4-digit zero-padded positive;
-    // "-%04d" for negative year in [-9999, 0); full integer for |y| >= 10000.
     char[24] year_str;
-    if (year < 0 && year > -10000) {
-        (void)io::bprintf(&year_str, "-%04d", -year);
-    } else if (year <= -10000) {
-        (void)io::bprintf(&year_str, "%d", year);
-    } else {
-        (void)io::bprintf(&year_str, "%04d", year);
-    }
+    date_year_text(&year_str, year);
     char[types::FORMAT_BUF] buf;
     // "Thu, 01 Jan 1970 00:00:00 GMT" / "Thu, 01 Jan -0001 00:00:00 GMT"
-    usz len = (usz)(io::bprintf(&buf, "%.3s, %02d %.3s %s %02d:%02d:%02d GMT",
-        (ZString)&day_names[wday][0], (int)day, (ZString)&mon_names[month][0],
+    usz len = (usz)(io::bprintf(&buf, "%s, %02d %s %s %02d:%02d:%02d GMT",
+        DAY_NAMES[wday], (int)day, MONTH_NAMES[month],
         (ZString)&year_str[0], (int)hour, (int)min, (int)sec) ?? buf[:0]).len;
     ctx.result_string(builtin_intern_string(ctx.heap, buf[:len]));
 }

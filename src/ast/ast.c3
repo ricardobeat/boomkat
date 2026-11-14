@@ -27,7 +27,7 @@ enum NodeTag : char {
     REGEX,           // lhs = atom: the whole literal text `/body/flags`
     TEMPLATE,        // lhs = list: see Ast.template_*; a no-substitution template has one text part
     TAGGED_TEMPLATE, // lhs = tag expression, rhs = TEMPLATE
-    IDENT,           // lhs = atom. flags: IDENT_ESCAPED
+    IDENT,           // lhs = atom. flags: IDENT_ESCAPED, IDENT_ANNEXB_VAR
     THIS,
     NULL_LIT,
     TRUE_LIT,
@@ -133,6 +133,7 @@ const char FLAG_PAREN = 0x80;       // the expression was written in parentheses
 
 const char FLAG_OPTIONAL = 0x01;    // MEMBER / INDEX / PRIVATE_MEMBER / CALL written with `?.`
 const char IDENT_ESCAPED = 0x01;
+const char IDENT_ANNEXB_VAR = 0x02;  // names a block-level function that also binds a var (Annex B)
 const char STR_OCTAL = 0x01;        // the literal holds a legacy octal or \8 \9 escape
 const char STR_DIRECTIVE_RAW = 0x02;
 const char PROP_COMPUTED = 0x01;
@@ -221,6 +222,8 @@ struct Ast {
     // Borrowed from the source buffer retained by AstIndex during a reparse.
     uint[] shared_line_starts;
     AtomTable atoms;
+    // Zero-based line of the last Ast.position answer, where the next search starts.
+    sz position_line;
 }
 
 fn void Ast.init(&self, char[] source) {
@@ -263,14 +266,30 @@ fn uint Ast.node_count(&self) @inline {
 
 // Append a node and return its id.
 fn uint Ast.add(&self, NodeTag tag, char flags, uint tok, uint end, uint lhs, uint rhs) {
-    uint id = (uint)self.tags.len;
-    self.tags.push(tag);
-    self.flags.push(flags);
-    self.main_tok.push(tok);
-    self.end_tok.push(end);
-    self.lhs.push(lhs);
-    self.rhs.push(rhs);
-    return id;
+    sz id = self.tags.len;
+    // The columns grow together, so one check covers them all.
+    if (id == self.tags.cap) {
+        self.tags.grow();
+        self.flags.grow();
+        self.main_tok.grow();
+        self.end_tok.grow();
+        self.lhs.grow();
+        self.rhs.grow();
+    }
+    self.tags.data[id] = tag;
+    self.flags.data[id] = flags;
+    self.main_tok.data[id] = tok;
+    self.end_tok.data[id] = end;
+    self.lhs.data[id] = lhs;
+    self.rhs.data[id] = rhs;
+    sz len = id + 1;
+    self.tags.len = len;
+    self.flags.len = len;
+    self.main_tok.len = len;
+    self.end_tok.len = len;
+    self.lhs.len = len;
+    self.rhs.len = len;
+    return (uint)id;
 }
 
 macro NodeTag Ast.tag(&self, uint n) => self.tags[n];
@@ -298,7 +317,7 @@ fn uint Ast.list_len(&self, uint list) @inline {
 }
 
 fn uint Ast.list_item(&self, uint list, uint i) @inline {
-    return self.extra[list + 1 + i];
+    return self.extra.data[list + 1 + i];
 }
 
 // Reserve `n` zeroed `extra` slots (a record) and return the index of the first.
@@ -309,11 +328,11 @@ fn uint Ast.add_record(&self, uint n) {
 }
 
 fn uint Ast.field(&self, uint rec, uint field) @inline {
-    return self.extra[rec + field];
+    return self.extra.data[rec + field];
 }
 
 fn void Ast.set_field(&self, uint rec, uint field, uint v) @inline {
-    self.extra[rec + field] = v;
+    self.extra.data[rec + field] = v;
 }
 
 // A template literal's `lhs` list holds `cooked0, raw0, tok0, expr0, ..., cookedN, rawN, tokN`
@@ -352,11 +371,20 @@ fn void Ast.truncate(&self, AstMark m) {
 fn SourcePos Ast.position(&self, uint offset) {
     uint[] starts = self.shared_line_starts.len > 0
         ? self.shared_line_starts : self.line_starts.data[:self.line_starts.len];
-    sz lo = 0;
+    // Consecutive queries mostly land on the last line found or the one after.
+    sz lo = self.position_line;
+    if (lo >= starts.len || starts[lo] > offset) lo = 0;
     sz hi = starts.len;
+    if (lo + 1 < hi && starts[lo + 1] > offset) {
+        hi = lo + 1;
+    } else if (lo + 2 < hi && starts[lo + 2] > offset) {
+        lo++;
+        hi = lo + 1;
+    }
     while (hi - lo > 1) {
         sz mid = (lo + hi) / 2;
         if (starts[mid] <= offset) { lo = mid; } else { hi = mid; }
     }
+    self.position_line = lo;
     return { (uint)lo + 1, offset - starts[lo] + 1 };
 }

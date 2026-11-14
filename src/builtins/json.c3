@@ -960,7 +960,7 @@ fn JsonShapePlan* json_shape_plan(Heap* heap, HObject* obj) {
     HString** keys = (HString**)heap.alloc_func(heap.heap_udata, (usz)obj.prop_count * HString*::size);
     if (keys == null) return null;
     defer heap.free_func(heap.heap_udata, keys);
-    uint count = collect_own_enum_string_keys(heap, obj, keys);
+    uint count = collect_own_string_keys(heap, obj, keys);
     if (count == 0) return null;
     JsonShapePlan* plan = (JsonShapePlan*)heap.alloc_func(heap.heap_udata, JsonShapePlan::size);
     if (plan == null) return null;
@@ -1170,7 +1170,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         if (key_cap > 0) {
             final_keys = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, HString*::size * (usz)key_cap);
             if (final_keys == null) return -1;
-            final_count = collect_own_enum_string_keys(jctx.heap, obj, final_keys);
+            final_count = collect_own_string_keys(jctx.heap, obj, final_keys);
             // A getter or replacer can delete the remaining keys and collect
             // their strings before this snapshot has finished using them.
             for (uint i = 0; i < final_count; i++) ((HeapHeader*)final_keys[i]).incref();

@@ -1012,48 +1012,6 @@ fn void builtin_sharedarraybuffer_species_get(BuiltinContext* ctx) {
 // Registration
 // ============================================================================
 
-// Register an ArrayBuffer.prototype accessor getter (byteLength/detached).
-fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
-    HString* key = heap.str_intern(name);
-    if (key == null) return false;
-
-    HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_raw) return false;
-    HObject* func_obj = func_raw;
-    (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
-    func_obj.flags.callable = true;
-    func_obj.flags.constructable = false;
-    heap.set_prototype(func_obj, heap.function_proto);
-
-    char[64] name_buf;
-    usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
-    HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
-    if (fn_name != null) {
-        TVal name_tv;
-        name_tv.set_string_borrowed(fn_name);
-        HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-    if (length_key != null) {
-        TVal len_tv;
-        len_tv.set_fastint(0);
-        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-
-    TVal getter_tv;
-    getter_tv.set_object(func_obj);
-    TVal undef;
-    undef.set_undefined();
-    hobject::PropFlags acc_flags;
-    acc_flags.writable = false;
-    acc_flags.enumerable = false;
-    acc_flags.configurable = true;
-    acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
-    return true;
-}
-
 // Create ArrayBuffer.prototype and register the ArrayBuffer constructor globally.
 fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -1086,11 +1044,11 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Accessors
-    if (!register_arraybuffer_accessor(proto, heap, "byteLength", Builtin.ARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal)) return false;
-    if (!register_arraybuffer_accessor(proto, heap, "detached", Builtin.ARRAYBUFFER_PROTO_DETACHED_GET.ordinal)) return false;
-    if (!register_arraybuffer_accessor(proto, heap, "immutable", Builtin.ARRAYBUFFER_PROTO_IMMUTABLE_GET.ordinal)) return false;
-    if (!register_arraybuffer_accessor(proto, heap, "resizable", Builtin.ARRAYBUFFER_PROTO_RESIZABLE_GET.ordinal)) return false;
-    if (!register_arraybuffer_accessor(proto, heap, "maxByteLength", Builtin.ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "byteLength", Builtin.ARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "detached", Builtin.ARRAYBUFFER_PROTO_DETACHED_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "immutable", Builtin.ARRAYBUFFER_PROTO_IMMUTABLE_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "resizable", Builtin.ARRAYBUFFER_PROTO_RESIZABLE_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "maxByteLength", Builtin.ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal)) return false;
 
     // Methods
     {
@@ -1191,9 +1149,9 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Accessors
-    if (!register_arraybuffer_accessor(proto, heap, "byteLength", Builtin.SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal)) return false;
-    if (!register_arraybuffer_accessor(proto, heap, "growable", Builtin.SHAREDARRAYBUFFER_PROTO_GROWABLE_GET.ordinal)) return false;
-    if (!register_arraybuffer_accessor(proto, heap, "maxByteLength", Builtin.SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "byteLength", Builtin.SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "growable", Builtin.SHAREDARRAYBUFFER_PROTO_GROWABLE_GET.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "maxByteLength", Builtin.SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal)) return false;
 
     // Methods
     {

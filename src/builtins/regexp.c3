@@ -2106,6 +2106,68 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     ctx.result_object(arr);
 }
 
+// SpeciesConstructor(rx, %RegExp%) into *out. False when it threw.
+fn bool regexp_species_constructor(BuiltinContext* ctx, HObject* rx, TVal* out) {
+    Heap* heap = ctx.heap;
+    out.set_undefined();
+    // Resolve %RegExp% default constructor.
+    // The constructor object is stored on RegExp.prototype as its "constructor"
+    // property, this is available directly via heap.regexp_proto.
+    TVal default_ctor_tv; default_ctor_tv.set_undefined();
+    // Look up %RegExp% from the global environment via the VM's global_env.
+    // ctx.global_env is null when the builtin is called via call_fn (internal
+    // path), but ctx.vm always holds the Vm* pointer when available.
+    EnvRecord* genv = ctx.global_env;
+    if (genv == null && ctx.vm != null) {
+        genv = ((vm::Vm*)ctx.vm).global_env;
+    }
+    if (genv != null) {
+        HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
+        if (regexp_gkey != null) {
+            TVal? gv = env::env_get(genv, regexp_gkey);
+            if (try rgv = gv) { default_ctor_tv = rgv; }
+        }
+    }
+
+    HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
+    TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
+    if (ctx.should_throw) return false;
+    TVal ctor_tv; ctor_tv.set_undefined();
+    if (try cv = ctor_opt) { ctor_tv = cv; }
+
+    if (ctor_tv.is_undefined()) {
+        // Step 4: C is undefined → return defaultConstructor (%RegExp%).
+        *out = default_ctor_tv;
+    } else {
+        if (!ctor_tv.is_object() || ctor_tv.get_heapptr() == null) {
+            builtin_throw_no_result_change(ctx, heap.type_err_proto,
+                "constructor is not an object");
+            return false;
+        }
+        HObject* ctor_obj = (HObject*)ctor_tv.get_heapptr();
+        HString* species_sym = ensure_species_symbol(heap);
+        if (species_sym != null) {
+            TVal? sp_opt = builtins_generic_get(ctor_obj, species_sym, ctx);
+            if (ctx.should_throw) return false;
+            if (try spv = sp_opt) {
+                if (!spv.is_undefined() && !spv.is_null()) {
+                    // Step 5: species is the constructor to use.
+                    *out = spv;
+                } else {
+                    // species is null/undefined → return defaultConstructor.
+                    *out = default_ctor_tv;
+                }
+            } else {
+                // @@species not found → return defaultConstructor.
+                *out = default_ctor_tv;
+            }
+        } else {
+            *out = default_ctor_tv;
+        }
+    }
+    return true;
+}
+
 fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     HObject* rx = regexp_get_symbol_this(ctx);
     if (rx == null) return;
@@ -2160,64 +2222,8 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     //   5. Return species.
     // We always track the resolved constructor in species_ctor_tv.
     // For the default path (%RegExp%), look it up from global_env.
-    TVal species_ctor_tv; species_ctor_tv.set_undefined();
-    {
-        // Resolve %RegExp% default constructor.
-        // The constructor object is stored on RegExp.prototype as its "constructor"
-        // property, this is available directly via heap.regexp_proto.
-        TVal default_ctor_tv; default_ctor_tv.set_undefined();
-        // Look up %RegExp% from the global environment via the VM's global_env.
-        // ctx.global_env is null when the builtin is called via call_fn (internal
-        // path), but ctx.vm always holds the Vm* pointer when available.
-        EnvRecord* genv = ctx.global_env;
-        if (genv == null && ctx.vm != null) {
-            genv = ((vm::Vm*)ctx.vm).global_env;
-        }
-        if (genv != null) {
-            HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
-            if (regexp_gkey != null) {
-                TVal? gv = env::env_get(genv, regexp_gkey);
-                if (try rgv = gv) { default_ctor_tv = rgv; }
-            }
-        }
-
-        HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
-        TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
-        if (ctx.should_throw) return;
-        TVal ctor_tv; ctor_tv.set_undefined();
-        if (try cv = ctor_opt) { ctor_tv = cv; }
-
-        if (ctor_tv.is_undefined()) {
-            // Step 4: C is undefined → return defaultConstructor (%RegExp%).
-            species_ctor_tv = default_ctor_tv;
-        } else {
-            if (!ctor_tv.is_object() || ctor_tv.get_heapptr() == null) {
-                builtin_throw_no_result_change(ctx, heap.type_err_proto,
-                    "constructor is not an object");
-                return;
-            }
-            HObject* ctor_obj = (HObject*)ctor_tv.get_heapptr();
-            HString* species_sym = ensure_species_symbol(heap);
-            if (species_sym != null) {
-                TVal? sp_opt = builtins_generic_get(ctor_obj, species_sym, ctx);
-                if (ctx.should_throw) return;
-                if (try spv = sp_opt) {
-                    if (!spv.is_undefined() && !spv.is_null()) {
-                        // Step 5: species is the constructor to use.
-                        species_ctor_tv = spv;
-                    } else {
-                        // species is null/undefined → return defaultConstructor.
-                        species_ctor_tv = default_ctor_tv;
-                    }
-                } else {
-                    // @@species not found → return defaultConstructor.
-                    species_ctor_tv = default_ctor_tv;
-                }
-            } else {
-                species_ctor_tv = default_ctor_tv;
-            }
-        }
-    }
+    TVal species_ctor_tv;
+    if (!regexp_species_constructor(ctx, rx, &species_ctor_tv)) return;
 
     // Step 7: Let flags be ? ToString(? Get(rx, "flags")).
     HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
@@ -2478,54 +2484,8 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     //    The spec doesn't throw here; the Construct call below triggers IsRegExp on rx.
 
     // 3. Let C be ? SpeciesConstructor(R, %RegExp%).
-    TVal species_ctor_tv; species_ctor_tv.set_undefined();
-    {
-        TVal default_ctor_tv; default_ctor_tv.set_undefined();
-        EnvRecord* genv = ctx.global_env;
-        if (genv == null && ctx.vm != null) {
-            genv = ((vm::Vm*)ctx.vm).global_env;
-        }
-        if (genv != null) {
-            HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
-            if (regexp_gkey != null) {
-                TVal? gv = env::env_get(genv, regexp_gkey);
-                if (try rgv = gv) { default_ctor_tv = rgv; }
-            }
-        }
-
-        HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
-        TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
-        if (ctx.should_throw) return;
-        TVal ctor_tv; ctor_tv.set_undefined();
-        if (try cv = ctor_opt) { ctor_tv = cv; }
-
-        if (ctor_tv.is_undefined()) {
-            species_ctor_tv = default_ctor_tv;
-        } else {
-            if (!ctor_tv.is_object() || ctor_tv.get_heapptr() == null) {
-                builtin_throw_no_result_change(ctx, heap.type_err_proto,
-                    "constructor is not an object");
-                return;
-            }
-            HObject* ctor_obj = (HObject*)ctor_tv.get_heapptr();
-            HString* species_sym = ensure_species_symbol(heap);
-            if (species_sym != null) {
-                TVal? sp_opt = builtins_generic_get(ctor_obj, species_sym, ctx);
-                if (ctx.should_throw) return;
-                if (try spv = sp_opt) {
-                    if (!spv.is_undefined() && !spv.is_null()) {
-                        species_ctor_tv = spv;
-                    } else {
-                        species_ctor_tv = default_ctor_tv;
-                    }
-                } else {
-                    species_ctor_tv = default_ctor_tv;
-                }
-            } else {
-                species_ctor_tv = default_ctor_tv;
-            }
-        }
-    }
+    TVal species_ctor_tv;
+    if (!regexp_species_constructor(ctx, rx, &species_ctor_tv)) return;
 
     // 4. Let flags be ? ToString(? Get(R, "flags")).
     HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
@@ -3222,50 +3182,6 @@ fn void builtin_regexp_proto_get_unicodeSets(BuiltinContext* ctx) {
     ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 128) != 0);
 }
 
-fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
-    HString* key = builtin_intern_string(heap, name);
-    if (key == null) return false;
-
-    // Create getter function object (builtin)
-    HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_raw) return false;
-    HObject* func_obj = func_raw;
-    (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
-    func_obj.flags.callable = true;
-    heap.set_prototype(func_obj, heap.function_proto);
-
-    // Set .name = "get <name>" per ECMA-262 §17 (non-writable, non-enumerable, configurable)
-    char[64] name_buf;
-    usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
-    HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
-    if (fn_name != null) {
-        TVal name_tv;
-        name_tv.set_string_borrowed(fn_name);
-        HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-    // Set .length = 0
-    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-    if (length_key != null) {
-        TVal len_tv;
-        len_tv.set_fastint(0);
-        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-
-    // Register as a non-enumerable, configurable accessor (ECMA-262)
-    TVal getter_tv;
-    getter_tv.set_object(func_obj);
-    TVal undef;
-    undef.set_undefined();
-    hobject::PropFlags acc_flags;
-    acc_flags.writable = false;
-    acc_flags.enumerable = false;
-    acc_flags.configurable = true;
-    acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
-    return true;
-}
-
 // ============================================================================
 // RegExp constructor registration
 // ============================================================================
@@ -3431,16 +3347,16 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Add RegExp.prototype accessor getters (ECMA-262 §21.2.5)
-    if (!register_proto_accessor(proto, heap, "flags", Builtin.REGEXP_PROTO_GET_FLAGS.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "source", Builtin.REGEXP_PROTO_GET_SOURCE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "global", Builtin.REGEXP_PROTO_GET_GLOBAL.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "ignoreCase", Builtin.REGEXP_PROTO_GET_IGNORECASE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "multiline", Builtin.REGEXP_PROTO_GET_MULTILINE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "dotAll", Builtin.REGEXP_PROTO_GET_DOTALL.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "sticky", Builtin.REGEXP_PROTO_GET_STICKY.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "unicode", Builtin.REGEXP_PROTO_GET_UNICODE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "hasIndices", Builtin.REGEXP_PROTO_GET_HASINDICES.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "unicodeSets", Builtin.REGEXP_PROTO_GET_UNICODESETS.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "flags", Builtin.REGEXP_PROTO_GET_FLAGS.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "source", Builtin.REGEXP_PROTO_GET_SOURCE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "global", Builtin.REGEXP_PROTO_GET_GLOBAL.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "ignoreCase", Builtin.REGEXP_PROTO_GET_IGNORECASE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "multiline", Builtin.REGEXP_PROTO_GET_MULTILINE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "dotAll", Builtin.REGEXP_PROTO_GET_DOTALL.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "sticky", Builtin.REGEXP_PROTO_GET_STICKY.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "unicode", Builtin.REGEXP_PROTO_GET_UNICODE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "hasIndices", Builtin.REGEXP_PROTO_GET_HASINDICES.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "unicodeSets", Builtin.REGEXP_PROTO_GET_UNICODESETS.ordinal)) return false;
 
     // Register RegExp.prototype[@@match] (ECMA-262 §21.2.5.6)
     {

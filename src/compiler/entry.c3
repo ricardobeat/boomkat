@@ -43,7 +43,10 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     lex.err_line = 0;
     lex.err_col  = 0;
     ast::AstIndex* cmp = null;
-    cmp = ast::index_begin(lex.source, heap, { .strict = strict, .ts_mode = lex.ts_mode }, lex.source_buf);
+    cmp = ast::index_begin(lex.source, heap, {
+        .strict = strict, .ts_mode = lex.ts_mode,
+        .defer_functions = defer_functions_allowed(),
+    }, lex.source_buf);
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     CompilerContext ctx;
@@ -155,11 +158,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             .allow_super_call = allow_super_call,
             .in_class_field_init = is_direct_eval && caller_forbids_arguments,
             .private_names = private_names,
+            .defer_functions = defer_functions_allowed(),
         });
     }
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
-    cmp.defer_functions = true;
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -220,7 +223,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // requires for eval without an enclosing PrivateEnvironment.
     if (parent_private_names != null && parent_private_name_count > 0) {
         // The caller stashed a snapshot whose `name`/`slot_name`/
-        // `brand_slot_name` slices point at interned HString data (stable).
+        // `brand_slot_name` slices point into the snapshot itself.
         //
         // We COPY the inherited entries into a freshly-allocated table that
         // this context OWNS. Borrowing the snapshot's buffer directly (à la

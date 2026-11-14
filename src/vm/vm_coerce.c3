@@ -52,6 +52,13 @@ fn double vm_to_number(Vm* vm, TVal* val) {
     }
 }
 
+// A primitive that a call returned belongs to the pending return value until
+// the next call replaces it. An operator that converts a second operand holds
+// its own reference to the first in `held`, which it releases when done.
+fn void vm_hold(Vm* vm, TVal* held, TVal* prim) @inline {
+    vm.heap.tval_copy_ref(held, prim);
+}
+
 // ECMA-262 IsLessThan: https://tc39.es/ecma262/#sec-islessthan
 // Returns -1, +1 or 0. Sets *is_undef when either operand is NaN. Sets vm.throw_pending
 // on a ToPrimitive failure; the caller must check it.
@@ -59,9 +66,13 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
     *is_undef = false;
     TVal px = *x;
     TVal py = *y;
+    TVal held;
+    held.set_undefined();
+    defer vm.heap.decref_tval(&held);
     if (px.get_tag() == OBJECT) {
         px = to_primitive_value(vm, x, 2);  // hint: number
         if (vm.throw_pending) return 0;
+        vm_hold(vm, &held, &px);
     }
     // A primitive that came out of a call is owned by the call-result slot
     // alone, which the second operand's ToPrimitive overwrites. Hold it.
@@ -778,6 +789,19 @@ fn bool vm_numeric_operands(Vm* vm, TVal* rb, TVal* rc, NumericOperands* ops) {
     ops.b = &ops.prim_b;
     ops.c = &ops.prim_c;
     return true;
+}
+
+// ECMA-262 ToNumeric (hint number) for both operands of a numeric operator:
+// lval is fully converted before rval is touched, so a Symbol lval throws before rval's
+// ToPrimitive runs. Converting first also catches an object whose ToPrimitive yields a
+// BigInt, which a BigInt check on the raw operands would miss (e.g. `Object(1n) << 1n`).
+//
+// Writes BigInts as-is and other values as NUMBER into *out_b/*out_c, and keeps *out_b
+// alive in *held (see vm_hold). Returns false with vm.throw_pending set if either step throws.
+fn bool vm_to_numeric_pair(Vm* vm, TVal* rb, TVal* rc, TVal* out_b, TVal* out_c, TVal* held) {
+    if (!vm_to_numeric(vm, rb, out_b)) return false;
+    vm_hold(vm, held, out_b);
+    return vm_to_numeric(vm, rc, out_c);
 }
 
 fn void NumericOperands.release(&self, Vm* vm) @inline {

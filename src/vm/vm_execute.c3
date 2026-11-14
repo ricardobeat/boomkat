@@ -766,6 +766,34 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     return result;
 }
 
+faultdef BOUND_ARGS_NO_MEMORY;
+
+// A bound function's [[BoundArguments]] followed by `args`, in a buffer the
+// caller frees (null when there are none). Returns the count. A hole reads
+// as undefined so later arguments keep their positions.
+fn uint? bound_call_args(Heap* heap, HObject* bound_args, TVal* args, uint nargs, TVal** out) {
+    *out = null;
+    uint bound_argc = 0;
+    if (bound_args != null) {
+        if (try l = bound_args.get_prop_proto(heap.str(heap::BuiltinStr.LENGTH), heap)) {
+            bound_argc = l.is_fastint() ? (uint)l.get_fastint() : l.is_number() ? (uint)l.get_number() : 0;
+        }
+    }
+    uint total = bound_argc + nargs;
+    if (total == 0) return 0;
+    TVal* buf = (TVal*)heap.alloc_func(heap.heap_udata, TVal::size * total);
+    if (buf == null) return BOUND_ARGS_NO_MEMORY~;
+    for (uint i = 0; i < bound_argc; i++) {
+        buf[i].set_undefined();
+        HString* key = heap.int_to_hstring((long)i);
+        if (key == null) continue;
+        if (try e = bound_args.get_prop_proto(key, heap)) buf[i] = e;
+    }
+    for (uint i = 0; i < nargs; i++) buf[bound_argc + i] = args[i];
+    *out = buf;
+    return total;
+}
+
 fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal this_val) {
     Vm* vm = (Vm*)vm_ptr;
     heap::Realm* caller_realm = vm.heap.realm;
@@ -830,52 +858,11 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             TVal bound_this = (*bobj.extra_ptr()).func.bound.this_arg;
             HObject* args_arr = (*bobj.extra_ptr()).func.bound.args;
 
-            uint bound_argc = 0;
-            if (args_arr != null) {
-                HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
-                if (len_key != null) {
-                    TVal? lv = args_arr.get_prop_proto(len_key, heap);
-                    if (try l = lv) {
-                        if (l.is_fastint()) {
-                            bound_argc = (uint)l.get_fastint();
-                        } else if (l.is_number()) {
-                            bound_argc = (uint)l.get_number();
-                        }
-                    }
-                }
-            }
-
-            uint total_argc = bound_argc + nargs;
-            TVal* combined_args = null;
-            if (total_argc > 0) {
-                combined_args = (TVal*)heap.alloc_func(heap.heap_udata, TVal::size * total_argc);
-                if (combined_args == null) return undef;
-            }
+            TVal* combined_args;
+            uint? bound_count = bound_call_args(heap, args_arr, args, nargs, &combined_args);
+            if (catch bound_count) return undef;
+            uint combined_idx = bound_count;
             defer if (combined_args != null) heap.free_func(heap.heap_udata, combined_args);
-
-            uint combined_idx = 0;
-            if (args_arr != null) {
-                for (uint i = 0; i < bound_argc && combined_idx < total_argc; i++) {
-                    // A miss (hole / failed key intern) still consumes a
-                    // slot as undefined so the call args don't shift left.
-                    TVal ev;
-                    ev.set_undefined();
-                    char[20] buf;
-                    int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
-                    if (n > 0 && n < 20) {
-                        HString* ek = builtins::builtin_intern_string(heap, buf[:n]);
-                        if (ek != null) {
-                            TVal? e = args_arr.get_prop_proto(ek, heap);
-                            if (try got = e) ev = got;
-                        }
-                    }
-                    combined_args[combined_idx++] = ev;
-                }
-            }
-            for (uint i = 0; i < nargs && combined_idx < total_argc; i++) {
-                combined_args[combined_idx++] = args[i];
-            }
-
             return vm_call_fn_impl(vm_ptr, bound_target, combined_args, combined_idx, bound_this);
         }
     }
@@ -1042,7 +1029,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         HObject* hobj = (HObject*)func.get_heapptr();
         if (hobj != null && hobj.is_callable() && (*hobj.extra_ptr()).func.comp_func != null) {
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
-            if (catch compiler::materialize_function(target, vm.heap)) return undef;
+            if (!(vm_materialize(vm, target) ?? false)) return undef;
             CompiledFunction* lean = lean_callee(hobj, this_val);
             if (lean != null) {
                 return vm_call_lean(vm, hobj, lean, func, args, nargs, this_val, saved_resume_gen_outer);
@@ -1608,55 +1595,12 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         TVal target_tv = (*ctor.extra_ptr()).func.bound.target;
         HObject* args_arr = (*ctor.extra_ptr()).func.bound.args;
 
-        // ECMA-262 §9.4.1.2: Extract bound arguments and prepend them.
-        uint bound_argc = 0;
-        if (args_arr != null) {
-            HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
-            if (len_key != null) {
-                TVal? lv = args_arr.get_prop_proto(len_key, heap);
-                if (try l = lv) {
-                    if (l.is_fastint()) {
-                        bound_argc = (uint)l.get_fastint();
-                    } else if (l.is_number()) {
-                        bound_argc = (uint)l.get_number();
-                    }
-                }
-            }
-        }
-
-        uint total_argc = bound_argc + nargs;
-        TVal* combined_args = null;
-        if (total_argc > 0) {
-            combined_args = (TVal*)heap.alloc_func(heap.heap_udata, TVal::size * total_argc);
-            if (combined_args == null) return undef;
-        }
+        // ECMA-262 §9.4.1.2: prepend the bound arguments.
+        TVal* combined_args;
+        uint? bound_count = bound_call_args(heap, args_arr, args, nargs, &combined_args);
+        if (catch bound_count) return undef;
+        uint combined_idx = bound_count;
         defer if (combined_args != null) heap.free_func(heap.heap_udata, combined_args);
-
-        // Copy bound args
-        uint combined_idx = 0;
-        if (args_arr != null) {
-            for (uint i = 0; i < bound_argc && combined_idx < total_argc; i++) {
-                // A miss (hole / failed key intern) still consumes a
-                // slot as undefined so the call args don't shift left.
-                TVal ev;
-                ev.set_undefined();
-                char[20] buf;
-                int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
-                if (n > 0 && n < 20) {
-                    HString* ek = builtins::builtin_intern_string(heap, buf[:n]);
-                    if (ek != null) {
-                        TVal? e = args_arr.get_prop_proto(ek, heap);
-                        if (try got = e) ev = got;
-                    }
-                }
-                combined_args[combined_idx++] = ev;
-            }
-        }
-
-        // Append call args
-        for (uint i = 0; i < nargs && combined_idx < total_argc; i++) {
-            combined_args[combined_idx++] = args[i];
-        }
 
         TVal target_as_new = new_target;
         // SameValue(F, newTarget): if the caller passed the bound fn itself
@@ -1675,7 +1619,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // any other BUILTIN_FN) through the builtin-dispatch branch below instead.
     CompiledFunction* target = ctor.callable_kind() == hobject::CallableKind.BUILTIN_FN
         ? null : (*ctor.extra_ptr()).func.comp_func;
-    if (target != null) { if (catch compiler::materialize_function(target, heap)) return undef; }
+    if (target != null && !(vm_materialize(vm, target) ?? false)) return undef;
     // Derived class constructors (`class X extends Y`) do NOT create `this`
     // here, since super() creates it inside the base [[Construct]] (ECMA-262 §9.2.2
     // step 5). Start with an uninitialized (TDZ-sentinel) this_binding and mark
@@ -2606,6 +2550,12 @@ macro int @bitop_apply($op, int b, int c) {
 // if it had been written out longhand there. Verified empirically (not just
 // inferred from docs) that this differs from control flow written directly
 // in a macro's own statements.
+// Whether an arithmetic operator must run ToNumeric on its operands before it
+// can tell BigInt arithmetic from Number arithmetic.
+macro bool @needs_to_numeric(TVal* rb, TVal* rc) {
+    return rb.is_bigint() || rc.is_bigint() || rb.get_tag() == OBJECT || rc.get_tag() == OBJECT;
+}
+
 macro @bitop(TVal* ra, TVal* rb, TVal* rc, $op, vm, Dispatch* ds; @body()) {
     if (types::both_fastint(rb, rc)) {
         vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, (int)rb.get_fastint(), (int)rc.get_fastint()));

@@ -27,7 +27,13 @@ struct AstIndex {
     bool built;
     // A reparsed function has no proof about declarations outside its source.
     bool unknown_outer;
-    // Eval defers ordinary bodies; static scripts and inspection stay eager.
+    // The template being compiled from its own source slice, which carries
+    // what its defining compile learned about those declarations.
+    bytecode::CompiledFunction* reparsed;
+    // By atom, what that template records of a name: OUTER_BOUND, OUTER_CELL.
+    Vec{char} outer;
+    // The unit's ParseOptions.defer_functions: the parser recorded ordinary
+    // bodies, so the compiler must turn them into templates.
     bool defer_functions;
     bool use;
     bool scalar_classes_known;
@@ -35,6 +41,11 @@ struct AstIndex {
     // The unit's shared source text, copied on the first function that retains a slice.
     bytecode::SourceBuf* src_buf;
 }
+
+// A function around the reparsed one may bind the name.
+const char OUTER_BOUND = 1;
+// The enclosing function keeps the name's binding in a cell.
+const char OUTER_CELL = 2;
 
 tlocal AstIndex* index_state;
 
@@ -59,11 +70,19 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
     }
     c.prev = index_state;
     index_state = c;
+    c.defer_functions = opts.defer_functions;
     c.lexer = lexer::lexer_init(source, heap);
     c.tree.init(source);
     if (c.src_buf != null) c.tree.shared_line_starts = c.src_buf.line_starts;
+    Early early;
+    early.init(&c.tree);
+    defer early.free();
+    c.parser.early = &early;
     uint? root = parse_program(&c.parser, &c.tree, &c.lexer, opts);
     if (catch root) return c;
+    $if $feat(FRONTEND_STATS):
+        if (!opts.function_body) frontendstats::initial_nodes += c.tree.node_count();
+    $endif
     c.res.init(&c.tree);
     c.res.run(root);
     c.built = true;
@@ -72,9 +91,6 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
         return c;
     }
     c.use = true;
-    Early early;
-    early.init(&c.tree);
-    defer early.free();
     if (!early.run(root, opts) || !early.conflicts(&c.res)) {
         c.parser.fail_at(early.err_pos, early.error_message());
         c.use = false;
@@ -96,6 +112,7 @@ fn void index_end(AstIndex* c) {
     c.lexer.free_arena();
     foreach (&candidate : c.scalar_classes.data[:c.scalar_classes.len]) candidate.guards.free();
     c.scalar_classes.free();
+    c.outer.free();
     mem::free(c);
 }
 

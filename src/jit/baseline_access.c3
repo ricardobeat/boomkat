@@ -258,9 +258,9 @@ fn Layout* layout() {
     l.heap_alloc_since = (char*)&h.gc_alloc_since_begin - base;
     l.heap_live = (char*)&h.live_obj_count - base;
     l.heap_mem_budget = (char*)&h.mem_check_budget - base;
-    l.heap_young_size = (char*)&h.objects_young.size - base;
-    l.heap_young_cap = (char*)&h.objects_young.capacity - base;
-    l.heap_young_entries = (char*)&h.objects_young.entries - base;
+    l.heap_young_size = (char*)&h.objects_young.len - base;
+    l.heap_young_cap = (char*)&h.objects_young.cap - base;
+    l.heap_young_entries = (char*)&h.objects_young.data - base;
     l.heap_object_proto = (char*)&h.object_proto - base;
     l.heap_array_proto = (char*)&h.array_proto - base;
     l.heap_realms = (char*)&h.realms - base;

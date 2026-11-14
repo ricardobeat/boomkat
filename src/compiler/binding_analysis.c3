@@ -15,23 +15,10 @@ fn void retain_parent_name(CompilerContext* ctx, CompiledFunction* inner,
     mark_string_constant(ctx, inner_name.get_heapptr(), retain);
 }
 
-// Set `marks[i]` for the enclosing pool's constant naming `key`. Strings enter
-// the pool only through add_string_constant, which keeps one slot per string
-// in the constant hash, so the hash names it; a pool without a hash is
-// scanned.
+// Set `marks[i]` for the enclosing pool's constant naming `key`.
 fn void mark_string_constant(CompilerContext* ctx, void* key, bool* marks) {
-    if (key == null) return;
-    if (ctx.const_hash != null && ctx.const_hash_cap != 0) {
-        TVal probe;
-        probe.set_string_borrowed((HString*)key);
-        uint idx = ctx.lookup_constant_hash(probe.get_raw_bits());
-        if (idx < ctx.const_count && ctx.constants[idx].is_string()
-            && ctx.constants[idx].get_heapptr() == key) marks[idx] = true;
-        return;
-    }
-    for (uint i = 0; i < ctx.const_count; i++) {
-        if (ctx.constants[i].is_string() && ctx.constants[i].get_heapptr() == key) marks[i] = true;
-    }
+    uint idx = ctx.find_string_constant(key);
+    if (idx < ctx.const_count) marks[idx] = true;
 }
 
 // Collect compiled name consumers recursively, including capture-slot rewrites
@@ -39,7 +26,16 @@ fn void mark_string_constant(CompilerContext* ctx, void* key, bool* marks) {
 fn void retain_inner_consumers(CompilerContext* ctx, CompiledFunction* inner,
                                bool* retain, bool* retain_all) {
     if (inner == null || *retain_all) return;
-    if (inner.lazy_paren != 0) { *retain_all = true; return; }
+    if (inner.lazy_paren != 0) {
+        // A deferred body has no code to scan. It reaches this function's
+        // bindings by name, and the resolver marked each one it can reach.
+        if (!ctx.captures_exact) { *retain_all = true; return; }
+        Heap* h = (Heap*)ctx.heap;
+        for (uint id = 1; id < ctx.captured_names.count(); id++) {
+            mark_string_constant(ctx, h.str_intern(ctx.captured_names.get(id)), retain);
+        }
+        return;
+    }
     for (uint i = 0; i < inner.code_count; i++) {
         Instruction ins = inner.code[i];
         if (ins.op == Opcode.WIDE) {
@@ -106,7 +102,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
         && !ctx.is_generator && !ctx.is_async
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
         && !arguments_observes_bindings(ctx)
-        && !ctx.has_thunk_defaults() && ctx.destruct_defaults.len() == 0;
+        && !ctx.has_thunk_defaults() && ctx.destruct_defaults.len == 0;
     if (ctx.disable_optimize || ctx.has_wide
         || (!ordinary_ok && !can_remove_empty_arrow_scopes)) return false;
 
@@ -196,7 +192,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
             case Opcode.POP_VAR:
                 // The body scope of a function with parameter defaults holds
                 // only declarations the pruning above removed.
-                if (!can_remove_empty_arrow_scopes && ctx.defaults.len() == 0) needs_scope_layout = true;
+                if (!can_remove_empty_arrow_scopes && ctx.defaults.len == 0) needs_scope_layout = true;
             case Opcode.PUSH_LEX:
                 if (ctx.code[i].a != 0) needs_scope_layout = true;
             default:
@@ -223,7 +219,7 @@ fn bool can_reuse_binding_environment(CompilerContext* ctx) {
         || ctx.has_direct_eval || ctx.has_with_stmt || ctx.outer_with
         || ctx.capture_all
         || arguments_observes_bindings(ctx) || ctx.has_thunk_defaults()
-        || ctx.destruct_defaults.len() != 0 || ctx.has_destructured_param) {
+        || ctx.destruct_defaults.len != 0 || ctx.has_destructured_param) {
         return false;
     }
 

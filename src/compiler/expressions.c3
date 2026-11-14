@@ -8,7 +8,6 @@ import boomkat::hobject;
 import boomkat::heap;
 import boomkat::re_bindings;
 import std::io;
-import std::collections::list;
 
 // Whether a template substitution's ToString may move from its source
 // position into the STRJOIN that builds the template string.

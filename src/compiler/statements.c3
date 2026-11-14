@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast::vec;
 import boomkat::types;
 import boomkat::relexstats;
 import boomkat::lexer;
@@ -9,7 +10,6 @@ import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
 import std::io;
-import std::collections::list;
 
 // The import name standing for the spec's ~source~ binding, as "*" stands for
 // a namespace. Neither is a valid exported name, so neither can collide with
@@ -141,18 +141,18 @@ struct CompFuncDeclEntry {
 struct CompModuleDef {
     char[]                                module_name;
     char                                  status;
-    List{CompImportEntry}                 imports;
-    List{CompExportEntry}                 exports;
-    List{CompStarExportEntry}             star_exports;
-    List{CompReqModuleEntry}              req_modules;
-    List{CompFuncDeclEntry}               func_decls;
+    Vec{CompImportEntry}                 imports;
+    Vec{CompExportEntry}                 exports;
+    Vec{CompStarExportEntry}             star_exports;
+    Vec{CompReqModuleEntry}              req_modules;
+    Vec{CompFuncDeclEntry}               func_decls;
 }
 
 // Register a top-level module function declaration for eager link-time
 // instantiation (deduplicates by name, a later declaration of the same
 // name replaces the earlier inner_func_idx, mirroring last-wins hoisting).
 fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_idx) {
-    for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
+    for (uint i = 0; i < (uint)mod.func_decls.len; i++) {
         if (str_eq(mod.func_decls[(sz)i].name, name)) {
             mod.func_decls[(sz)i].inner_func_idx = inner_func_idx;
             return;
@@ -163,7 +163,7 @@ fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_
 
 // Register a required module specifier, returning its index (deduplicates).
 fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, ModuleAttrType attr_type = ModuleAttrType.NONE, bool deferred = false) {
-    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
+    for (uint i = 0; i < (uint)mod.req_modules.len; i++) {
         // Imports of the same specifier under different `type` attributes are
         // distinct module requests (different [[Attributes]]), so only reuse
         // an entry whose type matches too.
@@ -177,12 +177,12 @@ fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, ModuleAttr
             // separately.
             if (!deferred && mod.req_modules[(sz)i].deferred) {
                 mod.req_modules[(sz)i].deferred = false;
-                mod.req_modules[(sz)i].eval_order = (uint)mod.req_modules.len();
+                mod.req_modules[(sz)i].eval_order = (uint)mod.req_modules.len;
             }
             return i;
         }
     }
-    uint idx = (uint)mod.req_modules.len();
+    uint idx = (uint)mod.req_modules.len;
     mod.req_modules.push({ specifier, null, attr_type, false, deferred, idx });
     return idx;
 }
@@ -205,7 +205,7 @@ fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import
 // star exports are registered through mod_register_star_export and never
 // reach this path.
 fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
-    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
+    for (uint i = 0; i < (uint)mod.exports.len; i++) {
         if (str_eq(mod.exports[(sz)i].export_name, export_name)) return true;
     }
     return false;
@@ -237,7 +237,7 @@ fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export
 // of the ImportEntry's module and import name, not a local export. Returns null
 // when `local_name` is an ordinary local binding.
 fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_name) {
-    for (uint i = 0; i < (uint)mod.imports.len(); i++) {
+    for (uint i = 0; i < (uint)mod.imports.len; i++) {
         if (str_eq(mod.imports[(sz)i].local_name, local_name)) return &mod.imports[(sz)i];
     }
     return null;
@@ -352,18 +352,8 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
         // so subsequent reads inside the same scope can use the fast register
         // path again.
         if (name_idx < self.const_count) {
-            HString* hs = (HString*)self.constants[name_idx].get_heapptr();
-            if (hs != null) {
-                char[] bname = self.name_text(hs);
-                for (uint i = self.scope_depth; i > 0; i--) {
-                    uint idx = i - 1;
-                    if (self.scope_stack[idx].kind == SCOPEMARK) continue;
-                    if (str_eq(self.scope_stack[idx].name, bname)) {
-                        self.scope_stack[idx].is_tdz = false;
-                        break;
-                    }
-                }
-            }
+            ScopeEntry* e = self.scope_entry_of(self.constants[name_idx].get_heapptr());
+            if (e != null) e.is_tdz = false;
         }
     } else if (walk_chain) {
         // DECLVAR writes to the immediate var_env only, which is wrong when the
@@ -390,7 +380,7 @@ struct PerIterBinding {
     bool is_const;
 }
 
-alias PerIterBindings = List{PerIterBinding};
+alias PerIterBindings = Vec{PerIterBinding};
 
 // Copy a classic for-loop's lexical head bindings into a fresh environment
 // (ECMA-262 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
@@ -398,8 +388,7 @@ alias PerIterBindings = List{PerIterBinding};
 // multi-declarator head are unreachable.
 fn void CompilerContext.emit_create_per_iteration_env(&self, PerIterBinding[] bindings)
 {
-    List{ushort} temps;
-    temps.init(mem, bindings.len);
+    Vec{ushort} temps;
     defer temps.free();
     foreach (b : bindings) {
         ushort reg = self.alloc_reg();
@@ -468,7 +457,7 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
         ushort sym_reg = self.alloc_reg();
         self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
         ushort iter_key_reg = self.alloc_reg();
-        self.emit_abc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"), 0);
+        self.emit_a_bc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"));
         ushort symbol_val_reg = self.alloc_reg();
         self.emit_abc(Opcode.GETPROP, (uint)symbol_val_reg, (uint)sym_reg, (uint)iter_key_reg);
         self.emit_abc(Opcode.GETPROP, (uint)method_reg, (uint)src_reg, (uint)symbol_val_reg);
@@ -492,7 +481,7 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
     }
 
     ushort next_key_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"));
     self.emit_abc(Opcode.GETPROP, (uint)next_reg, (uint)method_reg, (uint)next_key_reg);
     self.free_reg(next_key_reg);
     if (!is_await) self.patch_jump(open_done_jump);
@@ -558,13 +547,13 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uin
 
     ushort done_key_reg = self.alloc_reg();
     ushort done_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"));
     self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
     uint exit_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
 
     ushort value_key_reg = self.alloc_reg();
     ushort val_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"));
     self.emit_abc(Opcode.GETPROP, (uint)val_reg, (uint)result_reg, (uint)value_key_reg);
 
     // Move the value below the callee window, then release the above-window

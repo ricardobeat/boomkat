@@ -1,6 +1,6 @@
 // Recursive-descent parser producing the flat AST.
 //
-// The parser streams tokens from the existing Lexer in `ast_mode`: `/` always
+// The parser streams tokens from the Lexer: `/` always
 // lexes as a punctuator and `}` as RBRACE, and the parser rescans a token as a
 // regular expression or a template continuation where the grammar says so, so
 // no source byte is lexed twice outside a rescan. Strictness never changes how
@@ -32,6 +32,9 @@ struct ParseOptions {
     bool function_body;
     uint function_start;
     uint function_flags;
+    // The compiler keeps eligible function bodies as source-backed deferred
+    // templates, so this pass can record them instead of parsing them.
+    bool defer_functions;
 }
 
 // Per-function parse context, saved and restored around every function body.
@@ -51,11 +54,29 @@ struct FnCtx {
     bool top_level_await;
 }
 
+// One scope of a deferred body's tree, kept only for the redeclaration checks.
+struct DvScope {
+    ScopeKind kind;
+    uint parent;
+    uint func;         // nearest enclosing function scope
+}
+
+// One declaration occurrence inside a deferred body, in source order.
+struct DvSite {
+    uint atom;
+    DeclKind kind;
+    uint scope;        // occurrence scope
+    uint at;           // source offset for error reporting
+    bool pattern;      // a catch parameter that is a destructuring pattern
+    bool plain;        // a sloppy plain (non-async/generator) function declaration
+}
+
+
 struct Parser {
     Ast* ast;
     Lexer* lex;
     Token tok;               // the current, unconsumed token
-    Token prev;              // the last consumed token
+    Span prev;               // the last consumed token's bytes
     Token peek_tok;
     bool has_peek;
     // A lexing error met while peeking: the next advance reports it.
@@ -63,10 +84,17 @@ struct Parser {
     fault peek_fault;
     FnCtx ctx;
     bool is_module;
+    // Parse deferrable bodies in full for validation but discard their nodes.
+    bool defer_bodies;
+    // Checks a recorded body's nodes before they are discarded.
+    Early* early;
     // `in` is not an operator while a for-statement head's init expression parses.
     bool no_in;
     // The class being parsed sits in sloppy code; see Parser.strict_thunk.
     bool class_in_sloppy;
+    // Class bodies around the code being parsed, counting the class whose
+    // private names an eval inherits.
+    uint class_depth;
     // Offset of the first `{a = 1}` cover initialiser not yet claimed by a pattern, or 0.
     uint cover_init;
     // Depth of array / object literals and parenthesised lists that a pattern may still claim.
@@ -81,6 +109,29 @@ struct Parser {
     uint ns_name;            // the namespace object the parser is inside
     bool ts_asserted;         // the last expression held an `as` or `satisfies` assertion
     uint jsx_used;           // JSX_USES_* bits: the jsx-runtime imports to inject
+    // Deferred-body validation. A body `gen` keeps as a template is parsed with
+    // full grammar but its nodes are discarded, so its declarations, scopes and
+    // the names it references are tracked here rather than in a second walk over
+    // transient nodes. `dv_on` is set for the whole deferred subtree; the scope
+    // tree and sites are per deferred body (reset at `dv_body_enter`), while
+    // `dv_refs` and `dv_flags` accumulate across nesting. A stub records only the
+    // refs its own walk appended, from `dv_ref_base` on.
+    bool dv_on;
+    Vec{DvScope} dv_scopes;
+    Vec{DvSite} dv_sites;
+    uint dv_cur;           // current scope id (0 = no scope open)
+    uint dv_track;         // >0 while inside a deferred body's own walk
+    Vec{uint} dv_refs;     // atoms the body references (over-approx: every ident)
+    uint dv_ref_base;      // first ref the current body appended
+    char dv_flags;         // BODY_HAS_* bits seen in the body
+    Vec{uint} dv_marks;    // {scopes, sites, cur, ref base}
+    Vec{DvBinding} dv_binds;
+    Vec{char} dv_bflags;
+    Vec{uint} dv_slot;       // open addressing over (bscope, atom): binding id, 0 = empty
+    Vec{uint} dv_seen;       // atom id -> stamp of the stub that last emitted it
+    uint dv_seen_gen;
+    uint dv_slot_count;
+    uint dv_atom_eval;
     char[256] err_msg;
     uint err_len;
     uint err_pos;
@@ -128,6 +179,13 @@ fn void? Parser.check_stack(&self) {
 
 // ---- tokens ----
 
+struct Span {
+    uint pos;
+    uint end;
+}
+
+macro Span Token.span(&self) => { self.pos, self.end };
+
 fn Token? Parser.lex_one(&self) {
     Token? t = self.lex.scan_token();
     if (catch err = t) {
@@ -156,7 +214,13 @@ fn void? Parser.next(&self, bool as_name = false) {
     if (!as_name && self.tok.has_escape && is_escape_reserved(self.tok.type)) {
         return self.fail("keyword must not contain escaped characters")~;
     }
-    self.prev = self.tok;
+    return self.advance();
+}
+
+// Advance past the current token without the reserved-word check, for a look-ahead
+// that is undone before the tokens it passed are parsed for real.
+fn void? Parser.advance(&self) {
+    self.prev = self.tok.span();
     if (self.has_peek) {
         self.has_peek = false;
         self.tok = self.peek_tok;
@@ -338,10 +402,22 @@ fn uint Parser.quad(&self, uint a, uint b, uint c, uint d) {
 // ---- line table ----
 
 // Line terminators are \n, \r, \r\n, U+2028 and U+2029, as the lexer counts them.
+const ulong BYTES @local = 0x0101010101010101;
+
 fn void build_line_table(Ast* ast) {
     char[] src = ast.source;
     usz i = 0;
     while (i < src.len) {
+        // Every line terminator has a byte below 0x0E or the lead byte 0xE2;
+        // step over a word that holds neither.
+        if (i + 8 <= src.len) {
+            ulong w = mem::load((ulong*)(src.ptr + i), 1);
+            ulong e = w ^ (BYTES * 0xE2);
+            if (((((w - BYTES * 0x0E) & ~w) | ((e - BYTES) & ~e)) & (BYTES * 0x80)) == 0) {
+                i += 8;
+                continue;
+            }
+        }
         char c = src[i];
         if (c == '\n') {
             ast.line_starts.push((uint)i + 1);
@@ -365,20 +441,35 @@ struct ParseResult {
     uint err_col;
 }
 
-// Parse a whole Script or Module into `ast`. The lexer must be freshly initialised on `ast.source`;
-// it is put in ast_mode and left there.
+// Parse a whole Script or Module into `ast`. The lexer must be freshly initialised on `ast.source`.
 fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ast = ast;
     p.lex = lex;
     p.stack_floor = compiler::compile_stack_floor();
     p.is_module = opts.is_module;
+    p.defer_bodies = opts.defer_functions;
+    p.class_depth = opts.private_names.len != 0 ? 1 : 0;
     p.scratch.init(256);
     p.ts_exports.init(8);
     p.ts_param_props.init(8);
     p.ts_scope_names.init(8);
     p.ts_type_imports.init(8);
+    p.dv_scopes.init(16);
+    p.dv_scopes.push({});   // index 0 is the null scope, ids start at 1
+    p.dv_sites.init(16);
+    p.dv_refs.init(32);
+    p.dv_marks.init(8);
+    p.dv_binds.init(32);
+    p.dv_bflags.init(32);
+    p.dv_slot.init_zero(128);
+    p.dv_seen.init_zero(256);
+    p.dv_seen_gen = 0;
+    p.dv_track = 0;
+    p.dv_cur = 0;
+    p.dv_ref_base = 0;
+    p.dv_flags = 0;
+    p.dv_atom_eval = p.atom("eval");
     if (ast.shared_line_starts.len == 0) build_line_table(ast);
-    lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
     lex.jsx = opts.jsx;
     lex.set_strict(false);
@@ -410,6 +501,14 @@ fn void Parser.destroy(&self) {
     self.ts_param_props.free();
     self.ts_scope_names.free();
     self.ts_type_imports.free();
+    self.dv_scopes.free();
+    self.dv_sites.free();
+    self.dv_refs.free();
+    self.dv_marks.free();
+    self.dv_binds.free();
+    self.dv_bflags.free();
+    self.dv_slot.free();
+    self.dv_seen.free();
 }
 
 // Return to the state `saved` and `lex` hold, taken before a speculative parse.

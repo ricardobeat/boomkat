@@ -11,7 +11,7 @@ import boomkat::env;
 import boomkat::builtins;
 import boomkat::bytecode;
 import std::io;
-import std::collections::list;
+import boomkat::ast::vec;
 
 fn void bytecode_rejection(void* heap_raw, void* vm_raw, TVal promise, TVal reason, void* udata) {
     *(bool*)udata = true;
@@ -38,14 +38,13 @@ fn int main(String[] args) {
     defer vm::vm_destroy(v);
     bool rejection = false;
     hp.set_rejection_tracker(&bytecode_rejection, &rejection);
-    List{image::ModuleDecl} declarations;
-    declarations.init(mem);
+    Vec{image::ModuleDecl} declarations;
     defer declarations.free();
     CompiledFunction*? loaded = image::decode(hp, source, &declarations);
     if (catch err = loaded) { io::eprintfn("Invalid or incompatible bytecode: %s", err); return 1; }
     CompiledFunction* f = loaded;
     if (!f.flags.is_module) {
-        if (declarations.len() != 0 || f.has_tla()) {
+        if (declarations.len != 0 || f.has_tla()) {
             io::eprintfn("Invalid script bytecode metadata"); return 1;
         }
         // Script entry uses the global environments and its original strictness.

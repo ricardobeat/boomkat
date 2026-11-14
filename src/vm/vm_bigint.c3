@@ -73,9 +73,13 @@ fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* r
     // first, so a wrapper / @@toPrimitive that yields a BigInt participates as a BigInt.
     TVal pb = *rb;
     TVal pc = *rc;
+    TVal held;
+    held.set_undefined();
+    defer vm.heap.decref_tval(&held);
     if (pb.is_object()) {
         pb = to_primitive_value(vm, rb, 2);
         if (vm.throw_pending) return BigIntOpResult.THREW;
+        vm_hold(vm, &held, &pb);
     }
     // A primitive that came out of a call is owned by the call-result slot
     // alone, which the second operand's ToPrimitive overwrites. Hold it.
@@ -186,6 +190,36 @@ fn hbigint::HBigInt*? bigint_step(Heap* hp, hbigint::HBigInt* v, bool inc) {
 // ============================================================================
 // Unary
 // ============================================================================
+
+// `-`, `*`, `/`, `%` and `**` when an operand is a BigInt or an object: ToNumeric
+// both, then the BigInt operation or the Number one. Never returns NOT_BIGINT.
+fn BigIntOpResult vm_numeric_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* rc) {
+    TVal b;
+    TVal c;
+    TVal held;
+    held.set_undefined();
+    defer vm.heap.decref_tval(&held);
+    if (!vm_to_numeric_pair(vm, rb, rc, &b, &c, &held)) return BigIntOpResult.THREW;
+    if (b.is_bigint() || c.is_bigint()) return vm_bigint_binop(vm, op, ra, &b, &c);
+    double x = b.get_number();
+    double y = c.get_number();
+    switch (op) {
+        case Opcode.SUB: x -= y;
+        case Opcode.MUL: x *= y;
+        case Opcode.DIV: x /= y;
+        case Opcode.MOD: x %= y;
+        default:         x = number_pow(x, y);
+    }
+    vm.heap.set_reg_number(ra, x);
+    return BigIntOpResult.HANDLED;
+}
+
+// ECMA-262 Number::exponentiate: a NaN exponent is NaN even for base 1, and
+// abs(base) == 1 with a ±Infinity exponent is NaN. C99 pow returns 1 for both.
+fn double number_pow(double base, double exponent) {
+    if (math::abs(base) == 1.0 && !math::is_finite(exponent)) return double::nan;
+    return math::pow(base, exponent);
+}
 
 // Increment or decrement an owned BigInt register in place.  `slot` must
 // currently hold a BigInt (its box reference is released and replaced).

@@ -21,6 +21,7 @@
 //     them from accumulating until teardown. The registry grows on demand.
 module boomkat @feat(!BYTECODE_ONLY);
 
+import boomkat::ast::vec;
 import boomkat::agent;
 import boomkat::builtins;
 import boomkat::embed;
@@ -30,7 +31,6 @@ import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::types;
 import boomkat::esm;
-import std::collections::list;
 import std::io;
 
 // ============================================================================
@@ -133,7 +133,7 @@ struct JsContext {
     embed::Runtime* rt;
     embed::Ctx* context;
     // Handles rooted while a `@scope` is open, released when it closes.
-    List{JsValue} scoped;
+    Vec{JsValue} scoped;
     uint scope_depth;
     JsRuntime private_runtime;
     JsRuntime* owner;
@@ -197,7 +197,6 @@ fn void? JsContext.create(&self, JsRuntime* runtime = null) {
     self.rt = runtime.rt;
     self.context = context;
     self.owner = runtime;
-    self.scoped.init(mem);
 }
 
 fn void JsContext.destroy(&self) {

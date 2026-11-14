@@ -14,7 +14,7 @@ import std::io;
 
 // Add a patch address to a chain. Returns the new head.
 fn uint CompilerContext.add_patch(&self, uint chain_head, uint addr) {
-    uint idx = (uint)self.patches.len();
+    uint idx = (uint)self.patches.len;
     self.patches.push({ addr, chain_head });
     return idx;
 }
@@ -33,7 +33,7 @@ fn void CompilerContext.patch_chain(&self, uint chain_head) {
 // Loop stack management
 // ============================================================================
 
-fn uint CompilerContext.loop_depth(&self) => (uint)self.loop_stack.len();
+fn uint CompilerContext.loop_depth(&self) => (uint)self.loop_stack.len;
 
 fn LoopInfo* CompilerContext.innermost_loop(&self) => &self.loop_stack[^1];
 

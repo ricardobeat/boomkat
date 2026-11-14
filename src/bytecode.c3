@@ -1924,6 +1924,11 @@ struct CompiledFunction {
 
     // One plus the source offset of an eval body awaiting first-call compilation.
     uint lazy_paren;
+    // On such a template: its constants are exactly the names it mentions that a
+    // function around it binds, so any other free name is a global.
+    bool lazy_outer_known;
+    // On such a template: a `with` statement encloses the function.
+    bool lazy_outer_with;
 
     // ---- Bytecode -------------------------------------------------------
 
@@ -2069,8 +2074,8 @@ struct CompiledFunction {
     // from a parent class body, and null otherwise.
     //
     // Heap.free_compiled_funcs frees this alongside the other sub-arrays. Each
-    // PrivateNameEntry's strings point at interned HString data that outlives
-    // the snapshot, so copying the entry structs is safe.
+    // PrivateNameEntry's strings point at text held after the entries, in the
+    // same allocation.
     //
     // Typed void* because PrivateNameEntry lives in the compiler module, which
     // bytecode.c3 does not import. The compiler and builtin_eval both cast.

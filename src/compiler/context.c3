@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast::vec;
 import boomkat::ast;
 
 import boomkat::types;
@@ -11,7 +12,6 @@ import boomkat::heap;
 import boomkat::frontendstats;
 import std::io;
 import std::time;
-import std::collections::list;
 import std::collections::set;
 
 // ============================================================================
@@ -151,6 +151,9 @@ struct ScopeEntry {
     // and safely represents an entry without ledger metadata.
     uint binding_id;
     bool is_captured;
+    // One plus the index of the next entry down with this name, or for a
+    // marker of the next marker down. Zero when there is none.
+    uint shadowed;
     // True for a let/const whose PUTLEX/PUTLEX_C is not yet emitted (still in its TDZ).
     // resolve_var returns SCOPE_ERROR for it, so reads compile to GETVAR and throw
     // ReferenceError against the INITTZ sentinel. Cleared by emit_var_store.
@@ -259,8 +262,8 @@ struct DestructParamDefault {
 // err_line/err_col themselves.
 fn void CompilerContext.record_error(&self, char[] msg) {
     if (self.lexer.err_msg[0] != 0) return;
-    self.lexer.err_line = self.lexer.line;
-    self.lexer.err_col  = self.lexer.col;
+    self.lexer.err_line = self.lexer.current.line;
+    self.lexer.err_col  = self.lexer.current.col;
     usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
     mem::copy(&self.lexer.err_msg[0], msg.ptr, (sz)(copy_len));
     self.lexer.err_msg[copy_len] = 0;
@@ -280,6 +283,10 @@ fn void CompilerContext.set_compile_error(&self, char[] msg) {
 bool g_disable_optimize = false;
 
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
+
+// Function bodies are deferred only where the compiler compiles them as templates. Trace
+// builds and --no-optimize compile a recorded body as empty, so they never defer.
+fn bool defer_functions_allowed() { return !$feat(TRACE_VM) && !g_disable_optimize; }
 
 
 // ============================================================================
@@ -342,7 +349,12 @@ struct CompilerContext {
     ScopeEntry* scope_stack;
     uint scope_cap;
     uint scope_depth;
-    List{BindingInfo} bindings;
+    // One plus the index of the topmost entry bound to each pool string, and of
+    // the topmost marker, so a lookup need not walk a wide scope.
+    uint* name_top;
+    uint name_top_cap;
+    uint top_mark;
+    Vec{BindingInfo} bindings;
     ushort cell_frame_reg;
     bool cell_frame_reserved;
     // What resolution records of `arguments` in the body's own text (outside
@@ -368,20 +380,20 @@ struct CompilerContext {
     bool forward_violation;
 
     // Enclosing loops and switches, innermost last.
-    List{LoopInfo} loop_stack;
+    Vec{LoopInfo} loop_stack;
     // The disposal scopes in effect, innermost last. A scope owns the
     // resources of the `using` declarations in one block: the register
     // holding its resource list, the register holding the failure in flight
     // when the block is left, and the register telling whether there is one.
-    List{DisposeScope} dispose_scopes;
+    Vec{DisposeScope} dispose_scopes;
     // Number of enclosing try statements. A break/continue compares it with its
     // target loop's saved_try_depth to decide whether it crosses a finally.
     uint try_depth;
     // Labels in scope, innermost last.
-    List{LabelInfo} labels;
+    Vec{LabelInfo} labels;
     // Break/continue forward-patch chains for the whole function. Entries are
     // never removed mid-function; each chain links through PatchEntry.next.
-    List{PatchEntry} patches;
+    Vec{PatchEntry} patches;
     // Set when the scope stack overflowed; finish() turns this into a compile
     // error. A dropped scope entry makes a declaration invisible to
     // shadowing/TDZ/duplicate checks rather than reporting anything.
@@ -481,10 +493,10 @@ struct CompilerContext {
     bool   eval_direct_in_function;
 
     // Default parameter tracking
-    List{ParamDefault} defaults;
+    Vec{ParamDefault} defaults;
 
     // Destructured-parameter outer-default tracking (deferred emission)
-    List{DestructParamDefault} destruct_defaults;
+    Vec{DestructParamDefault} destruct_defaults;
 
     // Set while parsing FormalParameters when a parameter is a destructuring pattern. With
     // has_rest and defaults, this makes IsSimpleParameterList false (see params_are_simple).
@@ -646,10 +658,14 @@ int  cur_with_depth;
     // Names referenced inside nested callable bodies, collected by
     // resolution before the body compiles; declare_var marks matching
     // locals is_captured so all their access goes through the environment.
-    List{char[]} captured_names;
+    // Owned copies; empty until the first name is added.
+    ast::AtomTable captured_names;
     // Treat every local as captured when static resolution cannot name the
     // affected binding precisely, including direct eval and class fields.
     bool capture_all;
+    // captured_names lists every binding of this function a nested function
+    // can reach by name, so a deferred child retains only those.
+    bool captures_exact;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
     // Top-level function declarations seen by the hoisting pre-pass. Heap-grown: one scope can
@@ -706,7 +722,7 @@ int  cur_with_depth;
     // Constant-pool indices of a module's top-level `var`s that
     // resolution keeps in registers: reads and writes
     // compile to the name's home register, a live slot for the whole body.
-    List{uint} slot_global_name_idxs;
+    Vec{uint} slot_global_name_idxs;
 
     // Direct eval tracking, when true, the CALL path must create a fresh env.
     bool has_direct_eval;
@@ -718,16 +734,16 @@ int  cur_with_depth;
     // them). has_direct_eval cannot say which call is which, so `eval(x)` and `(0, eval)(x)` in one
     // function need these: builtin_eval looks up the call site it was reached through. finish()
     // copies the list into CompiledFunction.direct_eval_offsets.
-    List{uint} direct_eval_offsets;
+    Vec{uint} direct_eval_offsets;
     // Conditional branches and TRY catch offsets too far for their 16-bit
     // field, by instruction index. widen_far_offsets gives each a WIDE prefix.
-    List{FarOffset} far_offsets;
+    Vec{FarOffset} far_offsets;
     // Call nodes in syntactic tail position (ECMA-262 IsInTailPosition) while
     // the return operand naming them compiles, and the instruction index of
     // each call emitted for one. run_tail_calls rewrites only those calls:
     // `const r = f(); return r;` compiles to the same CALL; RET shape.
-    List{uint} tail_nodes;
-    List{uint} tail_call_pcs;
+    Vec{uint} tail_nodes;
+    Vec{uint} tail_call_pcs;
 
     // Arrow/async tracking, needed for needs_env computation in finish().
     bool is_arrow;
@@ -901,24 +917,15 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     pnt.count = 0;
     pnt.cap = INITIAL_PRIVATE_NAMES;
-    pnt.scopes.init(mem);
+    pnt.heads = null;
+    pnt.heads_cap = 0;
+    pnt.linked = 0;
+    pnt.scopes = {};
     self.private_name_table = pnt;
     self.owns_private_names = true;
 
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
-    self.slot_global_name_idxs.allocator = mem;
-    self.direct_eval_offsets.allocator = mem;
-    self.far_offsets.allocator = mem;
-    self.tail_nodes.allocator = mem;
-    self.tail_call_pcs.allocator = mem;
-    self.bindings.allocator = mem;
-    self.captured_names.allocator = mem;
-    self.defaults.allocator = mem;
-    self.destruct_defaults.allocator = mem;
-    self.loop_stack.allocator = mem;
-    self.labels.allocator = mem;
-    self.patches.allocator = mem;
 
     // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
     // compilation entry point (compile/compile_eval/compile_function/etc.) is
@@ -936,6 +943,7 @@ fn void CompilerContext.cleanup(&self) {
     if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
     if (self.source_positions != null) { h.free_func(h.heap_udata, self.source_positions); self.source_positions = null; }
     if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
+    if (self.name_top != null) { h.free_func(h.heap_udata, self.name_top); self.name_top = null; }
     if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
@@ -948,14 +956,7 @@ fn void CompilerContext.cleanup(&self) {
     if (self.b33_hoisted_names != null) { h.free_func(h.heap_udata, self.b33_hoisted_names); self.b33_hoisted_names = null; }
     if (self.b33_hoisted_regs != null) { h.free_func(h.heap_udata, self.b33_hoisted_regs); self.b33_hoisted_regs = null; }
     if (self.b33_hoisted_pcs != null) { h.free_func(h.heap_udata, self.b33_hoisted_pcs); self.b33_hoisted_pcs = null; }
-    if (self.owns_private_names && self.private_name_table != null) {
-        if (self.private_name_table.entries != null) {
-            h.free_func(h.heap_udata, self.private_name_table.entries);
-        }
-        self.private_name_table.scopes.free();
-        h.free_func(h.heap_udata, self.private_name_table);
-    }
-    self.private_name_table = null;
+    self.release_private_names();
     if (self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.free();
     if (self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.free();
     self.slot_global_name_idxs.free();
@@ -964,7 +965,7 @@ fn void CompilerContext.cleanup(&self) {
     self.tail_nodes.free();
     self.tail_call_pcs.free();
     self.bindings.free();
-    foreach (name : self.captured_names) { mem::free(name.ptr); }
+    for (uint id = 1; id < self.captured_names.count(); id++) mem::free(self.captured_names.get(id).ptr);
     self.captured_names.free();
     self.defaults.free();
     self.destruct_defaults.free();
@@ -974,18 +975,23 @@ fn void CompilerContext.cleanup(&self) {
     self.patches.free();
 }
 
+// Give up the private-names table, freeing it when this context owns it.
+fn void CompilerContext.release_private_names(&self) {
+    PrivateNameTable* t = self.private_name_table;
+    self.private_name_table = null;
+    if (!self.owns_private_names || t == null) return;
+    Heap* h = (Heap*)self.heap;
+    if (t.entries != null) h.free_func(h.heap_udata, t.entries);
+    if (t.heads != null) h.free_func(h.heap_udata, t.heads);
+    t.scopes.free();
+    h.free_func(h.heap_udata, t);
+}
+
 // Borrow the private-names table from an enclosing context. Used by methods, default-parameter
 // thunks and arrow bodies compiled for a class element, which only resolve private names and never
 // declare into the table. Frees this context's own (still-empty) buffer first.
 fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
-    if (self.owns_private_names && self.private_name_table != null) {
-        Heap* h = (Heap*)self.heap;
-        if (self.private_name_table.entries != null) {
-            h.free_func(h.heap_udata, self.private_name_table.entries);
-        }
-        self.private_name_table.scopes.free();
-        h.free_func(h.heap_udata, self.private_name_table);
-    }
+    self.release_private_names();
     // Share the parent's table by pointer, so growth from a nested class's private declarations
     // (which may reallocate entries) is visible to both.
     self.private_name_table = parent.private_name_table;
@@ -1016,6 +1022,23 @@ fn void CompilerContext.ensure_code_cap(&self) {
     }
     self.source_positions = (SourcePosition*)lp;
     self.code_cap = new_cap;
+}
+
+// Make name_top cover the pool index `name_idx`. False when allocation fails.
+fn bool CompilerContext.ensure_name_top(&self, uint name_idx) {
+    if (name_idx < self.name_top_cap) return true;
+    uint new_cap = self.name_top_cap == 0 ? 64 : self.name_top_cap;
+    while (new_cap <= name_idx) new_cap *= 2;
+    Heap* h = (Heap*)self.heap;
+    void* p = h.realloc_func(h.heap_udata, self.name_top, (usz)new_cap * uint::size);
+    if (p == null) {
+        self.record_error("out of memory growing the scope index");
+        return false;
+    }
+    self.name_top = (uint*)p;
+    mem::clear(&self.name_top[self.name_top_cap], (sz)(new_cap - self.name_top_cap) * uint::size);
+    self.name_top_cap = new_cap;
+    return true;
 }
 
 // Grow the scope stack. Unlike the code and constant buffers, this has no hard cap; the depth is
@@ -1272,7 +1295,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // nested closures on the regular scope path.
     bool can_remove_empty_arrow_scopes = self.is_arrow
                                    && !self.has_thunk_defaults()
-                                   && self.destruct_defaults.len() == 0
+                                   && self.destruct_defaults.len == 0
                                    && !self.has_captured_local
                                    && !self.has_direct_eval
                                    && !self.has_with_stmt
@@ -1637,7 +1660,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         me_pinned.clear();
         bool me_has_pinned = false;
         if (!self.is_strict && self.uses_arguments && !self.has_rest
-            && !self.ast_param_scope && self.defaults.len() == 0 && self.destruct_defaults.len() == 0
+            && !self.ast_param_scope && self.defaults.len == 0 && self.destruct_defaults.len == 0
             && !self.has_destructured_param && !self.is_arrow && !self.eval_mode) {
             // Parameters occupy r0..r(num_args-1) in declaration order (see
             // emit_param_prologue).
@@ -1682,7 +1705,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     //
     // TRY is always followed by a NOP whose BC field holds the finally_offset. The VM reads that word
     // unconditionally, so it must survive compaction: mark those slots in keep[] before building pc_map.
-    if (self.far_offsets.len() > 0) self.widen_far_offsets()!;
+    if (self.far_offsets.len > 0) self.widen_far_offsets()!;
     if (self.code_count > 0) {
         bool* nop_keep = null;
         uint* pc_map = null;
@@ -1833,8 +1856,8 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // builtin_eval can tell a direct call from an indirect one made from the
     // same body. The offsets index the pre-compaction stream, so they go
     // through pc_map alongside the jump targets.
-    if (self.direct_eval_offsets.len() > 0) {
-        uint de_count = (uint)self.direct_eval_offsets.len();
+    if (self.direct_eval_offsets.len > 0) {
+        uint de_count = (uint)self.direct_eval_offsets.len;
         uint* de_buf = (uint*)h.alloc_func(h.heap_udata, (usz)de_count * uint::size);
         if (de_buf != null) {
             for (uint i = 0; i < de_count; i++) {
@@ -1943,8 +1966,8 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // the flag only guarantees an object exists for the eval body, and the
     // eval body is not this function's own parameter scope.
     func.flags.mapped_arguments = !self.is_strict && self.uses_arguments
-                             && !self.has_rest && self.defaults.len() == 0
-                             && self.destruct_defaults.len() == 0
+                             && !self.has_rest && self.defaults.len == 0
+                             && self.destruct_defaults.len == 0
                              && !self.has_destructured_param
                              && !self.is_arrow && !self.eval_mode;
     // Direct eval must run in the caller's lexical environment: the CALL
@@ -1970,7 +1993,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     //     in default expressions don't see body var declarations)
     // Functions with var declarations but no closures, eval, or arguments
     // can reuse the parent's env directly.
-    bool has_params_needing_env = self.ast_param_scope || self.has_rest || self.defaults.len() > 0;
+    bool has_params_needing_env = self.ast_param_scope || self.has_rest || self.defaults.len > 0;
     bool needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
                           || (self.uses_arguments && !self.arguments_in_reg)
                           || self.has_direct_eval;
@@ -2052,7 +2075,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     }
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;
-    } else if (self.defaults.len() > 0 || self.destruct_defaults.len() > 0) {
+    } else if (self.defaults.len > 0 || self.destruct_defaults.len > 0) {
         // First default param doesn't count toward .length; formals before it do.
         func.num_formals = self.formal_count;
     } else {
@@ -2097,12 +2120,24 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         && self.private_name_table.entries != null) {
         uint snap_count = self.private_name_table.count;
         usz snap_bytes = (usz)snap_count * PrivateNameEntry::size;
-        PrivateNameEntry* snap = (PrivateNameEntry*)h.alloc_func(h.heap_udata, snap_bytes);
+        // The entries' names live in this compile's lexer arena, so the
+        // snapshot carries its own copy of the text after the entries.
+        usz text_bytes = 0;
+        foreach (&e : self.private_name_table.entries[:snap_count]) {
+            foreach (part : e.names()) text_bytes += part.len;
+        }
+        PrivateNameEntry* snap = (PrivateNameEntry*)h.alloc_func(h.heap_udata, snap_bytes + text_bytes);
         if (snap != null) {
-            // memcpy the entire entry table, every entry's name/slot_name/
-            // brand_slot_name slices point at interned HString data (stable),
-            // so the byte-level copy is safe.
             mem::copy(snap, self.private_name_table.entries, (sz)(snap_bytes));
+            char* text = (char*)snap + snap_bytes;
+            foreach (&e : snap[:snap_count]) {
+                foreach (part : e.names()) {
+                    if (part.len == 0) continue;
+                    mem::copy(text, part.ptr, part.len);
+                    *part = text[:part.len];
+                    text += part.len;
+                }
+            }
             func.eval_private_names = (void*)snap;
             func.eval_private_name_count = snap_count;
         }
@@ -2170,6 +2205,13 @@ struct ClassMethod {
     // instead of LDCONST from `name`/`computed_key_*`.
     bool   is_private;
     char[] priv_slot_name;          // e.g. "#priv:3:foo", the name's own symbol
+    uint   priv_entry;              // the name's index in the private-name table
+}
+
+// Every name an entry holds, each a slice of the lexer arena.
+fn char[]*[6] PrivateNameEntry.names(&self) {
+    return { &self.name, &self.slot_name, &self.brand_slot_name, &self.method_closure_slot_name,
+             &self.getter_closure_slot_name, &self.setter_closure_slot_name };
 }
 
 // ============================================================================
@@ -2198,10 +2240,15 @@ struct PrivateNameTable {
     PrivateNameEntry* entries;
     uint count;
     uint cap;
+    // Entries chained by name hash, newest first: per bucket, one plus the
+    // index of its first entry. Entries [0, linked) are on the chains.
+    uint* heads;
+    uint heads_cap;
+    uint linked;
     // Open class bodies, innermost last. Each class pushes one around its body
     // and pops it before the context that pushed it resumes, so every context
     // sharing the table sees the class nesting at its own point in the source.
-    List{PrivateScope} scopes;
+    Vec{PrivateScope} scopes;
 }
 
 // One open class body: where its names begin in `entries` (pop trims back to
@@ -2217,10 +2264,12 @@ struct PrivateScope {
 // the runtime hidden-symbol value for this name, fresh per class evaluation.
 struct PrivateNameEntry {
     char[] name;         // e.g. "foo" (without '#')
+    uint   hash;         // of `name`, set when the entry joins its chain
+    uint   next;         // one plus the index of the next entry on the chain
     // Lexical binding name of this name's symbol slot, e.g. "#priv:3:foo"
     // (unique per class body via a compile-time class id, so sibling and
-    // nested classes never collide). Points at interned HString data,
-    // stable storage, so any CompilerContext (method body, __field_init__)
+    // nested classes never collide). Lives in the lexer arena for the
+    // whole compilation, so any CompilerContext (method body, __field_init__)
     // can add it to its OWN constant pool: constant indices are context-
     // relative and must never cross function boundaries.
     char[] slot_name;

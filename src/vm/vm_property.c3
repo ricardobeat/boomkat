@@ -1797,7 +1797,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                                 if (setter_obj.is_callable() && (*setter_obj.extra_ptr()).func.comp_func != null) {
                                     CompiledFunction* target = (*setter_obj.extra_ptr()).func.comp_func;
-                                    compiler::materialize_function(target, vm.heap)!;
+                                    if (!vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
                                     // Stage the call frame above the caller's live registers:
                                     // PUTPROP's A/B/C are arbitrary live locals, so A+1.. cannot
                                     // be used as scratch (unlike GETPROP where A is a fresh temp).
@@ -2068,7 +2068,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             if (setter_obj.is_callable() && (*setter_obj.extra_ptr()).func.comp_func != null) {
                                 CompiledFunction* target = (*setter_obj.extra_ptr()).func.comp_func;
-                                    compiler::materialize_function(target, vm.heap)!;
+                                    if (!vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
 
                                 // Stage the call frame above the caller's live registers
                                 // (see own-property setter path above).

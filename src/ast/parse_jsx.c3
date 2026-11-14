@@ -82,11 +82,8 @@ fn void Parser.jsx_pragmas(&self) {
 
 // Continue token scanning at byte `pos`.
 fn void? Parser.jsx_resume(&self, uint pos) {
-    SourcePos sp = self.ast.position(pos);
     Token t;
     t.pos = pos;
-    t.line = sp.line;
-    t.col = sp.col;
     self.lex.seek_to_token(t);
     self.has_peek = false;
     self.peek_failed = false;

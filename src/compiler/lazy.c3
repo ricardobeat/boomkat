@@ -4,6 +4,7 @@ import boomkat::ast;
 import boomkat::features;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hstring;
 import boomkat::lexer;
 import boomkat::types;
 import boomkat::relexstats;
@@ -47,16 +48,96 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
         f.filename_ptr = file.ptr;
         f.filename_len = (uint)self.lexer.source_name.len;
     }
+    f.lazy_outer_with = self.in_with();
+    self.record_outer_names(f, scope);
     h.track_compiled_func(f);
     return f;
 }
 
-fn void? materialize_function(CompiledFunction* f, Heap* h) {
-    if (f.lazy_paren == 0) return;
-    materialize_function_body(f, h)!;
+// Whether a function around the slice being reparsed may bind `atom`. Only the
+// defining compile saw those functions; without its record every name may be.
+fn bool outer_may_bind(ast::AstIndex* idx, uint atom) {
+    CompiledFunction* f = idx.reparsed;
+    return f == null || !f.lazy_outer_known || idx.outer.data[atom] != 0;
 }
 
-fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
+// Index by atom what the template `f` records of the names outside its source,
+// once that source is parsed again.
+fn void CompilerContext.index_outer_names(&self, ast::AstIndex* idx, CompiledFunction* f) {
+    idx.reparsed = f;
+    if (!f.lazy_outer_known) return;
+    idx.outer.zero((sz)idx.tree.atoms.count() + 1);
+    for (uint i = 0; i < f.const_count; i++) {
+        idx.outer.data[idx.tree.atoms.find(self.name_text((HString*)f.constants[i].get_heapptr()))] = ast::OUTER_BOUND;
+    }
+    for (uint slot = 0; f.capture_cells != null && slot < f.capture_count; slot++) {
+        if (f.capture_cells[slot] == 0) continue;
+        HString* name = (HString*)f.constants[f.capture_names[slot]].get_heapptr();
+        idx.outer.data[idx.tree.atoms.find(self.name_text(name))] |= ast::OUTER_CELL;
+    }
+}
+
+// Record on the template `f` of the function scope `scope` which names its body
+// mentions that an enclosing function binds. The body's own source cannot show
+// them once it is reparsed alone, and a free name outside that set is a global.
+// Nothing is recorded when a `with` or a direct eval around the function could
+// bind a name later, or when the body kept no list of the names it mentions.
+fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scope) {
+    ast::AstIndex* idx = ast::index_state;
+    Heap* h = (Heap*)self.heap;
+    uint fn_node = idx.res.scopes.data[scope].node;
+    if (!idx.use || !idx.tree.body_was_recorded(fn_node)) return;
+    if (self.has_direct_eval || self.has_with_stmt || self.in_with()
+        || self.in_eval_code || self.capture_all) return;
+    if (idx.unknown_outer && (idx.reparsed == null || !idx.reparsed.lazy_outer_known)) return;
+    for (uint s = idx.res.scopes.data[scope].parent; s != 0; s = idx.res.scopes.data[s].parent) {
+        ast::Scope* sc = &idx.res.scopes.data[s];
+        if (sc.kind == ast::ScopeKind.WITH
+            || (sc.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS)) != 0) return;
+    }
+    uint refs = idx.tree.rhs.data[idx.tree.field(idx.tree.rhs.data[fn_node], ast::FN_BODY)];
+    uint nrefs = idx.tree.field(refs, 1);
+    // One slot at least, so a template with no outer names still owns a pool.
+    TVal* names = (TVal*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * TVal::size);
+    uint* slots = (uint*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * uint::size);
+    if (names == null || slots == null) {
+        if (names != null) h.free_func(h.heap_udata, names);
+        if (slots != null) h.free_func(h.heap_udata, slots);
+        return;
+    }
+    uint count = 0;
+    uint slot_count = 0;
+    // A body that names `arguments` is compiled without capture slots.
+    bool slotted = true;
+    for (uint i = 0; i < nrefs; i++) {
+        uint r = idx.tree.field(refs, 2 + i);
+        uint atom = r & ~ast::REF_INDIRECT;
+        if (atom == idx.res.atom_arguments) slotted = false;
+        HString* name = h.ensure_interned(h.str_intern(idx.tree.atoms.get(atom)));
+        bool bound = idx.unknown_outer && outer_may_bind(idx, atom);
+        // From the function's own scope, which binds a function expression's name.
+        for (uint s = scope; s != 0 && !bound; s = idx.res.scopes.data[s].parent) {
+            bound = idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0;
+        }
+        if (!bound) continue;
+        // Held like any pool string, so nothing releases it under the template.
+        if ((r & ast::REF_INDIRECT) == 0) slots[slot_count++] = count;
+        names[count++].set_string_borrowed(name);
+        ((types::HeapHeader*)name).incref();
+    }
+    f.constants = names;
+    f.const_count = count;
+    f.lazy_outer_known = true;
+    // Each name the body reaches directly may be a capture; add_inner_func
+    // keeps the ones this function's parent can resolve, and so fixes the slot
+    // layout. A name left out stays in the parent's environment.
+    f.capture_names = slots;
+    f.capture_count = slotted ? slot_count : 0;
+}
+
+// Compile the deferred body of `f`, which has one while lazy_paren is set. A
+// failure leaves its message in `why`, NUL-terminated.
+fn void? materialize_function(CompiledFunction* f, Heap* h, char[] why = {}) @noinline {
     $if $feat(RELEX_STATS):
         relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.MATERIALIZE);
         defer relexstats::relex_leave(relex_prev);
@@ -75,9 +156,18 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     Lexer lex = lexer::lexer_init(source, h);
     lex.source_name = f.filename_ptr[:f.filename_len];
     defer lex.free_arena();
+    defer catch {
+        if (why.len != 0) {
+            sz n = 0;
+            while (n + 1 < why.len && lex.err_msg[n] != 0) n++;
+            mem::copy(why.ptr, lex.err_msg.ptr, n);
+            why[n] = 0;
+        }
+    }
     ast::AstIndex* idx = ast::index_begin(source, h, {
         .function_body = true, .function_start = f.lazy_paren - 1,
         .strict = f.flags.is_strict,
+        .defer_functions = defer_functions_allowed(),
     }, f.src_buf);
     defer ast::index_end(idx);
     require_ast(&lex, idx)!;
@@ -91,18 +181,25 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     $if $feat(SLJIT):
         ctx.in_eval_derived = f.jit_eval_derived;
     $endif
+    ctx.outer_with = f.lazy_outer_with;
+    ctx.is_named_func_expr = f.flags.is_namebinding;
+    if (ctx.is_named_func_expr) ctx.named_func_expr_name = f.name_ptr[:f.name_len];
     // The source slice has no declarations for its enclosing scopes. Keep
     // free names in the captured environment rather than proving them global.
     idx.unknown_outer = true;
-    idx.defer_functions = true;
+    ctx.index_outer_names(idx, f);
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
+    if (!ctx.adopt_capture_slots(ready, f)) return ctx.fail("internal: a deferred body reads a cell by name")~;
     CompiledFunction saved = *f;
     *f = *ready;
+    if (saved.constants != null) h.free_func(h.heap_udata, saved.constants);
+    if (saved.capture_names != null) h.free_func(h.heap_udata, saved.capture_names);
     f.next = saved.next;
     f.prev = saved.prev;
     f.flags.reachable = saved.flags.reachable;
     f.flags.temproot = saved.flags.temproot;
+    f.flags.is_namebinding = saved.flags.is_namebinding;
     f.realm = saved.realm;
     f.name_ptr = saved.name_ptr;
     f.name_len = saved.name_len;
