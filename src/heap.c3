@@ -2710,6 +2710,8 @@ fn void Heap.reset(&self) {
     }
     for (uint i = 0; i < OBJECT_LIST_COUNT; i++) self.object_list(i).clear();
     self.gc_sweep_vec = null;
+    // The object pages still hold the live bits of the objects freed above.
+    foreach (pool : self.obj_pools) pool.free();
     self.run_deferred_finalizers();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
