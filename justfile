@@ -224,14 +224,15 @@ build-test262-verify:
 test262-verify *ARGS: build-test262-verify
     @bash scripts/test262_verify.sh {{ARGS}}
 
-# Build with NaN-boxing disabled (-D NONANBOX)
-build-nonanbox t="boomkat":
+# Build with NaN-boxing disabled (-D NONANBOX). The JIT needs NaN-boxed values,
+# so the default is a target without it.
+build-nonanbox t="boomkat_threaded":
     c3c -D NONANBOX build "{{t}}"
 
 # Build with NaN-boxing disabled and run a JS file
 test-nonanbox file="test/simple.js":
-    c3c -D NONANBOX build boomkat
-    ./out/boomkat {{file}}
+    c3c -D NONANBOX build boomkat_threaded
+    ./out/boomkat_threaded {{file}}
 
 # Clean build artifacts
 clean:
