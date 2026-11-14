@@ -62,6 +62,7 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
         uint name = child.capture_names[ci];
         bool found = false;
         bool scoped = false;
+        bool outer = false;
         if (!self.is_global && !self.has_direct_eval && !self.has_with_stmt
             && !self.outer_with && !self.capture_all) {
             for (uint si = self.scope_depth; si > 0; si--) {
@@ -75,6 +76,7 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
                 break;
             }
             if (!scoped) found = self.declares_hoisted_name(child.constants[name]);
+            if (!scoped && !found) found = outer = count < 64 && self.outer_function_binds(child.constants[name]);
         }
         if (!found) continue;
         for (uint pc = 0; pc < child.code_count; pc++) {
@@ -91,9 +93,36 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
                 *ins = bytecode::make_abc(Opcode.PUTCAP_SNAP, ins.a, ins.b, (char)count);
             }
         }
+        if (outer) child.capture_fixed |= 1UL << count;
         child.capture_names[count++] = name;
     }
     child.capture_count = count;
+}
+
+// True when a function around this one binds the name, with no `with` or direct eval from here to
+// it that could bind it nearer: a closure of a function nested here then resolves the binding once,
+// as a capture, and no scope between can gain the name later.
+fn bool CompilerContext.outer_function_binds(&self, TVal name) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use || idx.unknown_outer || self.func_ast_scope == 0) return false;
+    uint atom = idx.tree.atoms.find(self.name_text((HString*)name.get_heapptr()));
+    if (atom == 0 || atom == idx.res.atom_arguments) return false;
+    const ushort DYNAMIC = ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS;
+    if ((idx.res.scopes.data[self.func_ast_scope].flags & DYNAMIC) != 0) return false;
+    for (uint s = idx.res.scopes.data[self.func_ast_scope].parent; s != 0; s = idx.res.scopes.data[s].parent) {
+        ast::Scope* sc = &idx.res.scopes.data[s];
+        if (sc.kind == ast::ScopeKind.WITH || sc.kind == ast::ScopeKind.GLOBAL || sc.kind == ast::ScopeKind.MODULE
+            || (sc.flags & DYNAMIC) != 0) return false;
+        uint b = idx.res.lookup(s, atom);
+        if (b == 0) continue;
+        switch (idx.res.bindings.data[b].kind) {
+            case VAR: case LET: case CONST: case CLASS: case PARAM: case FUNC:
+                return true;
+            default:
+                return false;
+        }
+    }
+    return false;
 }
 
 // True when this function's top-level scope binds the name as a var or a

@@ -11,7 +11,7 @@ import std::collections::list;
 
 faultdef INVALID_IMAGE, IMAGE_NOMEM, UNSUPPORTED_CONSTANT;
 
-const uint VERSION = 8;
+const uint VERSION = 9;
 const uint WIDE_STRING = 0x80000000;
 const uint NONE = 0xFFFFFFFF;
 const uint MAX_FUNCTIONS = 65536;
@@ -177,6 +177,7 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
             else { return UNSUPPORTED_CONSTANT~; }
         }
         w.word(f.capture_count);
+        w.wide(f.capture_fixed);
         foreach (i, name : f.capture_names[:f.capture_count]) {
             w.word(name); w.word(f.capture_cells != null ? f.capture_cells[i] : 0);
         }
@@ -405,6 +406,7 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
         f.regexp_cache_count = f.const_count;
         f.regexp_cache = (void**)r.array(f.const_count, void*::size)!;
         f.capture_count = r.count(8)!;
+        f.capture_fixed = r.wide()!;
         f.capture_names = (uint*)r.array(f.capture_count, uint::size)!;
         f.capture_cells = (ushort*)r.array(f.capture_count, ushort::size)!;
         for (uint i = 0; i < f.capture_count; i++) {

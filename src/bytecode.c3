@@ -62,6 +62,15 @@ const int  MIN_SBC  = -0x8000;
 // creation, calls, variable access, closures, iterators, and exceptions.
 const ushort CAPTURE_VALUE_FLAG = 0x8000;
 
+// A fixed capture's binding as a closure last resolved it: `hops` records up the closure's scope
+// chain, in a bindings object of `shape` (under the heap's recycle epoch `epoch`) at `prop_idx`.
+struct CaptureHint {
+    uint shape;
+    uint prop_idx;
+    uint epoch;
+    uint hops;
+}
+
 enum Opcode : char {
     // ---- Load / Store ----------------------------------------------------
 
@@ -1958,6 +1967,12 @@ struct CompiledFunction {
     // CAPTURE_VALUE_FLAG copies that register's value into the closure.
     ushort*         capture_cells;
     ushort          capture_parent_reg;
+    // Bit i: capture i names a binding of a function beyond the enclosing one, which no scope
+    // between can gain after the closure is created, so its record needs no shadowing guard.
+    ulong           capture_fixed;
+    // Where the last closure resolved each fixed capture (vm::resolve_fixed_capture), allocated
+    // on first use.
+    CaptureHint*    capture_hints;
     // Constant-pool name per formal for a mapped `arguments` whose function
     // has a captured formal: a captured formal lives in the function's
     // environment under that name, and NO_FORMAL_NAME marks a formal that
