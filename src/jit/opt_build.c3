@@ -4652,7 +4652,10 @@ fn bool OptBuild.lower_op(&self) {
                 // A sloppy function's `this` is an object (the call coerces it), which a THIS node
                 // reads from the record where it is used: nothing runs here. Any other may be a
                 // primitive a VALUE node cannot hold, so it is published.
-                if (self.f.flags.is_strict || self.f.is_arrow()) {
+                // A derived constructor's `this`, and an arrow's, which is its definer's, is
+                // uninitialized until super() returns; the generic read throws then.
+                if (self.f.is_arrow() || self.f.is_derived_ctor()) return self.generic();
+                if (self.f.flags.is_strict) {
                     if (opt_site_banned(self.f, self.f, self.next_pc - 1)) return self.generic();
                     return self.window_copy(self.w.a, 4);
                 }
