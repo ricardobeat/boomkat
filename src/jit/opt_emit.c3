@@ -3317,7 +3317,7 @@ fn void OptCg.emit_compare(&self, uint i, OptNode* n) {
 fn void OptCg.emit_compare_window(&self, uint i, OptNode* n) {
     Jumps yes;
     Jumps no;
-    self.equality_test(n, &yes, &no);
+    self.equality_test(i, n, &yes, &no);
     self.exit_calls(i, OptExit.SLOW_PATH);
     if ((n.cc & 1) != 0) {
         self.def_bool_jumps(i, n, &no, &yes);
@@ -3469,19 +3469,48 @@ fn void OptCg.window_equality(&self, char cc, uint rc, Jumps* yes, Jumps* no) {
 
 // The equality test of BRANCH_WINDOW or COMPARE_WINDOW `n`: its VALUE operands (a, b) from their
 // registers, the others from their window slots (imm), as window_equality tests them.
-fn void OptCg.equality_test(&self, OptNode* n, Jumps* yes, Jumps* no) {
+// What the subroutine leaves undecided goes to vm::jit_equality, and leaves only when that cannot
+// answer without running code.
+fn void OptCg.equality_test(&self, uint i, OptNode* n, Jumps* yes, Jumps* no) {
     self.a.call.len = 0;
+    self.equality_operands(n);
+    char kind = n.cc & WINDOW_KIND_MASK;
+    if (n.b == NO_NODE) {
+        self.window_equality(n.cc, (uint)(n.imm >> 20), yes, no);
+        if (kind >= 4 || (n.cc >> WINDOW_CONST_SHIFT) != 0) return;
+    } else {
+        self.value_to(n.b, R1);
+        self.a.call_test_sub(kind < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, yes, no);
+    }
+    void* c = self.a.c;
+    Jumps rare = self.a.call;
+    self.a.call.len = 0;
+    rare.bind(sljit_emit_label(c));
+    self.spill_live(i, true);
+    self.equality_operands(n);
+    if (n.b == NO_NODE) {
+        self.a.load(R1, (uint)(n.imm >> 20));
+    } else {
+        self.value_to(n.b, R1);
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R1, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, kind < 2 ? 0 : 1);
+    self.a.c_call_frameless(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_equality);
+    self.spill_live(i, false);
+    yes.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 1));
+    no.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    self.a.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+}
+
+// The first operand of BRANCH_WINDOW or COMPARE_WINDOW `n` into R0.
+fn void OptCg.equality_operands(&self, OptNode* n) {
     if (n.a != NO_NODE) {
         self.value_to(n.a, R0);
     } else {
         self.a.load(R0, (uint)(n.imm & 0xFFFFF));
     }
-    if (n.b == NO_NODE) {
-        self.window_equality(n.cc, (uint)(n.imm >> 20), yes, no);
-        return;
-    }
-    self.value_to(n.b, R1);
-    self.a.call_test_sub((n.cc & WINDOW_KIND_MASK) < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, yes, no);
 }
 
 // A conditional branch: leave the taken jumps in `jumps`.
@@ -3490,7 +3519,7 @@ fn void OptCg.equality_test(&self, OptNode* n, Jumps* yes, Jumps* no) {
 fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
     Jumps yes;
     Jumps no;
-    self.equality_test(n, &yes, &no);
+    self.equality_test(i, n, &yes, &no);
     self.exit_calls(i, OptExit.SLOW_PATH);
     bool on_yes = (n.cc & 1) == 0;
     Jumps* take = on_yes ? &yes : &no;

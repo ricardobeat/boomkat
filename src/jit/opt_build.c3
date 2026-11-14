@@ -1718,7 +1718,7 @@ fn char OptBuild.equality_cc(&self, uint kind, uint rb, uint rc, long* imm, uint
     return kind >= 2 ? (char)(kind + 2) : (char)(kind | (id << WINDOW_CONST_SHIFT));
 }
 
-// Store the VALUE node of register `r` to its window slot if it is dirty.
+// Store the node of register `r` to its window slot if it is dirty.
 fn void OptBuild.publish_value(&self, uint r) {
     if (!self.cur[r].dirty) return;
     self.add(OptOp.STORE_VALUE, OptRep.NONE, self.cur[r].node, NO_NODE, (long)r);
@@ -2921,7 +2921,7 @@ fn bool OptBuild.generic(&self) {
             case RET: case RETUNDEF: case SETALEN: case INITPROP: case INITELEM: case CHKOBJ: case REQUIRE_OBJ:
             case NOP: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL: case CHKGLOBALVAR:
             case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW: case THROW_UNRESOLVED:
-            case SETCELL: case DECLVAR: case DECLVAR_HOIST:
+            case SETCELL: case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC:
                 break;
             default:
                 return self.refuse_op(op);
@@ -3001,7 +3001,11 @@ fn bool OptBuild.equality_branch(&self) {
     if (numeric_b || numeric_c) {
         if (self.holds_value(rb)) self.publish_value(rb);
         if (self.holds_value(rc)) self.publish_value(rc);
-        return unary ? self.refuse_op(op) : self.numeric_equality();
+        if (unary) return self.refuse_op(op);
+        if (self.arith_rep(rb, rc) != OptRep.NONE) return self.numeric_equality();
+        // A number the test has met against a string or an object: both compared in the window.
+        self.publish_value(rb);
+        self.publish_value(rc);
     }
     long imm;
     uint xb;
