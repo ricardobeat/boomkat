@@ -1425,19 +1425,3 @@ fn void re_jit_free(re_native::ReNative* n) {
     n.code_wide = null;
     n.jit_data = null;
 }
-
-// Run the compiled body for the subject's form. False sends the run back to the
-// walk, which is where a program the emitter declined or could not generate for
-// stays.
-fn bool re_jit_run(re_native::ReNative* n, re_native::ReExec* e, uint start,
-                   re_native::ReOutcome* out, int* status) {
-    void* code = e.in.wide ? n.code_wide : n.code_narrow;
-    if (code == null) return false;
-    int ret = ((ReJitFn)code)(n, e, (usz)start);
-    if (ret == re_bindings::RE_MATCH) {
-        out.start = e.capture[0];
-        out.end = e.capture[1];
-    }
-    *status = ret;
-    return true;
-}

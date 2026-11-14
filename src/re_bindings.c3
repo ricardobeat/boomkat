@@ -2,6 +2,7 @@
  * RegExp C bindings: C3 interop with QuickJS libregexp through re_wrapper
  */
 module boomkat::re_bindings @feat(!NO_REGEXP);
+import boomkat::re_native;
 
 extern fn void* re_compile(char* pattern, usz pattern_len,
                            int flags, char* error_msg, int error_msg_size);
@@ -10,10 +11,29 @@ extern fn void* re_compile(char* pattern, usz pattern_len,
  * and since the shared library exports every engine symbol, an ELF loader
  * bound this call to libc's unrelated function and every JS regexp segfaulted
  * inside libc. macOS two-level namespaces hid the clash. */
+/* On a match caps[2 * i] and caps[2 * i + 1] bound group i (group 0 is the
+ * match), -1 when it did not participate, for the groups `cap_slots` ints
+ * hold (re_wrapper.h). */
 extern fn int re_run(void* re, void* input, int input_len,
-                     int start_offset, int input_wide,
-                     int* out_start, int* out_end, int* out_num_captures,
-                     int* caps_start, int* caps_end, int max_captures);
+                     int start_offset, int input_wide, int* caps, int cap_slots,
+                     ReInterrupt* interrupt);
+
+/* re_run of `re` over `len` units of `data` from `start`, run by its compiled
+ * body with nothing between when it has one, as re_run reports a run. */
+fn int re_run_direct(void* re, char* data, uint len, bool wide, uint start, int* caps, int cap_slots,
+                     ReInterrupt* interrupt) @inline {
+    int ret = re_native::re_run_compiled(re, data, len, wide, start, caps, cap_slots, interrupt);
+    if (ret >= 0) return ret;
+    return re_run(re, data, (int)len, (int)start, wide ? 1 : 0, caps, cap_slots, interrupt);
+}
+
+/* The literal checks every run passes first: the offset a match can begin at,
+ * RE_PREFILTER_NONE, or RE_PREFILTER_MATCH with the bounds in caps[0..1]. */
+extern fn int re_prefilter(void* re, void* input, int input_len, int start_offset,
+                           int input_wide, int* caps);
+
+/* Whether re_prefilter passes every run of `re` unchanged. */
+extern fn bool re_unfiltered(void* re);
 
 extern fn void re_free(void* re);
 
@@ -22,11 +42,6 @@ extern fn void re_ref(void* re);
 extern fn char* re_get_groupnames(void* re);
 
 extern fn int re_get_capture_count(void* re);
-
-extern fn int re_run_interruptible(void* re, void* input, int input_len,
-    int start_offset, int input_wide,
-    int* out_start, int* out_end, int* out_num_captures,
-    int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt);
 
 /* The predicates the native regexp backend needs, which libregexp and
  * libunicode keep as static inline functions in their headers. */

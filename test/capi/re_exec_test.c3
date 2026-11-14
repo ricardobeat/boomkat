@@ -22,40 +22,29 @@ fn void expect(bool ok, String what) {
     io::printfn("FAIL %s", what);
 }
 
-// One run's result, in the form both matchers report.
+// One run's result, in the form both matchers report: the bounds of the match
+// and of the first seven groups.
 struct Verdict {
     int match;
-    int start;
-    int end;
-    int captures;
-    int[8] caps_start;
-    int[8] caps_end;
+    int[16] caps;
 }
 
 fn Verdict run_interpreted(void* re, void* input, int len, int start, bool wide) {
     Verdict v;
-    v.match = re_bindings::re_run(re, input, len, start, wide ? 1 : 0,
-                                  &v.start, &v.end, &v.captures,
-                                  &v.caps_start, &v.caps_end, 8);
+    v.match = re_bindings::re_run(re, input, len, start, wide ? 1 : 0, &v.caps, 16, null);
     return v;
 }
 
 fn Verdict run_native(void* native, void* input, int len, int start, bool wide) {
     Verdict v;
-    v.match = re_native::re_native_exec(native, input, len, start, wide ? 1 : 0,
-                                        &v.start, &v.end, &v.captures,
-                                        &v.caps_start, &v.caps_end, 8, null);
+    v.match = re_native::re_native_exec(native, input, len, start, wide ? 1 : 0, &v.caps, 16, null);
     return v;
 }
 
 fn bool same(Verdict* a, Verdict* b) {
     if (a.match != b.match) return false;
     if (a.match != re_bindings::RE_MATCH) return true;
-    if (a.start != b.start || a.end != b.end || a.captures != b.captures) return false;
-    for (int i = 0; i < 8; i++) {
-        if (a.caps_start[i] != b.caps_start[i] || a.caps_end[i] != b.caps_end[i]) return false;
-    }
-    return true;
+    return a.caps == b.caps;
 }
 
 fn void show(Verdict* v) {
@@ -63,8 +52,8 @@ fn void show(Verdict* v) {
         io::printf("[no match]");
         return;
     }
-    io::printf("[%d,%d] caps %d:", v.start, v.end, v.captures);
-    for (int i = 0; i < 8; i++) io::printf(" %d-%d", v.caps_start[i], v.caps_end[i]);
+    io::printf("[%d,%d] caps:", v.caps[0], v.caps[1]);
+    for (int i = 1; i < 8; i++) io::printf(" %d-%d", v.caps[2 * i], v.caps[2 * i + 1]);
 }
 
 // Compile `pattern`, then compare both matchers over `units` in both subject

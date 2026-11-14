@@ -44,6 +44,11 @@ typedef struct ReCompiled ReCompiled;
 ReCompiled* re_compile(const char* pattern, size_t pattern_len,
                        int flags, char* error_msg, int error_msg_size);
 
+typedef struct ReInterrupt {
+    int (*poll)(void *opaque);
+    void *opaque;
+} ReInterrupt;
+
 /*
  * Execute a compiled regexp against input.
  * Returns RE_MATCH, RE_NO_MATCH, or RE_ERROR.
@@ -54,28 +59,21 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
  * one -- any JS regexp then segfaulted inside libc. macOS two-level namespaces
  * hid the clash entirely.
  *
- * If RE_MATCH:
- *   *out_start = unit offset of match start
- *   *out_end   = unit offset of match end (exclusive)
- *   *out_num_captures = number of capture groups (excluding full match)
- *   caps_start[i] = start of capture i (or -1 if unmatched)
- *   caps_end[i]   = end of capture i (or -1 if unmatched)
+ * If RE_MATCH, caps[2 * i] and caps[2 * i + 1] are the unit offsets of group
+ * i's start and end (group 0 is the whole match), or -1 for a group that did
+ * not participate, for the groups that fit in `cap_slots` (at least 2) ints.
+ * `interrupt` may be NULL.
  */
-typedef struct ReInterrupt {
-    int (*poll)(void *opaque);
-    void *opaque;
-} ReInterrupt;
-
-int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
-           int start_offset, int input_wide,
-           int* out_start, int* out_end, int* out_num_captures,
-           int* caps_start, int* caps_end, int max_captures,
+int re_run(ReCompiled* re, const void* input, int input_len,
+           int start_offset, int input_wide, int* caps, int cap_slots,
            ReInterrupt* interrupt);
 
-int re_run(ReCompiled* re, const void* input, int input_len,
-           int start_offset, int input_wide,
-           int* out_start, int* out_end, int* out_num_captures,
-           int* caps_start, int* caps_end, int max_captures);
+#define RE_PREFILTER_NONE  (-1)
+#define RE_PREFILTER_MATCH (-2)
+
+int re_prefilter(ReCompiled* re, const void* input, int input_len, int start_offset,
+                 int input_wide, int* caps);
+bool re_unfiltered(ReCompiled* re);
 
 /*
  * Free a compiled regexp (decrements its refcount; frees at zero).

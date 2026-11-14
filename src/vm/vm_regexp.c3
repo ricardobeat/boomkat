@@ -18,12 +18,10 @@ fn void? vm_retest(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
     if (rb.is_string() && func.regexp_cache != null && k < func.regexp_cache_count
         && func.regexp_cache[k] != null && builtins::regexp_proto_pristine(vm.heap)) {
         HString* s = (HString*)rb.get_heapptr();
-        int out_start; int out_end; int out_num;
-        int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
-        int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
+        int[2 * re_bindings::RE_MAX_CAPTURES] caps @noinit;
         re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, vm.heap };
-        int r = re_bindings::re_run_interruptible(func.regexp_cache[k], s.data_ptr(), (int)s.unit_len(), 0, s.is_wide() ? 1 : 0,
-                                    &out_start, &out_end, &out_num, &caps_start, &caps_end, 0, &interrupt);
+        int r = re_bindings::re_run(func.regexp_cache[k], s.data_ptr(), (int)s.unit_len(), 0, s.is_wide() ? 1 : 0,
+                                    &caps, caps.len, &interrupt);
         if (vm.heap.uncatchable_throw) {
             if (!vm_throw_error(vm, vm.heap.err_proto, "interrupted", ds.act, &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
             return;

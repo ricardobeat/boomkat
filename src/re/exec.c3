@@ -43,6 +43,7 @@ const int RE_ERROR = -1;
 // match beyond them grows its own buffers.
 const uint RE_SMALL_FRAMES = 48;
 const uint RE_SMALL_SLOTS = 96;
+const uint RE_SMALL_REGS = 16;
 
 // One backtracking state: resume at `resume` with `pos`, after undoing every
 // write recorded above `undo`. The walk resumes at an instruction index and a
@@ -79,6 +80,8 @@ struct ReNative {
     int  fs_single;    // the one unit that can begin a match, or -1
     bool fs_at_start;  // an empty match is possible at the start
     bool fs_at_end;    // and at the end
+    // A run passes re_prefilter's literal checks first.
+    bool prefiltered;
     // The program as machine code, one body per subject form, and the bitmaps
     // those bodies address (src/re/jit.c3). All null when the emitter declined
     // the program, which leaves it on the walk.
@@ -680,13 +683,32 @@ fn int re_walk(ReExec* e, ReNative* n, ReInput* in, uint start, ReInterrupt* int
 // Entry points
 // ---------------------------------------------------------------------------
 
-// Run `n` over `in` from `start`, writing the capture positions into
-// `caps_start`/`caps_end` when they are given.
-fn int re_native_run(ReNative* n, ReInput* in, uint start, ReInterrupt* interrupt,
-                     int* out_start, int* out_end, int* out_num_captures,
-                     int* caps_start, int* caps_end, int max_captures) {
-    ReExec e;
+// Run the walk, with every capture and register unset first. Kept out of
+// re_native_exec, whose compiled path writes each before reading it.
+fn int re_walk_fresh(ReExec* e, ReNative* n, uint start, ReInterrupt* interrupt) @noinline {
+    uint captures = n.prog.capture_count * 2;
+    for (uint i = 0; i < captures; i++) e.capture[i] = RE_UNSET;
+    for (uint i = 0; i < n.prog.register_count; i++) e.regs[i] = RE_UNSET;
+    ReOutcome out;
+    return re_walk(e, n, &e.in, start, interrupt, &out);
+}
+
+// Run `n` over `in` from `start` with `code`, its compiled body for the
+// subject's form, or with the walk when that is null: on a match, caps[2 * i]
+// and caps[2 * i + 1] bound group i, -1 when it did not participate, for the
+// groups `cap_slots` ints hold. The captures are written straight into `caps`
+// when it holds every group.
+fn int re_exec_run(ReNative* n, ReInput* in, uint start, void* code, int* caps, int cap_slots,
+                   ReInterrupt* interrupt) @inline {
+    ReExec e @noinit;
+    e.in = *in;
+    // A start position inside a surrogate pair backs up to the pair's first
+    // unit, so a sticky match never begins mid-character.
+    if (start > 0 && start < in.len && in.wide && in.unicode) {
+        if (re_is_low_surrogate(in.unit(start)) && re_is_high_surrogate(in.unit(start - 1))) start--;
+    }
     e.prog = &n.prog;
+    e.interrupt = interrupt;
     e.depth = 0;
     e.undo_len = 0;
     e.heap_frames = null;
@@ -695,67 +717,77 @@ fn int re_native_run(ReNative* n, ReInput* in, uint start, ReInterrupt* interrup
     e.undo_cap = RE_SMALL_SLOTS;
     ReFrame[RE_SMALL_FRAMES] frame_buf @noinit;
     ReSlot[RE_SMALL_SLOTS] undo_buf @noinit;
+    uint[RE_SMALL_REGS] regs_buf @noinit;
     e.frames = &frame_buf;
     e.undo = &undo_buf;
+    e.regs = &regs_buf;
+    e.capture = (uint*)caps;
     uint captures = n.prog.capture_count * 2;
-    uint regs = n.prog.register_count;
-    uint[64] capture_buf @noinit;
-    uint[16] regs_buf @noinit;
-    uint* capture_heap = null;
-    uint* regs_heap = null;
-    if (captures <= capture_buf.len) {
-        e.capture = &capture_buf;
-    } else {
-        capture_heap = mem::new_array(uint, (sz)captures).ptr;
-        e.capture = capture_heap;
-    }
-    if (regs <= regs_buf.len) {
-        e.regs = &regs_buf;
-    } else {
-        regs_heap = mem::new_array(uint, (sz)regs).ptr;
-        e.regs = regs_heap;
-    }
-    defer {
-        e.release();
-        mem::free(capture_heap);
-        mem::free(regs_heap);
-    }
-    for (uint i = 0; i < captures; i++) e.capture[i] = RE_UNSET;
-    for (uint i = 0; i < regs; i++) e.regs[i] = RE_UNSET;
+    if (@unlikely(captures > (uint)cap_slots)) e.capture = mem::new_array(uint, (sz)captures).ptr;
+    if (@unlikely(n.prog.register_count > RE_SMALL_REGS)) e.regs = mem::new_array(uint, (sz)n.prog.register_count).ptr;
 
-    // A start position inside a surrogate pair backs up to the pair's first
-    // unit, so a sticky match never begins mid-character.
-    if (start > 0 && start < in.len && in.wide && in.unicode) {
-        if (re_is_low_surrogate(in.unit(start)) && re_is_high_surrogate(in.unit(start - 1))) start--;
-    }
-
-    ReOutcome out;
-    out.start = RE_UNSET;
-    out.end = RE_UNSET;
-    int ret = RE_NO_MATCH;
-    bool handled = false;
+    int ret;
     $if $feat(SLJIT):
-        e.in = *in;
-        e.interrupt = interrupt;
-        handled = boomkat::re_jit::re_jit_run(n, &e, start, &out, &ret);
+        if (code != null) {
+            ret = ((boomkat::re_jit::ReJitFn)code)(n, &e, (usz)start);
+        } else {
+            ret = re_walk_fresh(&e, n, start, interrupt);
+        }
+    $else
+        ret = re_walk_fresh(&e, n, start, interrupt);
     $endif
-    if (!handled) ret = re_walk(&e, n, in, start, interrupt, &out);
-    if (ret != RE_MATCH) return ret;
-
-    uint groups = n.prog.capture_count;
-    if (out.start == RE_UNSET) out.start = 0;
-    if (out.end == RE_UNSET) out.end = out.start;
-    if (out_start != null) *out_start = (int)out.start;
-    if (out_end != null) *out_end = (int)out.end;
-    if (out_num_captures != null) *out_num_captures = (int)groups - 1;
-    for (uint group = 1; group < groups; group++) {
-        if ((int)(group - 1) >= max_captures) break;
-        uint from = e.capture[group * 2];
-        uint to = e.capture[group * 2 + 1];
-        if (caps_start != null) caps_start[group - 1] = from == RE_UNSET ? -1 : (int)from;
-        if (caps_end != null) caps_end[group - 1] = to == RE_UNSET ? -1 : (int)to;
+    if (@unlikely(e.heap_frames != null || e.heap_undo != null)) e.release();
+    if (@unlikely(e.regs != &regs_buf)) mem::free(e.regs);
+    if (@unlikely(e.capture != (uint*)caps)) {
+        if (ret == RE_MATCH) mem::copy(caps, e.capture, (usz)cap_slots * int::size);
+        mem::free(e.capture);
     }
+    if (ret != RE_MATCH) return ret;
+    if (caps[0] == -1) caps[0] = 0;
+    if (caps[1] == -1) caps[1] = caps[0];
     return RE_MATCH;
+}
+
+// Run `native` over `input_len` units of `input` from `start_offset`, as
+// re_run (re_wrapper.h) runs it once the literal checks have passed.
+fn int re_native_exec(void* native, void* input, int input_len, int start_offset, int input_wide,
+                      int* caps, int cap_slots, ReInterrupt* interrupt) @export("re_native_exec") {
+    ReNative* n = (ReNative*)native;
+    if (start_offset < 0 || start_offset > input_len) return RE_NO_MATCH;
+    ReInput in = { input, (uint)input_len, input_wide != 0, n.prog.unicode() };
+    void* code = null;
+    $if $feat(SLJIT):
+        code = in.wide ? n.code_wide : n.code_narrow;
+    $endif
+    return re_exec_run(n, &in, (uint)start_offset, code, caps, cap_slots, interrupt);
+}
+
+// Run the compiled regexp `re` (re_bindings::re_compile) over `len` units of
+// `data` from `start`, as re_run runs it, straight into its compiled body:
+// RE_MATCH or RE_NO_MATCH, or RE_ERROR when it has no
+// compiled body for the subject's form or the body gave up, which leaves the
+// run to re_run.
+fn int re_run_compiled(void* re, char* data, uint len, bool wide, uint start, int* caps, int cap_slots,
+                       ReInterrupt* interrupt) @inline {
+    $if $feat(SLJIT):
+        // re_wrapper.c keeps the native program first, null until re_run prepares it.
+        ReNative* n = *(ReNative**)re;
+        if (n == null) return RE_ERROR;
+        void* code = wide ? n.code_wide : n.code_narrow;
+        if (code == null) return RE_ERROR;
+        if (n.prefiltered) {
+            int at = re_bindings::re_prefilter(re, data, (int)len, (int)start, wide ? 1 : 0, caps);
+            if (at < 0) return at == re_bindings::RE_PREFILTER_MATCH ? RE_MATCH : RE_NO_MATCH;
+            start = (uint)at;
+        } else if (start > len) {
+            return RE_NO_MATCH;
+        }
+        ReInput in = { data, len, wide, n.prog.unicode() };
+        int ret = re_exec_run(n, &in, start, code, caps, cap_slots, interrupt);
+        return ret == RE_MATCH || ret == RE_NO_MATCH ? ret : RE_ERROR;
+    $else
+        return RE_ERROR;
+    $endif
 }
 
 // Decode the pattern behind `re` and keep the program if this matcher models it.
@@ -782,6 +814,7 @@ fn void* re_native_prepare(void* re) @export("re_native_prepare") {
         && prog.insns[2].op == GOTO && prog.insns[2].target == 0;
     n.body_pc = 3;
     n.fs_single = -1;
+    n.prefiltered = !re_bindings::re_unfiltered(re);
     if (n.scanning) {
         int wide, single, at_start, at_end;
         n.has_first_set = re_bindings::re_first_set(re, &n.fs_bits[0], &wide, &single, &at_start, &at_end);
@@ -796,22 +829,6 @@ fn void* re_native_prepare(void* re) @export("re_native_prepare") {
         boomkat::re_jit::re_jit_compile(n);
     $endif
     return n;
-}
-
-fn int re_native_exec(void* native, void* input, int input_len, int start_offset, int input_wide,
-                      int* out_start, int* out_end, int* out_num_captures,
-                      int* caps_start, int* caps_end, int max_captures,
-                      ReInterrupt* interrupt) @export("re_native_exec") {
-    ReNative* n = (ReNative*)native;
-    if (n == null || input == null) return RE_ERROR;
-    if (input_len < 0 || start_offset < 0 || start_offset > input_len) return RE_NO_MATCH;
-    ReInput in;
-    in.data = input;
-    in.len = (uint)input_len;
-    in.wide = input_wide != 0;
-    in.unicode = n.prog.unicode();
-    return re_native_run(n, &in, (uint)start_offset, interrupt,
-                         out_start, out_end, out_num_captures, caps_start, caps_end, max_captures);
 }
 
 fn void re_native_free(void* native) @export("re_native_free") {

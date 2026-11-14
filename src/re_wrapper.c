@@ -29,6 +29,11 @@ void *lre_realloc(void *opaque, void *ptr, size_t size)
 }
 
 struct ReCompiled {
+    /* The native matcher's program (src/re/exec.c3). NULL means the pattern
+     * stays on the interpreter: either it was declined, or it was never
+     * prepared, which `native_tried` separates. First, so the engine reads it
+     * with one load (re_native::re_run_compiled). */
+    void*    native;
     uint8_t* bc;
     int      bc_len;
     int      capture_count;
@@ -37,6 +42,7 @@ struct ReCompiled {
      * match can only start at offset 0 (a leading `^` without the m flag), so
      * re_run rejects an input that cannot match without entering lre_exec. */
     int      anchored;
+    int      sticky;
     int      prefix_len;
     char     prefix[16];
     /* the whole pattern is the prefix: a found prefix is the match */
@@ -48,10 +54,6 @@ struct ReCompiled {
     /* Code units that can begin a match, when has_first_set. */
     int      has_first_set;
     LREFirstSet first_set;
-    /* The native matcher's program (src/re/exec.c3). NULL means the pattern
-     * stayed on the interpreter: either it was declined, or it was never
-     * prepared, which `native_tried` separates. */
-    void*    native;
     int      native_tried;
 };
 
@@ -62,9 +64,7 @@ struct ReCompiled {
 void* re_native_prepare(ReCompiled* re);
 void  re_native_free(void* native);
 int   re_native_exec(void* native, const void* input, int input_len,
-                     int start_offset, int input_wide,
-                     int* out_start, int* out_end, int* out_num_captures,
-                     int* caps_start, int* caps_end, int max_captures,
+                     int start_offset, int input_wide, int* caps, int cap_slots,
                      ReInterrupt* interrupt);
 
 /* Whether the native matcher runs. It is the default: its compiled body is
@@ -345,6 +345,7 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
     re->refcount = 1;
     re->native = NULL;
     re->native_tried = 0;
+    re->sticky = (lre_get_flags(bc) & LRE_FLAG_STICKY) != 0;
     re_scan_prefix(re, pattern, pattern_len, lre_flags);
     re_scan_required(re, pattern, pattern_len, lre_flags);
     re->has_first_set = lre_get_first_set(bc, &re->first_set);
@@ -422,25 +423,18 @@ static uint8_t* cesu8_pattern_to_utf8(const char* input, size_t input_len, size_
 }
 
 /* libregexp's interpreter over `re`, for a pattern the native matcher declined
- * or a run it gave up. Kept out of re_run_interruptible: its capture buffer is
- * a 4 KB frame, which would cost every native run a stack probe. */
+ * or a run it gave up. Kept out of re_run: its capture buffer is a 4 KB frame,
+ * which would cost every native run a stack probe. */
 static __attribute__((noinline)) int re_run_interp(ReCompiled* re, const void* input, int input_len,
-           int start_offset, int input_wide, int total_captures,
-           int* out_start, int* out_end, int* out_num_captures,
-           int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt)
+           int start_offset, int input_wide, int* caps, int cap_slots, ReInterrupt* interrupt)
 {
     /* lre_exec NULL-initialises capture[0..2*capture_count-1] (it reads the
      * count from the compiled bytecode header) and writes back matching
-     * pointers for the captures that participate in the match. A regex with
-     * more than RE_MAX_CAPTURES capture groups would blow the 64-slot
-     * stack array on every call, so we heap-allocate when the compiled
-     * regex carries more captures than the stack buffer can hold. The
-     * outer cap on `total_captures` (above) and the inner cap on the
-     * copy-out loop (using max_captures) keep callers' caps_* arrays safe
-     * even when lre_exec was passed a larger capture buffer. */
+     * pointers for the captures that participate in the match. The buffer
+     * also holds the quantifier registers after the captures, so a pattern
+     * needing more than the stack buffer gets a heap one. */
     uint8_t* capture_stack[RE_MAX_CAPTURES * 2];
     uint8_t** capture = capture_stack;
-    /* The buffer also holds the quantifier registers after the captures. */
     int alloc_count = lre_get_alloc_count(re->bc);
     if (alloc_count > RE_MAX_CAPTURES * 2) {
         capture = (uint8_t**)calloc((size_t)alloc_count, sizeof(uint8_t*));
@@ -458,98 +452,103 @@ static __attribute__((noinline)) int re_run_interp(ReCompiled* re, const void* i
     if (ret == RE_MATCH) {
         size_t shift = input_wide ? 1 : 0;
         const uint8_t* base = (const uint8_t*)input;
-#define UNIT_OFFSET(p) ((p) ? (int)((size_t)((p) - base) >> shift) : -1)
-        if (out_start) *out_start = UNIT_OFFSET(capture[0]);
-        if (out_end)   *out_end   = UNIT_OFFSET(capture[1]);
-        if (out_num_captures) *out_num_captures = total_captures - 1;
-        for (int i = 1; i < total_captures && (i - 1) < max_captures; i++) {
-            caps_start[i - 1] = UNIT_OFFSET(capture[i * 2]);
-            caps_end[i - 1]   = UNIT_OFFSET(capture[i * 2 + 1]);
-        }
-#undef UNIT_OFFSET
-        if (capture != capture_stack) free(capture);
-        return RE_MATCH;
+        int slots = re->capture_count * 2;
+        if (slots > cap_slots) slots = cap_slots;
+        for (int i = 0; i < slots; i++)
+            caps[i] = capture[i] ? (int)((size_t)(capture[i] - base) >> shift) : -1;
     }
     if (capture != capture_stack) free(capture);
+    if (ret == RE_MATCH) return RE_MATCH;
     if (ret == 0) return RE_NO_MATCH;
     return RE_ERROR;
 }
 
 /*
- * Run `re` over `input_len` code units of `input`, starting at unit
- * `start_offset`. The input is Latin-1 bytes, or native-endian UTF-16 when
- * `input_wide`; every offset in and out counts units, not bytes.
+ * The literal checks every run of `re` passes before a matcher runs: the unit
+ * offset at or after `start_offset` a match can begin at, RE_PREFILTER_NONE
+ * when there is none, or RE_PREFILTER_MATCH when the literal is the whole
+ * pattern, with its bounds in caps[0] and caps[1].
  */
-int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
-           int start_offset, int input_wide,
-           int* out_start, int* out_end, int* out_num_captures,
-           int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt)
+int re_prefilter(ReCompiled* re, const void* input, int input_len, int start_offset,
+                 int input_wide, int* caps)
 {
-    if (!re || !re->bc) return RE_ERROR;
+    if (start_offset > input_len) return RE_PREFILTER_NONE;
 
     /* Literal-prefix rejection. The prefix is ASCII, so a unit-wise search
      * finds exactly the occurrences of the pattern's leading characters. */
     if (re->prefix_len > 0) {
         int n = re->prefix_len;
-        bool sticky = (lre_get_flags(re->bc) & LRE_FLAG_STICKY) != 0;
-        long found = -1;
-        if (start_offset > input_len) return RE_NO_MATCH;
-        if (re->anchored || sticky) {
+        long found;
+        if (re->anchored || re->sticky) {
             /* the match can only start at start_offset */
-            if (re->anchored && start_offset != 0) return RE_NO_MATCH;
-            if (input_len - start_offset < n) return RE_NO_MATCH;
+            if (re->anchored && start_offset != 0) return RE_PREFILTER_NONE;
+            if (input_len - start_offset < n) return RE_PREFILTER_NONE;
             for (int i = 0; i < n; i++) {
                 unsigned u = input_wide ? ((const uint16_t*)input)[start_offset + i]
                                         : ((const uint8_t*)input)[start_offset + i];
-                if (u != (unsigned char)re->prefix[i]) return RE_NO_MATCH;
+                if (u != (unsigned char)re->prefix[i]) return RE_PREFILTER_NONE;
             }
             found = start_offset;
         } else {
             found = re_find_lit(input, input_wide, start_offset, input_len,
                                 re->prefix, n, re->prefix_rare);
-            if (found < 0) return RE_NO_MATCH;
+            if (found < 0) return RE_PREFILTER_NONE;
             /* Every match starts at or after this first prefix occurrence. */
             start_offset = (int)found;
         }
         if (re->literal_only) {
-            if (out_start) *out_start = (int)found;
-            if (out_end) *out_end = (int)found + n;
-            if (out_num_captures) *out_num_captures = 0;
-            return RE_MATCH;
+            caps[0] = (int)found;
+            caps[1] = (int)found + n;
+            return RE_PREFILTER_MATCH;
         }
     }
 
-    if (start_offset >= 0 && re->required_len > 0) {
-        if (start_offset > input_len) return RE_NO_MATCH;
-        if (re_find_lit(input, input_wide, start_offset, input_len,
-                        re->required, re->required_len, re->required_rare) < 0)
-            return RE_NO_MATCH;
-    }
+    if (re->required_len > 0
+        && re_find_lit(input, input_wide, start_offset, input_len,
+                       re->required, re->required_len, re->required_rare) < 0)
+        return RE_PREFILTER_NONE;
+    return start_offset;
+}
 
-    int total_captures = re->capture_count;
-    if (total_captures > RE_MAX_CAPTURES) total_captures = RE_MAX_CAPTURES;
+/* Whether a run of `re` passes re_prefilter whatever its input. */
+bool re_unfiltered(ReCompiled* re)
+{
+    return re->prefix_len == 0 && re->required_len == 0;
+}
+
+/*
+ * Run `re` over `input_len` code units of `input`, starting at unit
+ * `start_offset`. The input is Latin-1 bytes, or native-endian UTF-16 when
+ * `input_wide`; every offset counts units, not bytes. On RE_MATCH,
+ * caps[2 * i] and caps[2 * i + 1] are the bounds of group i (group 0 is the
+ * whole match), -1 for a group that did not participate, for as many groups
+ * as `cap_slots` (at least 2) ints hold.
+ */
+int re_run(ReCompiled* re, const void* input, int input_len,
+           int start_offset, int input_wide, int* caps, int cap_slots, ReInterrupt* interrupt)
+{
+    if (!re || !re->bc) return RE_ERROR;
+    /* A pattern is prepared for the native matcher once, on its first run,
+     * which leaves it ready for re_native::re_run_compiled even when the
+     * literal checks below reject this run. A program the matcher declines
+     * stays declined. */
+    if (!re->native_tried && re_native_enabled()) {
+        re->native_tried = 1;
+        re->native = re_native_prepare(re);
+    }
+    start_offset = re_prefilter(re, input, input_len, start_offset, input_wide, caps);
+    if (start_offset < 0) return start_offset == RE_PREFILTER_MATCH ? RE_MATCH : RE_NO_MATCH;
 
     /* The native matcher runs the decoded program, which is the same walk
      * libregexp's interpreter performs, without its per-step decoding. A
-     * pattern is prepared once, on the first run that reaches here; a program
-     * the matcher declines stays declined. A timeout or a matcher error falls
-     * through to the interpreter. */
-    if (re_native_enabled()) {
-        if (!re->native_tried) {
-            re->native_tried = 1;
-            re->native = re_native_prepare(re);
-        }
-        if (re->native) {
-            int nret = re_native_exec(re->native, input, input_len, start_offset, input_wide,
-                                      out_start, out_end, out_num_captures,
-                                      caps_start, caps_end, max_captures, interrupt);
-            if (nret == RE_MATCH || nret == RE_NO_MATCH) return nret;
-        }
+     * timeout or a matcher error falls through to the interpreter. */
+    if (re->native && re_native_enabled()) {
+        int nret = re_native_exec(re->native, input, input_len, start_offset, input_wide,
+                                  caps, cap_slots, interrupt);
+        if (nret == RE_MATCH || nret == RE_NO_MATCH) return nret;
     }
 
-    return re_run_interp(re, input, input_len, start_offset, input_wide, total_captures,
-                         out_start, out_end, out_num_captures, caps_start, caps_end, max_captures,
-                         interrupt);
+    return re_run_interp(re, input, input_len, start_offset, input_wide, caps, cap_slots, interrupt);
 }
 
 /* Predicates the native regexp backend needs. libregexp and libunicode keep
@@ -626,13 +625,4 @@ int re_get_capture_count(ReCompiled* re)
 {
     if (!re || !re->bc) return 0;
     return re->capture_count;
-}
-
-int re_run(ReCompiled* re, const void* input, int input_len,
-           int start_offset, int input_wide,
-           int* out_start, int* out_end, int* out_num_captures,
-           int* caps_start, int* caps_end, int max_captures)
-{
-    return re_run_interruptible(re, input, input_len, start_offset, input_wide,
-        out_start, out_end, out_num_captures, caps_start, caps_end, max_captures, NULL);
 }

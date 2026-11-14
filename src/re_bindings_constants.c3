@@ -10,14 +10,18 @@ const int RE_FLAG_INDICES    = 64;
 const int RE_FLAG_UNICODE_SETS = 128;
 
 const int RE_MATCH    = 1;
+const int RE_NO_MATCH = 0;
 
-/* Must match src/re_wrapper.h. The 256-slot stack buffer covers
- * realistic patterns; regexps with more captures heap-allocate in re_run.
+const int RE_PREFILTER_NONE  = -1;
+const int RE_PREFILTER_MATCH = -2;
+
+/* Must match src/re_wrapper.h. A buffer of 2 * RE_MAX_CAPTURES ints holds
+ * the bounds of every group the engine reports.
  *
- * On a match, re_run fills caps_start/caps_end for every index it reports
- * through out_num_captures, writing -1 for groups that did not participate.
- * Callers therefore declare those arrays `@noinit` and read only the reported
- * range: zeroing 2 KiB per call showed up as ~10% of regexp-heavy benchmarks. */
+ * On a match, re_run fills the bounds of every group of the pattern that fits,
+ * writing -1 for groups that did not participate. Callers therefore declare
+ * the buffer `@noinit` and read only the pattern's groups: zeroing 2 KiB per
+ * call showed up as ~10% of regexp-heavy benchmarks. */
 const int RE_MAX_CAPTURES = 256;
 
 alias ReInterruptFn = fn int(void*);

@@ -495,9 +495,8 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
     HString* s_hstr;
     if (ctx.argc > 0) {
         TVal* arg = &ctx.regs[ctx.base_reg];
-        if (arg.is_string() && arg.get_heapptr() != null) {
-            s_hstr = (HString*)arg.get_heapptr();
-        } else {
+        s_hstr = regexp_plain_input(arg);
+        if (s_hstr == null) {
             s_hstr = builtin_to_string_vm(ctx, arg);
             if (ctx.should_throw) return;
             if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
@@ -1113,14 +1112,13 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
 // @@search for a pristine receiver: the spec saves lastIndex, zeroes it, runs
 // one exec and restores it, which leaves lastIndex as it was.
 fn void regexp_search_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr) {
-    int m_start, m_end, m_caps;
-    if (regexp_run(ctx, (*rx.extra_ptr()).regexp.regexp_data, s_hstr, 0,
-            &m_start, &m_end, &m_caps, null, null, 0) != re_bindings::RE_MATCH) {
+    int[2] m;
+    if (regexp_run(ctx, (*rx.extra_ptr()).regexp.regexp_data, s_hstr, 0, &m, 2) != re_bindings::RE_MATCH) {
         if (ctx.should_throw) return;
         ctx.result_fastint(-1);
         return;
     }
-    ctx.result_fastint((long)m_start);
+    ctx.result_fastint((long)m[0]);
 }
 
 // ============================================================================
@@ -1547,25 +1545,23 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     growvec::GrowVec{int} bounds = { .heap = heap };
     bounds.use_storage(&bounds_storage, 32);
     defer bounds.free();
-    if (!bounds.reserve(2 * ncap)) {
+    if (!bounds.reserve(2 * ncap + 2)) {
         builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
         return false;
     }
-    int* caps_start = bounds.items;
-    int* caps_end = bounds.items + ncap;
+    int* caps = bounds.items;
     int pos = 0;
     while (pos <= input_len) {
-        int m_start, m_end, m_caps;
-        if (regexp_run(ctx, re_data, s_hstr, pos,
-                &m_start, &m_end, &m_caps, caps_start, caps_end,
-                (int)ncap) != re_bindings::RE_MATCH) {
+        if (regexp_run(ctx, re_data, s_hstr, pos, caps, (int)(2 * ncap + 2)) != re_bindings::RE_MATCH) {
             if (ctx.should_throw) return false;
             break;
         }
+        int m_start = caps[0];
+        int m_end = caps[1];
         bool ok = spans.push(m_start) && spans.push(m_end);
-        for (usz i = 0; i < ncap && ok; i++) {
-            bool matched_cap = caps_start[i] >= 0 && caps_end[i] >= 0;
-            ok = spans.push(matched_cap ? caps_start[i] : -1) && spans.push(matched_cap ? caps_end[i] : -1);
+        for (usz i = 1; i <= ncap && ok; i++) {
+            bool matched_cap = caps[2 * i] >= 0 && caps[2 * i + 1] >= 0;
+            ok = spans.push(matched_cap ? caps[2 * i] : -1) && spans.push(matched_cap ? caps[2 * i + 1] : -1);
         }
         if (!ok) {
             builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
@@ -2070,19 +2066,17 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     growvec::GrowVec{int} bounds = { .heap = heap };
     bounds.use_storage(&bounds_storage, 32);
     defer bounds.free();
-    if (!bounds.reserve(2 * ncap)) {
+    if (!bounds.reserve(2 * ncap + 2)) {
         builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
         return;
     }
-    int* caps_start = bounds.items;
-    int* caps_end = bounds.items + ncap;
+    int* caps = bounds.items;
+    int cap_slots = (int)(2 * ncap + 2);
 
     ulong count = 0;
-    int m_start, m_end, m_caps;
     if (input_len == 0) {
         // The empty subject is [] when the matcher accepts it and [S] when not.
-        if (regexp_run(ctx, re_data, s_hstr, 0, &m_start, &m_end, &m_caps,
-                caps_start, caps_end, (int)ncap) != re_bindings::RE_MATCH) {
+        if (regexp_run(ctx, re_data, s_hstr, 0, caps, cap_slots) != re_bindings::RE_MATCH) {
             if (ctx.should_throw) return;
             TVal whole;
             whole.set_string_borrowed(s_hstr);
@@ -2094,12 +2088,12 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     while (q < input_len) {
         // Positions below the next match fail, as the sticky search would. A
         // match that starts at the end of the subject is never tried.
-        if (regexp_run(ctx, re_data, s_hstr, q,
-                &m_start, &m_end, &m_caps, caps_start, caps_end,
-                (int)ncap) != re_bindings::RE_MATCH || m_start >= input_len) {
+        if (regexp_run(ctx, re_data, s_hstr, q, caps, cap_slots) != re_bindings::RE_MATCH || caps[0] >= input_len) {
             if (ctx.should_throw) return;
             break;
         }
+        int m_start = caps[0];
+        int m_end = caps[1];
         q = m_start;
         if (m_end == p) {
             q = (int)hstring::advance_string_index(s_hstr, (uint)q, full_unicode);
@@ -2109,11 +2103,11 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
         piece.set_string_borrowed(heap.str_slice(s_hstr, (uint)p, (uint)m_start));
         regexp_split_push(heap, arr, &count, piece);
         if (count == limit) break;
-        for (usz i = 0; i < ncap && count < limit; i++) {
+        for (usz i = 1; i <= ncap && count < limit; i++) {
             TVal cap;
             cap.set_undefined();
-            if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                cap.set_string_borrowed(heap.str_slice(s_hstr, (uint)caps_start[i], (uint)caps_end[i]));
+            if (caps[2 * i] >= 0 && caps[2 * i + 1] >= 0) {
+                cap.set_string_borrowed(heap.str_slice(s_hstr, (uint)caps[2 * i], (uint)caps[2 * i + 1]));
             }
             regexp_split_push(heap, arr, &count, cap);
         }
@@ -2834,15 +2828,113 @@ fn bool regexp_set_last_index(BuiltinContext* ctx, HObject* rx, HString* key,
     return builtins_generic_set(ctx, rx, key, value, "lastIndex");
 }
 
+// Whether `rx` is a RegExp whose only own property is a writable data
+// `lastIndex` in slot 0 holding a small integer, so RegExpBuiltinExec reads
+// and writes nothing observable but that slot.
+fn bool regexp_plain(Heap* heap, HObject* rx) @inline {
+    return rx.shape_id == heap.regexp_shape && heap.regexp_shape != 0
+        && heap.regexp_shape_epoch == heap.shape_recycle_epoch
+        && rx.get_class() == hobject::ObjClass.REGEXP && !rx.is_proxy()
+        && (*rx.extra_ptr()).regexp.regexp_data != null
+        && rx.prop_values()[0].get().is_fastint();
+}
+
+// A string argument RegExpBuiltinExec takes as is, or null.
+fn HString* regexp_plain_input(TVal* v) @inline {
+    if (!v.is_string()) return null;
+    HString* s = (HString*)v.get_heapptr();
+    return s != null && !s.is_symbol() ? s : null;
+}
+
+// The match array for the group bounds in `caps`, as re_run reports them.
+fn HObject* regexp_match_array(Heap* heap, void* re_data, HString* s, int* caps, bool has_indices) {
+    int num_caps = re_bindings::re_get_capture_count(re_data) - 1;
+    if (num_caps > re_bindings::RE_MAX_CAPTURES - 1) num_caps = re_bindings::RE_MAX_CAPTURES - 1;
+    int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
+    int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
+    for (int i = 0; i < num_caps; i++) {
+        caps_start[i] = caps[2 * i + 2];
+        caps_end[i] = caps[2 * i + 3];
+    }
+    BuiltinContext ctx = { .heap = heap };
+    return regexp_build_match_result(&ctx, re_data, s, caps[0], caps[1], &caps_start, &caps_end, num_caps, has_indices);
+}
+
+// RegExpBuiltinExec (ECMA-262 §22.2.7.2) of a RegExp regexp_plain accepts over
+// the string `s`, into `result`, which holds no value yet: the match array or
+// null, or a Boolean when `boolean_result`. False, with nothing observable
+// done, when the run was interrupted, which the generic path then reports.
+fn bool regexp_exec_plain(Heap* heap, HObject* rx, HString* s, bool boolean_result, TVal* result) @inline {
+    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+    int jsf = (*rx.extra_ptr()).regexp.flags;
+    hobject::PropValue* last_index = &rx.prop_values()[0];
+    // A non-global, non-sticky match starts at 0 and leaves lastIndex alone.
+    bool advances = (jsf & (1 | 32)) != 0;
+    int start = 0;
+    TVal value;
+    if (advances) {
+        long li = last_index.get().get_fastint();
+        if (li < 0) li = 0;
+        if (li > (long)s.unit_len()) {
+            value.set_fastint(0);
+            *last_index = (hobject::PropValue)value;
+            value.set_boolean(false);
+            if (!boolean_result) value.set_null();
+            *result = value;
+            return true;
+        }
+        start = (int)li;
+    }
+    int[2 * re_bindings::RE_MAX_CAPTURES] caps @noinit;
+    re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, heap };
+    int ret = re_bindings::re_run_direct(re_data, s.data_ptr(), s.unit_len(), s.is_wide(), (uint)start,
+                                         &caps, caps.len, &interrupt);
+    if (@unlikely(heap.uncatchable_throw)) return false;
+    if (ret != re_bindings::RE_MATCH) {
+        if (advances) {
+            value.set_fastint(0);
+            *last_index = (hobject::PropValue)value;
+        }
+        value.set_boolean(false);
+        if (!boolean_result) value.set_null();
+        *result = value;
+        return true;
+    }
+    if (advances) {
+        // lastIndex = e; an empty match's AdvanceStringIndex is the caller's
+        // (@@match step 8.g, @@replace step 11.d), so it is not done here.
+        value.set_fastint((long)caps[1]);
+        *last_index = (hobject::PropValue)value;
+    }
+    if (boolean_result) {
+        result.set_boolean(true);
+        return true;
+    }
+    HObject* arr = regexp_match_array(heap, re_data, s, &caps, (jsf & 64) != 0);
+    if (arr == null) {
+        result.set_null();
+        return true;
+    }
+    value.set_object(arr);
+    heap.tval_copy_ref(result, &value);
+    return true;
+}
+
 // RegExpBuiltinExec (ECMA-262 §22.2.7.2), sets ctx.result to the match array or
 // null, or directly to a Boolean for RegExp.prototype.test. `rx` must already
 // be a REGEXP-class object with a compiled matcher.
 fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
                             bool boolean_result = false) {
-    HString* s_hstr;
-    if (input_str_tv.is_string() && input_str_tv.get_heapptr() != null) {
-        s_hstr = (HString*)input_str_tv.get_heapptr();
-    } else {
+    HString* s_hstr = regexp_plain_input(input_str_tv);
+    if (s_hstr != null && regexp_plain(ctx.heap, rx)) {
+        TVal result;
+        result.set_undefined();
+        if (regexp_exec_plain(ctx.heap, rx, s_hstr, boolean_result, &result)) {
+            ctx.take_result(&result);
+            return;
+        }
+    }
+    if (s_hstr == null) {
         s_hstr = builtin_to_string_vm(ctx, input_str_tv);
         if (ctx.should_throw) return;
         if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
@@ -2898,17 +2990,8 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         start_pos = (int)li_charunit;
     }
 
-    int out_start = 0;
-    int out_end = 0;
-    int out_num_captures = 0;
-    int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
-    int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
-
-    int result = regexp_run(ctx,
-        re_data, s_hstr, start_pos,
-        &out_start, &out_end, &out_num_captures,
-        &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
-    );
+    int[2 * re_bindings::RE_MAX_CAPTURES] caps @noinit;
+    int result = regexp_run(ctx, re_data, s_hstr, start_pos, &caps, caps.len);
     if (ctx.should_throw) return;
     if (result != re_bindings::RE_MATCH) {
         if (global_flag || sticky_flag) {
@@ -2926,7 +3009,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         // AdvanceStringIndex step is performed by the *caller* (@@match step
         // 8.g, @@replace step 11.d) so that custom exec overrides are also
         // covered. Do NOT advance here.
-        TVal end_tv; end_tv.set_fastint((long)out_end);
+        TVal end_tv; end_tv.set_fastint((long)caps[1]);
         if (!regexp_set_last_index(ctx, rx, li_key, end_tv)) return;
     }
 
@@ -2935,11 +3018,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         return;
     }
 
-    int num_caps = out_num_captures;
-    if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-    HObject* arr = regexp_build_match_result(ctx, re_data, s_hstr,
-                                             out_start, out_end,
-                                             &caps_start, &caps_end, num_caps, has_indices);
+    HObject* arr = regexp_match_array(ctx.heap, re_data, s_hstr, &caps, has_indices);
     if (arr == null) {
         ctx.result_null();
         return;
@@ -3514,13 +3593,10 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
 
 // Run `re` over the units of `s` from unit `start_offset`; every offset in and
 // out is a unit offset.
-fn int regexp_run(BuiltinContext* ctx, void* re, HString* s,
-    int start_offset, int* out_start, int* out_end,
-    int* out_num_captures, int* caps_start, int* caps_end, int max_captures) {
+fn int regexp_run(BuiltinContext* ctx, void* re, HString* s, int start_offset, int* caps, int cap_slots) {
     re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, ctx.heap };
-    int result = re_bindings::re_run_interruptible(re, s.data_ptr(), (int)s.unit_len(),
-        start_offset, s.is_wide() ? 1 : 0, out_start, out_end, out_num_captures,
-        caps_start, caps_end, max_captures, &interrupt);
+    int result = re_bindings::re_run_direct(re, s.data_ptr(), s.unit_len(), s.is_wide(), (uint)start_offset,
+        caps, cap_slots, &interrupt);
     if (ctx.heap.uncatchable_throw) builtin_throw(ctx, ctx.heap.err_proto, "interrupted");
     return result;
 }
