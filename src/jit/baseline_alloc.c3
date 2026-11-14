@@ -4,12 +4,13 @@
 // and the allocation accounting are one shared subroutine (ALLOC_SUB); the
 // caller writes the header the allocator would (hobject::plain_object_flags and
 // its siblings give both the same words). The inline path takes only the state
-// in which Heap.adopt_object does no more than count: collection idle or
-// sweeping (not marking, which shades the new object), the trigger and the
-// memory-check budgets not about to expire, a page with a free or never-used
-// block that is not the pool's last, and room in the young list. Anything else
-// calls the C helper that runs the threaded handler's body, which does the
-// rest. Neither path collects: the trigger only requests a collection for the
+// in which Heap.adopt_object does no more than count and shade: the trigger
+// spent only once a collection is requested or running, the memory-check
+// budget not about to expire, a page with a free or never-used block that is
+// not the pool's last, room in the young list and, while marking, room in the
+// gray queue: a new object is shaded gray, as Heap.shade_new_header does, so
+// its initializing stores need no barrier. Anything else calls the C helper
+// that runs the threaded handler's body, which does the rest. Neither path collects: the trigger only requests a collection for the
 // next safepoint.
 module boomkat::jit @feat(SLJIT);
 
@@ -133,8 +134,10 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = ALLOC_SUB });
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    // HObject.init_header, then the prototype and the fill the caller's allocator adds.
-    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, 0, SLJIT_IMM, (long)p.flags);
+    // HObject.init_header, with the reachable bit ALLOC_SUB left in R1, then the prototype and
+    // the fill the caller's allocator adds.
+    sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, SLJIT_IMM, (long)p.flags);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, 0, R1, 0);
     if (p.site != null) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&p.site.gc);
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, R1, 0);
@@ -197,8 +200,8 @@ fn void Asm.emit_fill_checks(&self, Jumps* slow) {
 }
 
 // Copy NEWARR_FILL's elements into the fresh array in R0, counting each string as
-// Heap.init_slot_ref does; a pinned one is not. The array is young and the collector is not
-// marking, so the stores need no barrier. Uses R1, R3 and R4.
+// Heap.init_slot_ref does; a pinned one is not. The array is young, and
+// gray while marking, so the stores need no barrier. Uses R1, R3 and R4.
 fn void Asm.emit_fill_elements(&self) {
     void* c = self.c;
     Layout* l = self.lay;
@@ -219,20 +222,29 @@ fn void Asm.emit_fill_elements(&self) {
 
 // The pool pop and accounting of Heap.alloc_plain_object / Heap.alloc_inline_array
 // as PagePool.alloc_uninit and Heap.adopt_object do them. In: R1 the PagePool.
-// Out: R0 the block, registered in the young list and counted, or 0 with
-// nothing changed. Uses R1 to R4.
+// Out: R0 the block, registered in the young list and counted, and R1 the
+// reachable bit for its flags; or R0 0 with nothing changed. Uses R1 to R4.
 fn void Asm.emit_alloc_body(&self) {
     void* c = self.c;
     Layout* l = self.lay;
     int m = SLJIT_MEM;
     int hp = m | self.heap;
     Jumps fail;
-    // Not marking: the allocation would have to shade the new object.
+    // While marking, room in the gray queue for the new object.
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, hp, l.heap_gc_phase);
-    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
-    // charge_allocation and the memory check must not fire.
+    void* not_marking = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, hp, l.heap_gray_len);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, hp, l.heap_gray_cap));
+    sljit_set_label(not_marking, sljit_emit_label(c));
+    // charge_allocation must not request a collection, unless one is requested or running
+    // already, and the memory check must not fire.
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, hp, l.heap_trigger);
-    fail.add(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL, R2, 0, SLJIT_IMM, 1));
+    void* untriggered = sljit_emit_cmp(c, SLJIT_SIG_GREATER, R2, 0, SLJIT_IMM, 1);
+    void* running = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)heap::GcPhase.IDLE.ordinal);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, hp, l.heap_gc_requested);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_set_label(untriggered, sljit_emit_label(c));
+    sljit_set_label(running, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, hp, l.heap_mem_budget);
     fail.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R3, 0, SLJIT_IMM, 1));
     // The oldest page with room, which must keep room: the C code unlinks a page once it fills.
@@ -290,6 +302,24 @@ fn void Asm.emit_alloc_body(&self) {
     sljit_emit_op1(c, SLJIT_MOV, mem_index(R3, R4), 3, R2, 0);
     sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
     sljit_emit_op1(c, SLJIT_MOV, hp, l.heap_young_size, R4, 0);
+    // shade_new_header: while marking, the block joins the gray queue (gray_push) and R1 is the
+    // reachable bit the caller ORs into the header's flags.
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R4, 0, hp, l.heap_gc_phase);
+    void* unshaded = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, hp, l.heap_gray_items);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, hp, l.heap_gray_len);
+    sljit_emit_op1(c, SLJIT_MOV, mem_index(R3, R4), 3, R2, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
+    sljit_emit_op1(c, SLJIT_MOV, hp, l.heap_gray_len, R4, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, hp, l.heap_marked_count);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
+    sljit_emit_op1(c, SLJIT_MOV_U32, hp, l.heap_marked_count, R4, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, hp, l.heap_gray_count);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
+    sljit_emit_op1(c, SLJIT_MOV_U32, hp, l.heap_gray_count, R4, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, l.reachable_mask);
+    sljit_set_label(unshaded, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     fail.bind(sljit_emit_label(c));
