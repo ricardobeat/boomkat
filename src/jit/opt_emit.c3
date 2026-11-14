@@ -3562,11 +3562,11 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     // The exit stubs of inlined bodies leave the emitter on a callee; the call entry, its
     // subroutines and the code after a native call's return belong to the function being compiled.
     cg.use_fn(0);
-    // A direct call enters at the first block, which holds no values in registers unless the
-    // function starts with a loop.
+    // A direct call enters at the first block, through its OSR entry when the function starts with
+    // a loop, whose values that entry loads from the window. A region's code has no function start.
     void* call_entry = null;
-    if (call_entry_eligible(f) && !g.blocks[0].osr) {
-        a.labels[0] = cg.labels[0];
+    if (call_entry_eligible(f) && g.region.end == 0) {
+        a.labels[0] = g.blocks[0].osr ? cg.osr_labels[0] : cg.labels[0];
         call_entry = a.emit_call_entry(bc, touch: true);
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
