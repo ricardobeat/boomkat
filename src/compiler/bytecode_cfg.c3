@@ -86,10 +86,10 @@ fn bool bytecode_cfg_fallthrough(Opcode op) {
 }
 
 // The instructions `objects` admits: the compiler's own regexp, closure and cell objects, and the
-// element store of an array literal.
+// element store and register-range fill of an array literal.
 fn bool bytecode_cfg_object_op(Opcode op) @inline {
     return op == Opcode.NEWREGEXP || op == Opcode.CLOSURE || op == Opcode.NEWCELLS || op == Opcode.GETCELL
-        || op == Opcode.SETCELL || op == Opcode.MOVECELL || op == Opcode.INITELEM;
+        || op == Opcode.SETCELL || op == Opcode.MOVECELL || op == Opcode.INITELEM || op == Opcode.NEWARR_FILL;
 }
 
 // Positive control-flow contract: exception handlers, suspension, indirect
@@ -135,11 +135,13 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
 // With `end` the graph covers only the words [start, end) of `code`, whose pcs stay those of the
 // whole: a branch out of them, and the fall through past the last, goes to an exit node, one per
 // target pc, appended after the instructions from cfg.exit_first on. An exit node is a NOP at its
-// target that ends its block with no successor.
+// target that ends its block with no successor. With `tail_calls` it may hold the tail forms of the
+// calls: each reads what the call it shadows reads, and falls through to its RET unless it reused
+// the frame, which a consumer that runs it as the VM does leaves at once.
 fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     heap::Heap* h = null, DecodedOpAllowed allowed = null, bool split_calls = false,
     DecodedCfgBudget budget = DEFAULT_CFG_BUDGET, bool forwarding = false, bool resolve = false,
-    bool objects = false, uint start = 0, uint end = 0) {
+    bool objects = false, uint start = 0, uint end = 0, bool tail_calls = false) {
     *cfg = {};
     bool region = end != 0;
     if (!region) end = count;
@@ -168,7 +170,8 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
         if (!view.valid || view.next_pc > end || view.insn.op.ordinal >= Opcode::values.len
             || (!bytecode_cfg_control_supported(view.insn.op) && !(forwarding && view.insn.op == Opcode.APPLY_ARGS)
                 && !(resolve && (view.insn.op == Opcode.RESOLVEVAR || view.insn.op == Opcode.THROW_UNRESOLVED))
-                && !(objects && bytecode_cfg_object_op(view.insn.op)))
+                && !(objects && bytecode_cfg_object_op(view.insn.op))
+                && !(tail_calls && tailcall_base(view.insn.op) != view.insn.op))
             || (allowed != null && !allowed(view.insn.op))) return false;
         if (cfg.instruction_count == budget.max_instructions) return false;
         uint index = cfg.instruction_count++;

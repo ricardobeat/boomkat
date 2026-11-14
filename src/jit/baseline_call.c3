@@ -1125,15 +1125,37 @@ fn void Asm.emit_return_body(&self) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// The return's heap result R0 (no inert value): an object, while the collector is not marking,
-// as Asm.publish stores one. Anything else joins `helper`. Clobbers R1.
+// The return's heap result R0 (no inert value): a string a counted holder or the queue already
+// has, or an object while the collector is not marking, as Asm.publish stores one. Anything else
+// joins `helper`. Clobbers R1.
 fn void Asm.emit_result_object(&self, Jumps* helper) {
     void* c = self.c;
+    Layout* l = self.lay;
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w());
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | R1, l.str_flags);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, l.interned_mask | l.queued_mask);
+    void* queued = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, l.queued_mask);
+    void* interned = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | R1, l.str_refcount);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    void* counted = sljit_emit_jump(c, SLJIT_JUMP);
+    // The intern table's own count is no holder's.
+    sljit_set_label(interned, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | R1, l.str_refcount);
+    helper.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, SLJIT_IMM, 1));
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_string, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
     helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, SLJIT_MEM | self.heap, self.lay.heap_gc_phase, SLJIT_MOV_U8);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
+    sljit_set_label(queued, sljit_emit_label(c));
+    sljit_set_label(counted, sljit_emit_label(c));
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // CALL_GLOBAL's callee as @lean_call_global reads it: the global binding the
