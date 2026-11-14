@@ -510,6 +510,28 @@ int re_prefilter(ReCompiled* re, const void* input, int input_len, int start_off
     return start_offset;
 }
 
+/* The literal re_prefilter checks, for the compiled body to check itself: its
+ * length (0 for none) with the bytes in `out` and the index of the byte to
+ * search for in `rare`. `where` is RE_LIT_REQUIRED for a substring a match
+ * needs somewhere after the start offset, RE_LIT_PREFIX for a prefix the first
+ * match starts at or after, RE_LIT_AT for a prefix at the start offset and
+ * RE_LIT_AT_ZERO for one at offset 0; `whole` when a found prefix is the match. */
+int re_literal(ReCompiled* re, char* out, int* rare, int* where, int* whole)
+{
+    *whole = 0;
+    if (re->prefix_len > 0) {
+        memcpy(out, re->prefix, (size_t)re->prefix_len);
+        *rare = re->prefix_rare;
+        *where = re->anchored ? RE_LIT_AT_ZERO : re->sticky ? RE_LIT_AT : RE_LIT_PREFIX;
+        *whole = re->literal_only;
+        return re->prefix_len;
+    }
+    memcpy(out, re->required, (size_t)re->required_len);
+    *rare = re->required_rare;
+    *where = RE_LIT_REQUIRED;
+    return re->required_len;
+}
+
 /* Whether a run of `re` passes re_prefilter whatever its input. */
 bool re_unfiltered(ReCompiled* re)
 {

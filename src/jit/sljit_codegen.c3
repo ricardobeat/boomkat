@@ -30,7 +30,10 @@ extern fn int sljit_emit_fmem_update(void* compiler, int type, int reg, int oper
 extern fn int sljit_emit_simd_mov(void* compiler, int type, int vector_reg, int operand, long offset);
 extern fn int sljit_emit_simd_replicate(void* compiler, int type, int vector_reg, int operand, long offset);
 extern fn int sljit_emit_simd_op2(void* compiler, int type, int dst, int left, int right, long rw);
+extern fn int sljit_get_register_index(int type, int reg);
+extern fn int sljit_emit_op_custom(void* compiler, void* instruction, uint size);
 
+const int SLJIT_GP_REGISTER         = 0;
 const int SLJIT_HAS_FPU             = 0;
 const int SLJIT_HAS_CLZ             = 3;
 const int SLJIT_HAS_CTZ             = 4;

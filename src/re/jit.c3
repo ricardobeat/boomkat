@@ -1369,6 +1369,252 @@ fn void ReAsm.emit_scan(&self) {
     self.leave(re_native::RE_NO_MATCH);
 }
 
+// The literal checks of re_prefilter, made before the first attempt: a start
+// past the end fails, a prefix at the start offset is compared in place, a
+// floating prefix is searched for and moves the start to its first occurrence,
+// and a required substring must occur at or after the start. A prefix that is
+// the whole pattern is the match. s_polls is scratch here.
+fn void ReAsm.emit_literal(&self) {
+    re_native::ReNative* n = self.native;
+    int sh = self.wide ? 1 : 0;
+    void*[24] none;
+    usz nones = 0;
+    none[nones++] = self.cmp(jit::SLJIT_GREATER, self.s_pos, 0, self.s_len, 0);
+    if (n.lit_len > 0) {
+        switch (n.lit_where) {
+            case re_bindings::RE_LIT_AT_ZERO:
+            case re_bindings::RE_LIT_AT:
+                if (n.lit_where == re_bindings::RE_LIT_AT_ZERO) {
+                    none[nones++] = self.cmp(jit::SLJIT_NOT_EQUAL, self.s_pos, 0, jit::SLJIT_IMM, 0);
+                }
+                self.op2(jit::SLJIT_SUB, self.t0, 0, self.s_len, 0, self.s_pos, 0);
+                none[nones++] = self.cmp(jit::SLJIT_LESS, self.t0, 0, jit::SLJIT_IMM, n.lit_len);
+                self.op2(jit::SLJIT_SHL, self.t1, 0, self.s_pos, 0, jit::SLJIT_IMM, sh);
+                self.op2(jit::SLJIT_ADD, self.t1, 0, self.t1, 0, self.s_data, 0);
+                for (uint k = 0; k < n.lit_len; k++) {
+                    self.emit_lit_unit(self.t2, self.t1, k);
+                    none[nones++] = self.cmp(jit::SLJIT_NOT_EQUAL, self.t2, 0, jit::SLJIT_IMM, (char)n.lit[k]);
+                }
+            default:
+                self.mov(self.t0, 0, self.s_pos, 0);
+                self.emit_find(&none, &nones);
+                if (n.lit_where == re_bindings::RE_LIT_PREFIX) self.mov(self.s_pos, 0, self.t0, 0);
+        }
+        if (n.lit_whole) {
+            self.mov(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.capture);
+            self.store_u32(self.t1, 0, self.s_pos);
+            self.op2(jit::SLJIT_ADD, self.t2, 0, self.s_pos, 0, jit::SLJIT_IMM, n.lit_len);
+            self.store_u32(self.t1, 4, self.t2);
+            self.leave(re_bindings::RE_MATCH);
+        }
+    }
+    void* go_on = self.jump();
+    void* fail = self.label();
+    foreach (j : none[:nones]) self.bind(j, fail);
+    self.leave(re_native::RE_NO_MATCH);
+    self.bind(go_on, self.label());
+}
+
+// Unit `k` of the subject from the address in `base` into `dst`.
+fn void ReAsm.emit_lit_unit(&self, int dst, int base, uint k) @inline {
+    if (self.wide) {
+        self.mov_u16(dst, 0, jit::SLJIT_MEM | base, (long)k * 2);
+    } else {
+        self.mov_u8(dst, 0, jit::SLJIT_MEM | base, (long)k);
+    }
+}
+
+// One AArch64 instruction, for the operations SLJIT has no form of.
+fn void ReAsm.a64(&self, uint insn) @inline {
+    jit::sljit_emit_op_custom(self.c, &insn, 4);
+}
+
+fn uint ReAsm.hw(&self, int reg) @inline => (uint)jit::sljit_get_register_index(jit::SLJIT_GP_REGISTER, reg);
+
+// The first occurrence of the literal at or after the unit in t0, into t0; a
+// subject without one appends its failure to `none`. On AArch64 a 32-byte block
+// of candidates at a time is screened by comparing the literal's rarest unit,
+// and a second one when it has two, across the block; only the candidates a
+// block flags are compared in full. The last two 16-byte chunks overlap the end
+// rather than leave a tail. A subject shorter than a chunk, and every subject
+// elsewhere, is tested one candidate at a time. s_polls and t1 to t4 are
+// scratch; the vector code uses v16 to v21, which no caller preserves.
+fn void ReAsm.emit_find(&self, void*[24]* none, usz* nones) {
+    re_native::ReNative* n = self.native;
+    void* found;
+    // t1: the last unit a match of the literal can start at.
+    self.op2(jit::SLJIT_SUB, self.t1, 0, self.s_len, 0, jit::SLJIT_IMM, n.lit_len);
+    (*none)[(*nones)++] = self.cmp(jit::SLJIT_SIG_GREATER, self.t0, 0, self.t1, 0);
+    $if env::AARCH64:
+        int sh = self.wide ? 1 : 0;
+        uint rare = n.lit_rare;
+        long block = (long)(32 >> sh);
+        long half = block / 2;
+        void*[5] hits;
+        uint lanes = self.wide ? 0x4E020C00 : 0x4E010C00;   // DUP Vd.16B/8H, Wn
+        self.mov(self.t2, 0, jit::SLJIT_IMM, (char)n.lit[rare]);
+        self.a64(lanes | self.hw(self.t2) << 5 | 20);
+        if (n.lit_len > 1) {
+            self.mov(self.t2, 0, jit::SLJIT_IMM, (char)n.lit[self.lit_second()]);
+            self.a64(lanes | self.hw(self.t2) << 5 | 21);
+        }
+        void* enter = self.label();
+        // s_polls: the furthest the block pointer may stand and read a whole block.
+        self.op2(jit::SLJIT_ADD, self.s_polls, 0, self.t1, 0, jit::SLJIT_IMM, (long)rare - block + 1);
+        self.op2(jit::SLJIT_SHL, self.s_polls, 0, self.s_polls, 0, jit::SLJIT_IMM, sh);
+        self.op2(jit::SLJIT_ADD, self.s_polls, 0, self.s_polls, 0, self.s_data, 0);
+        self.emit_lit_address(self.t2, self.t0, 0, rare);
+        void* narrow = self.cmp(jit::SLJIT_GREATER, self.t2, 0, self.s_polls, 0);
+        if (n.lit_len > 1) {
+            self.op2(jit::SLJIT_ADD, self.t3, 0, self.t2, 0, jit::SLJIT_IMM, ((long)self.lit_second() - rare) << sh);
+        }
+        void* loop = self.label();
+        self.emit_lit_screen(self.t2, self.t3, true);
+        self.a64(0x6EA0A400 | 17 << 16 | 16 << 5 | 16);         // UMAXP v16.4S, v16.4S, v17.4S
+        self.a64(0x6EA0A400 | 16 << 16 | 16 << 5 | 16);         // UMAXP v16.4S, v16.4S, v16.4S
+        self.a64(0x9E660000 | 16 << 5 | self.hw(self.t4));      // FMOV t4, d16
+        void* hit = self.cmp(jit::SLJIT_NOT_EQUAL, self.t4, 0, jit::SLJIT_IMM, 0);
+        self.bind(self.cmp(jit::SLJIT_LESS_EQUAL, self.t2, 0, self.s_polls, 0), loop);
+        // No whole block left: t0 back from the block pointer.
+        self.op2(jit::SLJIT_SUB, self.t0, 0, self.t2, 0, self.s_data, 0);
+        self.op2(jit::SLJIT_LSHR, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, sh);
+        self.op2(jit::SLJIT_SUB, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, rare);
+        void* rest = self.jump();
+        // A flagged block: its two chunks' candidates, then on past it.
+        self.bind(hit, self.label());
+        self.op2(jit::SLJIT_SUB, self.t0, 0, self.t2, 0, self.s_data, 0);
+        self.op2(jit::SLJIT_LSHR, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, sh);
+        self.op2(jit::SLJIT_SUB, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, (long)rare + block);
+        hits[0] = self.emit_lit_chunk(self.t0, 0);
+        hits[1] = self.emit_lit_chunk(self.t0, half);
+        self.op2(jit::SLJIT_ADD, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, block);
+        self.bind(self.jump(), enter);
+        // Fewer than two chunks of candidates are left: the chunk at t0 and the
+        // one ending at the last candidate cover them.
+        void* tail = self.label();
+        self.bind(narrow, tail);
+        self.bind(rest, tail);
+        self.op2(jit::SLJIT_SUB, self.t2, 0, self.t1, 0, jit::SLJIT_IMM, half - 1);
+        void* tiny = self.cmp(jit::SLJIT_SIG_LESS, self.t2, 0, jit::SLJIT_IMM, 0);
+        void* late = self.cmp(jit::SLJIT_SIG_GREATER, self.t0, 0, self.t2, 0);
+        hits[2] = self.emit_lit_chunk(self.t0, 0);
+        self.bind(late, self.label());
+        hits[3] = self.emit_lit_chunk(self.t1, 1 - half);
+        (*none)[(*nones)++] = self.jump();
+        self.bind(tiny, self.label());
+        hits[4] = self.emit_find_units();
+        (*none)[(*nones)++] = self.jump();
+        found = self.label();
+        foreach (j : hits) self.bind(j, found);
+    $else
+        void* hit = self.emit_find_units();
+        (*none)[(*nones)++] = self.jump();
+        self.bind(hit, self.label());
+    $endif
+}
+
+// The index of the unit the vector screen compares besides the rarest one.
+fn uint ReAsm.lit_second(&self) @inline => self.native.lit_rare == 0 ? self.native.lit_len - 1 : 0;
+
+// Into `dst` the address of unit `k` of the candidate `off` units past the one
+// in `at`.
+fn void ReAsm.emit_lit_address(&self, int dst, int at, long off, uint k) {
+    self.op2(jit::SLJIT_ADD, dst, 0, at, 0, jit::SLJIT_IMM, off + k);
+    self.op2(jit::SLJIT_SHL, dst, 0, dst, 0, jit::SLJIT_IMM, self.wide ? 1 : 0);
+    self.op2(jit::SLJIT_ADD, dst, 0, dst, 0, self.s_data, 0);
+}
+
+// The screen's compares into v16 (and v17 for a whole block): every lane whose
+// candidate has the rarest unit at `a`, and the second one at `b`, all ones.
+// A whole block advances both addresses past it.
+fn void ReAsm.emit_lit_screen(&self, int a, int b, bool whole) {
+    uint cmeq = self.wide ? 0x6E608C00 : 0x6E208C00;        // CMEQ Vd.16B/8H
+    uint ra = self.hw(a);
+    uint rb = self.hw(b);
+    uint chunks = whole ? 2 : 1;
+    if (whole) {
+        self.a64(0xACC10000 | 17 << 10 | ra << 5 | 16);     // LDP q16, q17, [a], #32
+    } else {
+        self.a64(0x3DC00000 | ra << 5 | 16);                // LDR q16, [a]
+    }
+    for (uint i = 16; i < 16 + chunks; i++) self.a64(cmeq | 20 << 16 | i << 5 | i);
+    if (self.native.lit_len < 2) return;
+    if (whole) {
+        self.a64(0xACC10000 | 19 << 10 | rb << 5 | 18);     // LDP q18, q19, [b], #32
+    } else {
+        self.a64(0x3DC00000 | rb << 5 | 18);                // LDR q18, [b]
+    }
+    for (uint i = 18; i < 18 + chunks; i++) {
+        self.a64(cmeq | 21 << 16 | i << 5 | i);
+        self.a64(0x4E201C00 | i << 16 | (i - 2) << 5 | (i - 2));  // AND
+    }
+}
+
+// The 16-byte chunk of candidates `off` units past the one in `at`, all of
+// which are at most the last: the jump taken with the first one at or after
+// t0 whose whole literal matches in t0, falling through without one. `at` is
+// t0 or t1; t2 to t4 and s_polls are scratch.
+fn void* ReAsm.emit_lit_chunk(&self, int at, long off) {
+    re_native::ReNative* n = self.native;
+    int unit_bits = self.wide ? 8 : 4;
+    self.emit_lit_address(self.t2, at, off, n.lit_rare);
+    if (n.lit_len > 1) self.emit_lit_address(self.t3, at, off, self.lit_second());
+    self.emit_lit_screen(self.t2, self.t3, false);
+    self.a64(0x0F0C8400 | 16 << 5 | 16);                    // SHRN v16.8B, v16.8H, #4
+    self.a64(0x9E660000 | 16 << 5 | self.hw(self.t4));      // FMOV t4, d16
+    // t4 holds `unit_bits` set bits per flagged candidate, lowest first.
+    void* loop = self.label();
+    void* done = self.cmp(jit::SLJIT_EQUAL, self.t4, 0, jit::SLJIT_IMM, 0);
+    jit::sljit_emit_op1(self.c, jit::SLJIT_CTZ, self.t2, 0, self.t4, 0);
+    self.mov(self.t3, 0, jit::SLJIT_IMM, (long)((1 << unit_bits) - 1));
+    self.op2(jit::SLJIT_SHL, self.t3, 0, self.t3, 0, self.t2, 0);
+    self.op2(jit::SLJIT_XOR, self.t4, 0, self.t4, 0, self.t3, 0);
+    self.op2(jit::SLJIT_LSHR, self.t2, 0, self.t2, 0, jit::SLJIT_IMM, self.wide ? 3 : 2);
+    self.op2(jit::SLJIT_ADD, self.t2, 0, self.t2, 0, at, 0);
+    if (off != 0) self.op2(jit::SLJIT_ADD, self.t2, 0, self.t2, 0, jit::SLJIT_IMM, off);
+    self.bind(self.cmp(jit::SLJIT_SIG_LESS, self.t2, 0, self.t0, 0), loop);
+    void*[16] miss;
+    usz misses = self.emit_lit_compare(self.t2, self.s_polls, &miss);
+    foreach (j : miss[:misses]) self.bind(j, loop);
+    self.mov(self.t0, 0, self.t2, 0);
+    void* match = self.jump();
+    self.bind(done, self.label());
+    return match;
+}
+
+// The whole literal compared at the candidate in `at`, with t3 and `tmp` as
+// scratch: the jumps a mismatch takes into `miss`, and their count.
+fn usz ReAsm.emit_lit_compare(&self, int at, int tmp, void*[16]* miss) {
+    re_native::ReNative* n = self.native;
+    usz misses = 0;
+    self.emit_lit_address(self.t3, at, 0, 0);
+    self.emit_lit_unit(tmp, self.t3, n.lit_rare);
+    (*miss)[misses++] = self.cmp(jit::SLJIT_NOT_EQUAL, tmp, 0, jit::SLJIT_IMM, (char)n.lit[n.lit_rare]);
+    for (uint k = 0; k < n.lit_len; k++) {
+        if (k == n.lit_rare) continue;
+        self.emit_lit_unit(tmp, self.t3, k);
+        (*miss)[misses++] = self.cmp(jit::SLJIT_NOT_EQUAL, tmp, 0, jit::SLJIT_IMM, (char)n.lit[k]);
+    }
+    return misses;
+}
+
+// The literal tested at each candidate from the unit in t0 through the last,
+// in t1: the jump taken with the match's start in t0, falling through without
+// one. t2 and t3 are scratch.
+fn void* ReAsm.emit_find_units(&self) {
+    void* loop = self.label();
+    void* exhausted = self.cmp(jit::SLJIT_SIG_GREATER, self.t0, 0, self.t1, 0);
+    void*[16] miss;
+    usz misses = self.emit_lit_compare(self.t0, self.t2, &miss);
+    void* match = self.jump();
+    void* next = self.label();
+    foreach (j : miss[:misses]) self.bind(j, next);
+    self.op2(jit::SLJIT_ADD, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, 1);
+    self.bind(self.jump(), loop);
+    self.bind(exhausted, self.label());
+    return match;
+}
+
 // Emit one subject form's body and generate its code. Null when SLJIT refuses
 // to generate.
 fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
@@ -1422,6 +1668,7 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     // this build.
     a.mov(a.s_data, 0, jit::SLJIT_MEM | a.s_e, a.lay.in_data);
     a.mov_u32(a.s_len, 0, jit::SLJIT_MEM | a.s_e, a.lay.in_len);
+    a.emit_literal();
     a.mov(a.s_polls, 0, jit::SLJIT_IMM, re_native::RE_POLL_INTERVAL);
     if (a.scanning) {
         a.emit_scan();

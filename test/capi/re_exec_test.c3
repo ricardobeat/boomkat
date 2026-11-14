@@ -287,6 +287,27 @@ fn void deep_cases() {
     }
 }
 
+// The literal checks the compiled body makes before its first attempt, with
+// the literal at every offset around the 16- and 32-byte blocks its search
+// screens, in subjects whose filler holds the literal's units on their own.
+fn void literal_cases() {
+    String[] patterns = { "foo", "x=", "=", "NQ_VQ", "^ab", "ab(c)", "q[0-9]+z", "([a-z])NQ_VQ" };
+    String[] literals = { "foo", "x=", "=", "NQ_VQ", "ab", "abc", "q12z", "kNQ_VQ" };
+    String filler = "fo x=NQ_Vab qz12 ";
+    int[] lengths = { 1, 15, 16, 17, 31, 32, 33, 47, 64, 65, 100 };
+    foreach (pi, pattern : patterns) {
+        foreach (len : lengths) {
+            for (int at = 0; at + (int)literals[pi].len <= len; at += (at < 40 ? 1 : 13)) {
+                ushort[128] units;
+                for (int i = 0; i < len; i++) units[i] = (ushort)filler[i % filler.len];
+                foreach (k, c : literals[pi]) units[at + k] = (ushort)c;
+                check(pattern, units[:len], 0, true);
+                check(pattern, units[:len], re_bindings::RE_FLAG_STICKY, true);
+            }
+        }
+    }
+}
+
 fn void cases() {
     // The position loop, a class and a greedy run over it.
     check("[a-c]+x", (ushort[]){'z', 'z', 'a', 'b', 'c', 'x', 'z'}, 0, true);
@@ -477,6 +498,7 @@ fn void main() {
         return;
     }
     deep_cases();
+    literal_cases();
     cases();
     octane_cases();
     if (failures != 0) {

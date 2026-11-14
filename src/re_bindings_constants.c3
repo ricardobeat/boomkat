@@ -12,8 +12,11 @@ const int RE_FLAG_UNICODE_SETS = 128;
 const int RE_MATCH    = 1;
 const int RE_NO_MATCH = 0;
 
-const int RE_PREFILTER_NONE  = -1;
-const int RE_PREFILTER_MATCH = -2;
+// Where re_literal's literal sits in a match.
+const int RE_LIT_REQUIRED = 0;
+const int RE_LIT_PREFIX   = 1;
+const int RE_LIT_AT       = 2;
+const int RE_LIT_AT_ZERO  = 3;
 
 /* Must match src/re_wrapper.h. A buffer of 2 * RE_MAX_CAPTURES ints holds
  * the bounds of every group the engine reports.
