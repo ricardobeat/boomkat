@@ -877,6 +877,31 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     }
 }
 
+// STORE_GLOBAL and STEP_GLOBAL: the baseline's global store path (Asm.global_store_slot), its
+// misses exits, then the store of the value or of the stepped fastint.
+fn void OptCg.emit_store_global(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.decode((uint)n.imm);
+    a.call.len = 0;
+    a.global_store_slot((long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1]);
+    if (n.op == OptOp.STORE_GLOBAL) {
+        self.exit_calls(i, OptExit.SLOW_PATH);
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R2, a.lay.vic_bindings);
+        self.store_slot_value(i, n.a, a.w.a);
+        return;
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R0, 0);
+    a.guard_int(R1);
+    sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ADD | SLJIT_SET_OVERFLOW, R1, 0, R1, 0, SLJIT_IMM, (a.w.op == Opcode.INC_GLOBAL ? 1L : -1L) << 16);
+    a.call.add(sljit_emit_jump(c, SLJIT_OVERFLOW));
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    a.box_shifted(R1);
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R1, 0);
+    self.def_value(i, R1);
+}
+
 // GETCAP as a number: the baseline's capture read, leaving for the baseline code on the slow
 // cases and on a value that is not of the node's kind.
 fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
@@ -1963,7 +1988,12 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     int m = SLJIT_MEM;
     void*[16] miss;
     uint misses = 0;
-    if (n.a != NO_NODE) {
+    uint most_regs = 0;
+    for (uint f = 0; f < set.count; f++) most_regs = max(most_regs, set.fns[f].num_regs);
+    void* proven = null;
+    if ((n.cc & OPT_CALLEE_PROVEN) != 0) {
+        proven = sljit_emit_jump(c, SLJIT_JUMP);
+    } else if (n.a != NO_NODE) {
         int r = self.value_reg(n.a, R1);
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     } else {
@@ -1994,7 +2024,6 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV_S32, R4, 0, m | R0, k.fn_builtin);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R0, a.lay.fn_comp_func);
-    uint most_regs = 0;
     void*[hobject::IC_CALL_TARGETS] found;
     for (uint f = 0; f < set.count; f++) {
         if (f + 1 < set.count) {
@@ -2002,7 +2031,6 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
         } else {
             miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)(usz)set.fns[f]);
         }
-        most_regs = max(most_regs, set.fns[f].num_regs);
     }
     if (set.count > 1) {
         void* is_one = sljit_emit_label(c);
@@ -2012,6 +2040,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     a.emit_scope_test(R0, R4, &scope);
     for (uint j = 0; j < scope.len; j++) miss[misses++] = scope.at[j];
     if (constant != null) sljit_set_label(constant, sljit_emit_label(c));
+    if (proven != null) sljit_set_label(proven, sljit_emit_label(c));
     // An exit from the body publishes its frame and those of the calls around it.
     a.room_acts = max(a.room_acts, caller.depth + 1);
     a.room_slots = max(a.room_slots, callee_reg + 2 + most_regs + vm::FRAME_SCRATCH_SLOTS);
@@ -2096,7 +2125,17 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     // no values of the optimized code, so nothing is saved around it.
     Jumps slow;
     void* done = null;
-    if (inline_alloc_ok() && want <= hobject::SHAPED_INLINE_MAX_PROPS) {
+    if (inline_alloc_ok() && want <= hobject::SHAPED_INLINE_MAX_PROPS && n.key != null) {
+        // Heap.set_prototype also walks the other realms when there are any.
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | a.heap, a.lay.heap_realms, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF, SLJIT_IMM, (long)(usz)n.key);
+        InlineAlloc plan = a.plain_object_plan(vm::constructor_inline_capacity(want));
+        a.emit_inline_alloc(&plan, &slow);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+        done = sljit_emit_jump(c, SLJIT_JUMP);
+        slow.bind(sljit_emit_label(c));
+        self.load_constructor(n);
+    } else if (inline_alloc_ok() && want <= hobject::SHAPED_INLINE_MAX_PROPS) {
         Layout* l = a.lay;
         int m = SLJIT_MEM;
         // jit_opt_new_object's guards: a constructor, and the cache's own `prototype` data property.
@@ -2159,6 +2198,10 @@ fn OptSinkSite* OptCg.new_site(&self, OptNode* n, CompiledFunction* cf) {
     self.oc.sink_sites = site;
     site.new_ic = &((hobject::ICEntry*)self.g.fns[n.fidx].f.ic_entries)[a.next - 1];
     site.want = opt_constructor_want(cf);
+    if (n.key != null) {
+        site.fixed = true;
+        site.proto = n.key;
+    }
     return site;
 }
 
@@ -2200,6 +2243,10 @@ fn void OptCg.load_constructor(&self, OptNode* n) {
 fn void OptCg.emit_site_check(&self, uint i, OptSinkSite* site) {
     void* c = self.a.c;
     Asm* a = self.a;
+    if (self.g.nodes[i].key != null) {
+        self.emit_const_site_check(i, site);
+        return;
+    }
     void*[5] slow;
     slow[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM, (long)(usz)&site.ctor);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, a.lay.obj_shape);
@@ -2226,6 +2273,30 @@ fn void OptCg.emit_site_check(&self, uint i, OptSinkSite* site) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
+// emit_site_check of a constant constructor whose `prototype` the code watches (NEW_OBJECT key): of
+// the state the site recorded, only the prototype epoch, for the chain the adds shadow, and the
+// recycle epoch, for the shape ids the site holds, can change.
+fn void OptCg.emit_const_site_check(&self, uint i, OptSinkSite* site) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    void*[2] slow;
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.prototype_epoch - (char*)self.h));
+    slow[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R2, (long)((char*)&site.epoch - (char*)site));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.shape_recycle_epoch - (char*)self.h));
+    slow[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, (long)((char*)&site.recycle - (char*)site));
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    void* label = sljit_emit_label(c);
+    foreach (j : slow) sljit_set_label(j, label);
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    self.a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_sink_check);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
 // The object of NEW_OBJECT node `i` whose adds the code knows, once `site` holds for the
 // constructor: empty, with room for site.want properties and the prototype the site recorded, built
 // inline, else by vm::jit_opt_site_object with the registers in use saved around the call.
@@ -2237,8 +2308,13 @@ fn void OptCg.emit_site_new(&self, uint i, OptSinkSite* site) {
     void* done = null;
     if (inline_alloc_ok()) {
         Jumps slow;
-        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM, (long)(usz)&site.proto);
-        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF, R2, 0);
+        void* proto = self.g.nodes[i].key;
+        if (proto != null) {
+            sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF, SLJIT_IMM, (long)(usz)proto);
+        } else {
+            sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM, (long)(usz)&site.proto);
+            sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF, R2, 0);
+        }
         InlineAlloc plan = a.plain_object_plan(vm::constructor_inline_capacity(site.want));
         a.emit_inline_alloc(&plan, &slow);
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
@@ -2385,18 +2461,53 @@ fn bool OptCg.emit_known_add(&self, OptNode* n, void** done) {
     } else {
         self.value_to(n.a, R2);
     }
-    if (n.a == NO_NODE || self.g.nodes[n.a].counted) {
+    // A string is counted as Heap.init_slot_ref counts it, its object then marked for teardown
+    // (Asm.emit_fill_elements: the fresh object needs no barrier).
+    void* counted = null;
+    int rr = self.value_reg(n.b, R1);
+    if ((n.a == NO_NODE || self.g.nodes[n.a].counted) && !inline_alloc_ok()) {
         void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
         sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, k_obj_op(), k_obj_w());
         other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
         sljit_set_label(inert, sljit_emit_label(c));
+    } else if (n.a == NO_NODE || self.g.nodes[n.a].counted) {
+        Jumps plain;
+        plain.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START));
+        sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, k_obj_op(), k_obj_w());
+        plain.add(sljit_emit_cmp(c, SLJIT_LESS, R0, 0, span_op(), span_w()));
+        sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, SLJIT_IMM, K_STRING_START);
+        other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R0, a.lay.str_refcount);
+        plain.add(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)types::STRING_PINNED_REFCOUNT));
+        sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, SLJIT_IMM, 1);
+        sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R0, a.lay.str_refcount, R3, 0);
+        counted = sljit_emit_jump(c, SLJIT_JUMP);
+        plain.bind(sljit_emit_label(c));
     }
-    int rr = self.value_reg(n.b, R1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     a.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, (long)slot * TVal::size, R2, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_shape, SLJIT_IMM, (long)n.shape);
     sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_prop_count, SLJIT_IMM, (long)slot + 1);
+    if (counted != null) {
+        void* stored = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(counted, sljit_emit_label(c));
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
+        a.prop_base(R0, R1);
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, (long)slot * TVal::size, R2, 0);
+        sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_shape, SLJIT_IMM, (long)n.shape);
+        sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_prop_count, SLJIT_IMM, (long)slot + 1);
+        // An object the pools could not place has no teardown bit: the sweep tears every such one down.
+        hobject::ObjFlags fallback;
+        fallback.pool_fallback = true;
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, 0);
+        sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, (long)(uint)fallback);
+        void* unpooled = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, R1, 0);
+        a.emit_needs_teardown();
+        sljit_set_label(unpooled, sljit_emit_label(c));
+        sljit_set_label(stored, sljit_emit_label(c));
+    }
     if (other == null) return false;
     *done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(other, sljit_emit_label(c));
@@ -2449,6 +2560,12 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
 fn void OptCg.emit_guard_binding(&self, uint i, OptNode* n) {
     OptBinding* b = &self.g.bindings[(usz)n.imm];
     ulong bits = 1UL << n.imm;
+    if ((n.cc & OPT_GUARD_WATCH) != 0) {
+        self.a.call.len = 0;
+        self.binding_tests(OPT_FACT_WATCH);
+        self.exit_calls(i, OptExit.WATCH);
+        return;
+    }
     if ((n.cc & OPT_GUARD_LAYOUT) != 0) bits |= 1UL << (OPT_FACT_HOLDER + b.holder);
     if ((n.cc & OPT_GUARD_EPOCH) != 0) bits |= OPT_FACT_EPOCH;
     self.a.call.len = 0;
@@ -2458,8 +2575,8 @@ fn void OptCg.emit_guard_binding(&self, uint i, OptNode* n) {
 }
 
 // The tests of the facts `bits` of OptBuild.fact_bindings, into the jumps Asm.call collects: each
-// holder's layout, the folded-object epoch, then each binding's value and a typed array value's
-// store in place.
+// holder's layout, the folded-object and watch epochs, then each binding's value and a typed array
+// value's store in place.
 fn void OptCg.binding_tests(&self, ulong bits) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -2477,6 +2594,10 @@ fn void OptCg.binding_tests(&self, ulong bits) {
     if ((bits & OPT_FACT_EPOCH) != 0) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.folded_epoch - (char*)self.h));
         a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, self.g.folded_epoch));
+    }
+    if ((bits & OPT_FACT_WATCH) != 0) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.opt.watch_epoch - (char*)self.h));
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, self.g.watch_epoch));
     }
     for (uint k = 0; k < OPT_BINDINGS_MAX; k++) {
         if ((bits & (1UL << k)) == 0) continue;
@@ -2552,8 +2673,13 @@ fn void OptCg.emit_typeof(&self, uint i, OptNode* n) {
 }
 
 // An INSTANCEOF of an inlined body: the baseline's inline path on the window, its misses exits.
+// Of rep VALUE, the walk of the prototype chain for the prototype object key (OptBuild.instance_of).
 fn void OptCg.emit_instanceof(&self, uint i, OptNode* n) {
     void* c = self.a.c;
+    if (n.rep == OptRep.VALUE) {
+        self.emit_prototype_walk(i, n);
+        return;
+    }
     self.decode(n);
     if (n.a != NO_NODE) {
         int r = self.value_reg(n.a, R4);
@@ -2573,6 +2699,41 @@ fn void OptCg.emit_instanceof(&self, uint i, OptNode* n) {
     miss.bind(sljit_emit_label(self.a.c));
     self.exit_at(sljit_emit_jump(self.a.c, SLJIT_JUMP), i, OptExit.SLOW_PATH);
     done.bind(sljit_emit_label(self.a.c));
+}
+
+// `x instanceof F` for the value of node a (or of window slot imm), as OrdinaryHasInstance with F's
+// prototype object key: false for a primitive, else the walk of x's prototype chain. A proxy on the
+// chain, a light function and a chain longer than MAX_PROTO_DEPTH leave for the baseline code.
+fn void OptCg.emit_prototype_walk(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    if (n.a != NO_NODE) {
+        self.value_to(n.a, R0);
+    } else {
+        a.load(R0, (uint)n.imm);
+    }
+    a.call.len = 0;
+    Jumps yes;
+    Jumps no;
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+    void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, span_op(), span_w());
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
+    a.call.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w()));
+    no.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(object, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)hobject::MAX_PROTO_DEPTH);
+    void* loop = sljit_emit_label(c);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, a.lay.proxy_mask);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, a.lay.obj_proto);
+    yes.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)n.key));
+    no.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    sljit_emit_op2(c, SLJIT_SUB, R2, 0, R2, 0, SLJIT_IMM, 1);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0), loop);
+    a.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    self.def_bool_jumps(i, n, &yes, &no);
 }
 
 // The object an inlined body allocates, built inline as the baseline emitter builds it and stored
@@ -3583,7 +3744,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.GUARD_BINDING || n.op == OptOp.GUARD_CAPTURE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH || n.op == OptOp.REGEXP_EXEC || n.op == OptOp.STRING_REGEXP) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.STORE_GLOBAL || n.op == OptOp.STEP_GLOBAL || n.op == OptOp.GUARD_BINDING || n.op == OptOp.GUARD_CAPTURE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH || n.op == OptOp.REGEXP_EXEC || n.op == OptOp.STRING_REGEXP) {
         if (self.force_here(n)) {
             self.forced_done = true;
             // The hook falls through once its count is spent: an allocation for the exit must not run then.
@@ -3634,6 +3795,9 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_load_var(i, n);
         case LOAD_GLOBAL:
             self.emit_load_global(i, n);
+        case STORE_GLOBAL:
+        case STEP_GLOBAL:
+            self.emit_store_global(i, n);
         case GUARD_BINDING:
             self.emit_guard_binding(i, n);
         case GUARD_CAPTURE:

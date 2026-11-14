@@ -369,6 +369,9 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent, HObject* object = null)
             return types::ALLOC_ERROR~;
         }
         env.bindings = bindings;
+        // Optimized code watches global bindings (jit::opt_watch_holder): flagged from the start, no
+        // shape-generation bump discards code guarding the others.
+        if (parent == null) bindings.gc.bindings_watched = true;
         heap.shade_root_object(bindings);
         return env;
     }

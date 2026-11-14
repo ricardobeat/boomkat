@@ -888,6 +888,9 @@ bitstruct GcBits : uint {
     // A store into this object's slots, or a change to its properties, clears
     // Heap.regexp_pristine; see builtins::regexp_guard_arm.
     bool watched : 18;
+    // Optimized code folds bindings of this object (jit::OptWatch): a store into its slots or a
+    // change to its properties re-checks them.
+    bool bindings_watched : 19;
     // The collection epoch (Heap.gc_epoch) of the cycle that last marked this
     // node; see Heap.gc_is_marked.
     char mark : 24..31;

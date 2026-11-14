@@ -3140,6 +3140,7 @@ fn void Heap.reset(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.var_ic_filled = false;
+    $if $feat(SLJIT): jit::opt_clear_watches(self); $endif
     self.regexp_guard = {};
     self.regexp_pristine = false;
     self.match_shape = 0;
@@ -4327,6 +4328,7 @@ fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst,
     }
     *dst = (hobject::PropValue)*src;
     src.set_undefined();
+    self.slot_stored(owner, dst);
 }
 
 // ============================================================================
@@ -4502,6 +4504,7 @@ fn void Heap.join_visited_pop(&self) {
 fn void Heap.store_slot(&self, HObject* owner, hobject::PropValue* slot, TVal v) @inline {
     *slot = (hobject::PropValue)v;
     self.write_barrier(owner, v);
+    self.slot_stored(owner, slot);
 }
 
 /**
@@ -4516,6 +4519,38 @@ fn void Heap.store_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVa
     self.write_barrier(owner, *src);
     self.decref_tval(&old);
     *slot = (hobject::PropValue)*src;
+    self.slot_stored(owner, slot);
+}
+
+// A value was stored into `slot` of `owner`: a binding optimized code watches there may have
+// changed (jit::opt_watch_store).
+fn void Heap.slot_stored(&self, HObject* owner, hobject::PropValue* slot) @inline {
+$if $feat(SLJIT):
+    if (owner != null && owner.gc.bindings_watched) jit::opt_watch_store(self, owner, slot);
+$endif
+}
+
+// The property at `idx` of `owner` changed its attributes or was deleted (jit::opt_watch_property).
+fn void Heap.property_changed(&self, HObject* owner, uint idx, bool deleted) @inline {
+$if $feat(SLJIT):
+    if (owner.gc.bindings_watched) jit::opt_watch_property(self, owner, idx, deleted);
+$endif
+}
+
+// `owner` gained an own symbol-keyed property or another [[Prototype]] (jit::opt_watch_holder_changed).
+fn void Heap.holder_changed(&self, HObject* owner) @inline {
+$if $feat(SLJIT):
+    if (owner.gc.bindings_watched) jit::opt_watch_holder_changed(self, owner);
+$endif
+}
+
+// Whether a binding at `idx` of `owner` is watched, so that no cache may store to it.
+fn bool Heap.binding_watched(&self, HObject* owner, uint idx) @inline {
+$if $feat(SLJIT):
+    return owner.gc.bindings_watched && jit::opt_watching(self, owner, idx);
+$else
+    return false;
+$endif
 }
 
 // A watched object changed: every realm's guard over its intrinsics re-verifies,
@@ -4646,6 +4681,7 @@ fn void Heap.observed_object_died(&self) @noinline {
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
     if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch(obj);
+    if (obj.prototype != proto) self.holder_changed(obj);
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;

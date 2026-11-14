@@ -4,6 +4,7 @@ import boomkat::types;
 import boomkat::hobject;
 import boomkat::bytecode;
 import boomkat::esm;
+import boomkat::jit;
 
 // Scan one constant or inline-cache edge. The caller keeps only indices, so
 // compiler array growth cannot leave a cursor pointing into old storage.
@@ -43,6 +44,7 @@ fn void Heap.gc_scan_new_compiled_step(&self, uint budget) {
 // Fixed intrinsic roots are a bounded group independent of heap size.
 fn void Heap.mark_fixed_roots(&self) {
     self.mark_intrinsics(&self.realm_state);
+    $if $feat(SLJIT): jit::opt_mark_watches(self); $endif
 }
 
 // Each stage keeps an index rather than a pointer into a resizable array.
