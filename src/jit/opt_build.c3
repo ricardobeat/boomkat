@@ -2161,7 +2161,7 @@ fn bool OptBuild.regexp_call(&self) {
     return true;
 }
 
-// A CALL of String.prototype.replace, replaceAll, split, match or search (opt_string_regexp_kind)
+// A CALL of String.prototype.replace, replaceAll, split, match or search (vm::string_regexp_kind)
 // that the site has always made (hobject::IC_BUILTIN_TARGET), in the function's own body: a
 // CHECK_BUILTIN of the callee, then a STRING_REGEXP of the receiver and arguments, from their nodes
 // (a, b, c) or the window.
@@ -2172,7 +2172,7 @@ fn bool OptBuild.string_regexp_call(&self) {
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
     uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
-    int kind = opt_string_regexp_kind(builtin, self.w.c);
+    int kind = vm::string_regexp_kind(builtin, self.w.c);
     if (kind < 0 || opt_site_banned(self.f, f, self.next_pc - 1)) return false;
     uint callee = self.w.b;
     uint ra = self.w.a;

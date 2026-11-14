@@ -828,6 +828,13 @@ fn void Asm.emit_callee_cf(&self, int reg) {
     self.mov(reg, 0, SLJIT_MEM | reg, self.lay.fn_comp_func);
 }
 
+// The builtins vm::jit_call_string_regexp runs (vm::string_regexp_kind).
+const int[5] STRING_REGEXP_BUILTINS = {
+    builtins::Builtin.STRING_PROTO_REPLACE.ordinal, builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal,
+    builtins::Builtin.STRING_PROTO_SPLIT.ordinal, builtins::Builtin.STRING_PROTO_MATCH.ordinal,
+    builtins::Builtin.STRING_PROTO_SEARCH.ordinal,
+};
+
 // The call subroutine. In: R1 the callee's window (the function two slots
 // below it, the receiver one below), R2 the result slot, R3 the argument
 // count with CALL_METHOD, CALL_PLAIN or CALL_CONSTRUCT, R4 the caller's resume point. Tests
@@ -876,10 +883,12 @@ fn void Asm.emit_call_body(&self) {
     done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     void* declined = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_regexp, sljit_emit_label(c));
-    // String.prototype.replace and replaceAll with a RegExp try vm::jit_call_string_regexp.
-    void* replace = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, builtins::Builtin.STRING_PROTO_REPLACE.ordinal);
-    void* not_replace = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal);
-    sljit_set_label(replace, sljit_emit_label(c));
+    // String.prototype.replace, replaceAll, split, match and search with a RegExp try
+    // vm::jit_call_string_regexp.
+    Jumps string_regexp;
+    foreach (b : STRING_REGEXP_BUILTINS) string_regexp.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, b));
+    void* not_replace = sljit_emit_jump(c, SLJIT_JUMP);
+    string_regexp.bind(sljit_emit_label(c));
     self.mov(R2, 0, R4, 0);
     self.mov(R1, 0, m | self.la, k.act_curr_pc);
     self.mov(R0, 0, ds, 0);

@@ -438,26 +438,13 @@ fn uint opt_ran_end(CompiledFunction* f) {
     return 0;
 }
 
-// The STRING_REGEXP kind (vm::StringRegexpKind) of a call of builtin `builtin` with `argc`
-// arguments, or -1: replace and replaceAll with two, split, match and search with one.
-fn int opt_string_regexp_kind(uint builtin, uint argc) {
-    switch (builtin) {
-        case builtins::Builtin.STRING_PROTO_REPLACE.ordinal: return argc == 2 ? vm::StringRegexpKind.REPLACE.ordinal : -1;
-        case builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal: return argc == 2 ? vm::StringRegexpKind.REPLACE_ALL.ordinal : -1;
-        case builtins::Builtin.STRING_PROTO_SPLIT.ordinal: return argc == 1 ? vm::StringRegexpKind.SPLIT.ordinal : -1;
-        case builtins::Builtin.STRING_PROTO_MATCH.ordinal: return argc == 1 ? vm::StringRegexpKind.MATCH.ordinal : -1;
-        case builtins::Builtin.STRING_PROTO_SEARCH.ordinal: return argc == 1 ? vm::StringRegexpKind.SEARCH.ordinal : -1;
-        default: return -1;
-    }
-}
-
 // Whether the CALL at word `i` of `f` has always called a String.prototype method the tier builds
 // as a STRING_REGEXP (OptBuild.string_regexp_call).
 fn bool opt_string_regexp_site(CompiledFunction* f, uint i) {
     if (f.code[i].op != Opcode.CALL) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
     if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
-    return opt_string_regexp_kind(ic.prop_idx & ~hobject::IC_BUILTIN_TARGET, f.code[i].c) >= 0;
+    return vm::string_regexp_kind(ic.prop_idx & ~hobject::IC_BUILTIN_TARGET, f.code[i].c) >= 0;
 }
 
 // Whether `f` is mostly integer work the baseline runs boxed: at least OPT_INT_WORK arithmetic,
