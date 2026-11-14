@@ -65,6 +65,10 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
     HObject*? adapter_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = adapter_raw) return null;
     HObject* adapter = adapter_raw;
+    // The `next` getter below runs code, which can collect.
+    heap::ObjectRoot adapter_root;
+    heap.push_object_root(&adapter_root, adapter);
+    defer heap.pop_object_root(&adapter_root);
     heap.set_prototype(adapter, heap.async_from_sync_iter_proto);
 
     HString* slot_key = heap.str_intern_hidden(ASYNC_FROM_SYNC_ITERATOR_SLOT);
