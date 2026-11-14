@@ -165,7 +165,7 @@ fn bool Heap.joint_begin(&self) {
         for (HeapHeader* cur = self.next_object(&pinned_objects); cur != null;
              cur = self.next_object(&pinned_objects)) {
             if (!cur.is_temproot()) continue;
-            cur.set_reachable();
+            self.gc_set_marked(cur);
             if (cur.is_object()) self.gray_push((HObject*)cur);
         }
         hobject::env_pool_seed_or_clear_pins(self, false);

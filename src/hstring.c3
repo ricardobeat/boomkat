@@ -74,13 +74,11 @@ const uint ASTRAL_START         = 0x1_0000;
 // Bit-packed flags word for HString.
 //
 // Bits 0 to 6 mirror HeapHeader's type and GC bits, so a raw cast from
-// HString* to HeapHeader* still reads the right htype and mark bits. Bits 7
+// HString* to HeapHeader* still reads the right htype and GC flags. Bits 7
 // and up carry string-specific metadata.
 bitstruct HStringFlags : uint {
     // HeapHeader-compatible type discriminator (always HType.STRING).
     HType htype             : 0..1;
-    // GC reachable flag (mirrors HeapHeader.flags.reachable).
-    bool  reachable         : 2;
     // GC temporary root flag.
     bool  temproot          : 3;
     // Finaliser present flag.
