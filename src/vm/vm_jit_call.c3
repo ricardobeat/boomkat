@@ -1228,6 +1228,28 @@ $else
 $endif
 }
 
+// The match array of `rx` over `s` for the match generated code ran into Heap.regexp_caps
+// (jit::OptCg.emit_regexp_body), boxed; null when it could not be allocated. The allocation
+// does not collect.
+fn ulong jit_regexp_match(Heap* heap, HObject* rx, HString* s) {
+$if types::USE_NANBOX:
+    int* caps = &heap.regexp_caps;
+    if (caps[0] == -1) caps[0] = 0;
+    if (caps[1] == -1) caps[1] = caps[0];
+    HObject* arr = builtins::regexp_match_array(heap, (*rx.extra_ptr()).regexp.regexp_data, s, caps,
+                                                ((*rx.extra_ptr()).regexp.flags & 64) != 0);
+    TVal result;
+    if (arr == null) {
+        result.set_null();
+    } else {
+        result.set_object(arr);
+    }
+    return result.bits;
+$else
+    return 0;
+$endif
+}
+
 // A CALL, CALL_UNDEF_THIS or CALL_GLOBAL whose callee is a builtin, through th_call_native
 // as the threaded burst runs it (identity fast paths such as charCodeAt, then
 // the builtin's own dispatch) instead of op_call. False when it declined before

@@ -825,6 +825,12 @@ struct RealmState {
     // by builtins::regexp_guard_arm, which marks the objects the guard reads as
     // watched; a write to a watched object clears it.
     bool                regexp_pristine;
+    // The argument block and capture buffer generated code calls a compiled
+    // regexp body with, and the interrupt that body polls. A body neither
+    // allocates nor runs script, so one block serves every call.
+    re_bindings::ReCall      regexp_call;
+    int[2 * re_bindings::RE_CALL_GROUPS] regexp_caps;
+    re_bindings::ReInterrupt regexp_poll;
     // The shape of a RegExp match array without `d`: index, input, groups and
     // length, whatever its capture count. The epoch is the shape-recycle epoch
     // it was read in; 0 until one has been built.
@@ -2101,6 +2107,8 @@ fn void Heap.init_shapes(&self) {
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
     self.regexp_pristine = false;
+    self.regexp_poll = { &regexp_interrupt, self };
+    self.regexp_call = { .caps = &self.regexp_caps, .interrupt = &self.regexp_poll };
     self.match_shape = 0;
     self.regexp_shape = 0;
     self.slice_cache = {};

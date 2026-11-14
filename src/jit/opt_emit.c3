@@ -15,6 +15,9 @@ import boomkat::hobject;
 import boomkat::env;
 import boomkat::vm;
 import boomkat::builtins;
+import boomkat::hstring;
+import boomkat::re_bindings;
+import boomkat::re_native;
 import std::math;
 import std::collections::list;
 import std::io;
@@ -2807,8 +2810,9 @@ fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
     self.def_int(i, R0);
 }
 
-// REGEXP_EXEC: vm::jit_opt_regexp with the registers in use saved around the call; what it refuses
-// leaves for the baseline code at the CALL.
+// REGEXP_EXEC with the registers in use saved around it: a non-global, non-sticky plain RegExp
+// over a string runs its compiled body in line (emit_regexp_body), and anything else calls
+// vm::jit_opt_regexp; what that refuses leaves for the baseline code at the CALL.
 fn void OptCg.emit_regexp_exec(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
@@ -2826,12 +2830,130 @@ fn void OptCg.emit_regexp_exec(&self, uint i, OptNode* n) {
         if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
     }
     self.spill_live(i, true);
+    Jumps slow;
+    void* done = null;
+    if (types::USE_NANBOX && features::REGEXP) {
+        self.emit_regexp_body(n.cc != 0, &slow);
+        done = sljit_emit_jump(c, SLJIT_JUMP);
+        slow.bind(sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | reg_sp(), REGEXP_RECV_OFF);
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | reg_sp(), REGEXP_ARG_OFF);
+    }
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)n.cc);
     self.a.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_regexp);
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
+    void* defined = sljit_emit_jump(c, SLJIT_JUMP);
+    if (done != null) {
+        sljit_set_label(done, sljit_emit_label(c));
+        self.spill_live(i, false);
+    }
+    sljit_set_label(defined, sljit_emit_label(c));
     self.def_value(i, R0);
+}
+
+// Where emit_regexp_body keeps the boxed receiver and argument across the body's call, in the
+// frame's CALL_FRAME_BYTES, which no subroutine uses meanwhile.
+const long REGEXP_RECV_OFF = 8;
+const long REGEXP_ARG_OFF = 16;
+
+// RegExpBuiltinExec, or test's boolean, of the boxed receiver in R1 over the boxed argument in R2,
+// into R0 boxed, without leaving generated code unless the match builds an array: a RegExp of the
+// shared plain shape whose flags have neither g nor y (so lastIndex is neither read nor written),
+// for test with the pristine prototype it is created with, a flat string, and a compiled body for
+// the string's width and at most re_bindings::RE_CALL_GROUPS groups. The body runs from 0 through
+// Heap.regexp_call. Any other case, and an interrupted run, takes the jumps in `slow` with R1 and
+// R2 saved at REGEXP_RECV_OFF and REGEXP_ARG_OFF and nothing done.
+fn void OptCg.emit_regexp_body(&self, bool test, Jumps* slow) {
+$if features::REGEXP:
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    Heap* h = a.hp;
+    int m = SLJIT_MEM;
+    int hp = m | a.heap;
+    int sp = m | reg_sp();
+    HObject* o = (HObject*)(usz)4096;
+    hobject::HObjectExtra* x = o.extra_ptr();
+    re_native::ReNative* nat = (re_native::ReNative*)(usz)4096;
+    hstring::HString* str = (hstring::HString*)(usz)4096;
+    hstring::HStringFlags odd = { .is_symbol = true, .has_extdata = true };
+    hstring::HStringFlags wide = { .is_wide = true };
+    sljit_emit_op1(c, SLJIT_MOV, sp, REGEXP_RECV_OFF, R1, 0);
+    sljit_emit_op1(c, SLJIT_MOV, sp, REGEXP_ARG_OFF, R2, 0);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R1, 0, k_obj_op(), k_obj_w());
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R3, 0);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.proxy_mask);
+    slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_regexp));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, hp, (char*)&h.regexp_shape - (char*)h);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, m | R3, l.obj_shape));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, hp, (char*)&h.regexp_shape_epoch - (char*)h);
+    slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, hp, l.heap_epoch));
+    sljit_emit_op1(c, SLJIT_MOV_S32, R0, 0, m | R3, (char*)&x.regexp.flags - (char*)o);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, 1 | 32);
+    slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    if (test) {
+        // test's RegExpExec must find the intrinsic exec.
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | R3, l.obj_proto);
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, hp, (char*)&h.regexp_proto - (char*)h));
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, hp, (char*)&h.regexp_pristine - (char*)h);
+        slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R3, (char*)&x.regexp.regexp_data - (char*)o);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    // re_wrapper.c keeps the native program first, null until a run prepares it.
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R4, 0);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R4, (char*)&nat.prog.capture_count - (char*)nat);
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, re_bindings::RE_CALL_GROUPS));
+    // The argument: a string with its units in line.
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R2, 0, SLJIT_IMM, K_STRING_START);
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w()));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R2, 0);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R0, 0, SLJIT_IMM, (long)(uint)odd);
+    slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, (long)(uint)wide);
+    void* narrow = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R4, (char*)&nat.code_wide - (char*)nat);
+    void* picked = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(narrow, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R4, (char*)&nat.code_narrow - (char*)nat);
+    sljit_set_label(picked, sljit_emit_label(c));
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    // The call block: the units, their count and the start.
+    re_bindings::ReCall* call = &h.regexp_call;
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, a.heap, 0, SLJIT_IMM, (char*)call - (char*)h);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R2, 0, SLJIT_IMM, (long)hstring::HSTRING_HDR_SIZE);
+    sljit_emit_op1(c, SLJIT_MOV, m | R0, (char*)&call.data - (char*)call, R1, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R2, (char*)&str.length - (char*)str);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, (char*)&call.len - (char*)call, R1, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, (char*)&call.start - (char*)call, SLJIT_IMM, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW_R, R4, 0);
+    TVal v;
+    void* matched = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, re_bindings::RE_MATCH);
+    slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, re_bindings::RE_NO_MATCH));
+    v.set_null();
+    if (test) v.set_boolean(false);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)v.bits);
+    void* failed = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(matched, sljit_emit_label(c));
+    if (test) {
+        v.set_boolean(true);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)v.bits);
+    } else {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, sp, REGEXP_RECV_OFF);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, k_obj_op(), k_obj_w());
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, REGEXP_ARG_OFF);
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R2, 0, SLJIT_IMM, K_STRING_START);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+        a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_regexp_match);
+    }
+    sljit_set_label(failed, sljit_emit_label(c));
+$endif
 }
 
 // Array.prototype.push of the boxed `value` onto `obj` for ARRAY_PUSH, as the builtin's dense fast

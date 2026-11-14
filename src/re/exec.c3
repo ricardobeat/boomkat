@@ -118,16 +118,7 @@ struct ReExec {
     ReInterrupt* interrupt;
 }
 
-// The arguments of a compiled body: the subject, the position to start at,
-// the capture buffer, which holds 2 * capture_count ints, and the interrupt.
-// The body keeps the rest of the run in its own frame.
-struct ReCall {
-    char* data;
-    uint len;
-    uint start;
-    int* caps;
-    ReInterrupt* interrupt;
-}
+alias ReCall = re_bindings::ReCall;
 
 // The capture slots a match ends with, in code-unit positions.
 struct ReOutcome {
