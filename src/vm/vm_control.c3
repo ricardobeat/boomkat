@@ -482,6 +482,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     func_obj.flags.callable = true;
     func_obj.flags.constructable = template.is_constructable();
     (*func_obj.extra_ptr()).func.comp_func = template;
+    if (template.closures_made < 2) template.closures_made++;
     // ECMA-262 with statement: a closure created inside `with` captures the with-env on
     // its PARENT chain, so calls made after WITH_END popped it still walk the
     // object (S12.10_A1.8_T4: `var f = function(){...}; new f()` inside with

@@ -1973,6 +1973,9 @@ struct CompiledFunction {
     // Where the last closure resolved each fixed capture (vm::resolve_fixed_capture), allocated
     // on first use.
     CaptureHint*    capture_hints;
+    // Closures made from the template, counted up to two: the code of one made more than once
+    // folds no per-closure value.
+    char            closures_made;
     // Constant-pool name per formal for a mapped `arguments` whose function
     // has a captured formal: a captured formal lives in the function's
     // environment under that name, and NO_FORMAL_NAME marks a formal that

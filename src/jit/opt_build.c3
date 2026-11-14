@@ -1404,12 +1404,12 @@ fn bool OptBuild.fold_global(&self) {
     return true;
 }
 
-// GETCAP of the function being optimized, of a binding the code can fold through the capture
-// record of the closure that was running it (OptBuild.refs): a declared binding of the scope or cell
+// GETCAP of the function being optimized, made into one closure only, of a binding the code can
+// fold through the capture record of that closure (OptBuild.refs): a declared binding of the scope or cell
 // that holds it, or a value snapshot. A GUARD_CAPTURE proves the record once in a frame.
 fn bool OptBuild.fold_capture(&self) {
     uint index = self.w.get_bc();
-    if (self.cur_fn != 0 || index >= self.f.capture_count || index >= 64 || opt_site_banned(self.f, self.f, self.next_pc - 1, true)) return false;
+    if (self.cur_fn != 0 || self.f.closures_made > 1 || index >= self.f.capture_count || index >= 64 || opt_site_banned(self.f, self.f, self.next_pc - 1, true)) return false;
     CaptureRef* refs = self.frame_refs();
     if (refs == null) return false;
     CaptureRef* ref = &refs[index];
