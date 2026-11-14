@@ -58,7 +58,7 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
 // defining compile saw those functions; without its record every name may be.
 fn bool outer_may_bind(ast::AstIndex* idx, uint atom) {
     CompiledFunction* f = idx.reparsed;
-    return f == null || !f.lazy_outer_known || idx.outer.data[atom] != 0;
+    return f == null || !f.lazy_outer_known || (idx.outer.data[atom] & ast::OUTER_BOUND) != 0;
 }
 
 // Index by atom what the template `f` records of the names outside its source,
@@ -67,8 +67,9 @@ fn void CompilerContext.index_outer_names(&self, ast::AstIndex* idx, CompiledFun
     idx.reparsed = f;
     if (!f.lazy_outer_known) return;
     idx.outer.zero((sz)idx.tree.atoms.count() + 1);
+    char* flags = f.lazy_name_flags();
     for (uint i = 0; i < f.const_count; i++) {
-        idx.outer.data[idx.tree.atoms.find(self.name_text((HString*)f.constants[i].get_heapptr()))] = ast::OUTER_BOUND;
+        idx.outer.data[idx.tree.atoms.find(self.name_text((HString*)f.constants[i].get_heapptr()))] = flags[i];
     }
     for (uint slot = 0; f.capture_cells != null && slot < f.capture_count; slot++) {
         if (f.capture_cells[slot] == 0) continue;
@@ -78,17 +79,18 @@ fn void CompilerContext.index_outer_names(&self, ast::AstIndex* idx, CompiledFun
 }
 
 // Record on the template `f` of the function scope `scope` which names its body
-// mentions that an enclosing function binds. The body's own source cannot show
-// them once it is reparsed alone, and a free name outside that set is a global.
+// mentions that an enclosing function binds, and which the script declares. The
+// body's own source cannot show them once it is reparsed alone, and a free name
+// no function binds is a global.
 // Nothing is recorded when a `with` or a direct eval around the function could
-// bind a name later, or when the body kept no list of the names it mentions.
+// bind a name later (an eval in a function nested beside it binds only there), or when the body kept no list of the names it mentions.
 fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scope) {
     ast::AstIndex* idx = ast::index_state;
     Heap* h = (Heap*)self.heap;
     uint fn_node = idx.res.scopes.data[scope].node;
     if (!idx.use || !idx.tree.body_was_recorded(fn_node)) return;
     if (self.has_direct_eval || self.has_with_stmt || self.in_with()
-        || self.in_eval_code || self.capture_all) return;
+        || self.in_eval_code || self.outer_with) return;
     if (idx.unknown_outer && (idx.reparsed == null || !idx.reparsed.lazy_outer_known)) return;
     for (uint s = idx.res.scopes.data[scope].parent; s != 0; s = idx.res.scopes.data[s].parent) {
         ast::Scope* sc = &idx.res.scopes.data[s];
@@ -98,7 +100,8 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
     uint refs = idx.tree.rhs.data[idx.tree.field(idx.tree.rhs.data[fn_node], ast::FN_BODY)];
     uint nrefs = idx.tree.field(refs, 1);
     // One slot at least, so a template with no outer names still owns a pool.
-    TVal* names = (TVal*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * TVal::size);
+    // The flag of each name follows the names (CompiledFunction.lazy_name_flags).
+    TVal* names = (TVal*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * (TVal::size + 1));
     uint* slots = (uint*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * uint::size);
     if (names == null || slots == null) {
         if (names != null) h.free_func(h.heap_udata, names);
@@ -114,17 +117,16 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
         uint atom = r & ~ast::REF_INDIRECT;
         if (atom == idx.res.atom_arguments) slotted = false;
         HString* name = h.ensure_interned(h.str_intern(idx.tree.atoms.get(atom)));
-        bool bound = idx.unknown_outer && outer_may_bind(idx, atom);
-        // From the function's own scope, which binds a function expression's name.
-        for (uint s = scope; s != 0 && !bound; s = idx.res.scopes.data[s].parent) {
-            bound = idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0;
-        }
-        if (!bound) continue;
+        char flags = self.outer_name_flags(idx, scope, atom);
+        if (flags == 0) continue;
         // Held like any pool string, so nothing releases it under the template.
-        if ((r & ast::REF_INDIRECT) == 0) slots[slot_count++] = count;
+        if ((flags & ast::OUTER_BOUND) != 0 && (r & ast::REF_INDIRECT) == 0) slots[slot_count++] = count;
+        // The flags wait past the last name until the names are counted.
+        ((char*)&names[nrefs + 1])[count] = flags;
         names[count++].set_string_borrowed(name);
         ((types::HeapHeader*)name).incref();
     }
+    mem::move(&names[count], &names[nrefs + 1], (sz)count);
     f.constants = names;
     f.const_count = count;
     f.lazy_outer_known = true;
@@ -133,6 +135,29 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
     // layout. A name left out stays in the parent's environment.
     f.capture_names = slots;
     f.capture_count = slotted ? slot_count : 0;
+}
+
+// What the scopes from the function scope `scope` outwards say of `atom`, as
+// OUTER_ flags: zero for a name no function binds and the script does not
+// declare. Scopes outside a reparsed function answer through its own record.
+fn char CompilerContext.outer_name_flags(&self, ast::AstIndex* idx, uint scope, uint atom) {
+    // The function's own scope binds a function expression's name.
+    for (uint s = scope; s != 0; s = idx.res.scopes.data[s].parent) {
+        bool script = idx.res.scopes.data[s].kind == ast::ScopeKind.GLOBAL;
+        uint b = idx.res.lookup(s, atom);
+        if (b == 0) continue;
+        switch (idx.res.bindings.data[b].kind) {
+            case VAR: case FUNC:
+                return script ? ast::OUTER_SCRIPT : ast::OUTER_BOUND | ast::OUTER_FIXED;
+            case LET: case CONST: case CLASS: case PARAM:
+                return script ? (char)0 : ast::OUTER_BOUND | ast::OUTER_FIXED;
+            default:
+                return script ? (char)0 : ast::OUTER_BOUND;
+        }
+    }
+    if (!idx.unknown_outer) return 0;
+    if (idx.reparsed == null || !idx.reparsed.lazy_outer_known) return ast::OUTER_BOUND;
+    return idx.outer.data[atom] & (ast::OUTER_BOUND | ast::OUTER_FIXED | ast::OUTER_SCRIPT);
 }
 
 // Compile the deferred body of `f`, which has one while lazy_paren is set. A

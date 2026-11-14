@@ -201,7 +201,7 @@ fn bool CompilerContext.adopt_capture_slots(&self, CompiledFunction* ready, Comp
 // as a capture, and no scope between can gain the name later.
 fn bool CompilerContext.outer_function_binds(&self, TVal name) {
     ast::AstIndex* idx = ast::index_state;
-    if (idx == null || !idx.use || idx.unknown_outer || self.func_ast_scope == 0) return false;
+    if (idx == null || !idx.use || self.func_ast_scope == 0) return false;
     uint atom = idx.tree.atoms.find(self.name_text((HString*)name.get_heapptr()));
     if (atom == 0 || atom == idx.res.atom_arguments) return false;
     const ushort DYNAMIC = ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS;
@@ -219,7 +219,9 @@ fn bool CompilerContext.outer_function_binds(&self, TVal name) {
                 return false;
         }
     }
-    return false;
+    // Past a reparsed function, its template's record speaks for the functions around it.
+    return idx.unknown_outer && idx.reparsed != null && idx.reparsed.lazy_outer_known
+        && (idx.outer.data[atom] & ast::OUTER_FIXED) != 0;
 }
 
 // True when this function's top-level scope binds the name as a var or a

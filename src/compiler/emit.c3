@@ -124,10 +124,13 @@ fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
 fn bool CompilerContext.is_script_global(&self, uint name_idx) {
     if (self.is_global || self.func_ast_scope == 0) return false;
     ast::AstIndex* idx = ast::index_state;
-    if (idx == null || !idx.use || idx.unknown_outer) return false;
+    if (idx == null || !idx.use) return false;
     HString* name = (HString*)self.constants[name_idx].get_heapptr();
     uint atom = idx.tree.atoms.find(self.name_text(name));
     if (atom == 0) return false;
+    if (idx.unknown_outer) {
+        return idx.reparsed != null && idx.reparsed.lazy_outer_known && (idx.outer.data[atom] & ast::OUTER_SCRIPT) != 0;
+    }
     uint s = self.func_ast_scope;
     while (s != 0 && idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL) s = idx.res.scopes.data[s].parent;
     if (s == 0) return false;
