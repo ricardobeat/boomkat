@@ -856,6 +856,7 @@ fn bool jit_alloc(Dispatch* ds, Instruction* next) {
         case NEWARR: return alloc_newarr(vm, ds.act, ds.regs_base, *pc);
         case NEWARR_CONST: return alloc_newarr_const(vm, ds.act, ds.regs_base, *pc);
         case NEWARR_FILL: return alloc_newarr_fill(vm, ds.act, ds.regs_base, *pc);
+        case NEWREGEXP: return alloc_newregexp(ds, *pc);
         default: return alloc_newobj(ds.heap, ds.act, ds.regs_base, *pc);
     }
 }
@@ -1202,6 +1203,32 @@ fn long jit_call_regexp(Dispatch* ds, Instruction* next, long builtin) {
     return 0;
 }
 
+// A builtin CALL a baseline call site makes of String.prototype.replace or replaceAll
+// (`builtin`) on a string with a plain RegExp and a string replacement, which
+// builtins::regexp_replace_direct runs without the builtin's frame: 0 continues at `next`
+// with the result in the call's register; JIT_CALL_SLOW, having run nothing,
+// leaves the call to jit_call_builtin_native.
+fn long jit_call_string_regexp(Dispatch* ds, Instruction* next, long builtin) {
+    Instruction* pc = next - 1;
+    TVal* regs = ds.regs_base;
+    if (pc.op != Opcode.CALL || pc.c != 2 || ds.ic_base == null) return JIT_CALL_SLOW;
+    HString* s = builtins::regexp_plain_input(&regs[pc.b + 1]);
+    HString* rep = builtins::regexp_plain_input(&regs[pc.b + 3]);
+    TVal rx = regs[pc.b + 2];
+    if (s == null || rep == null || !rx.is_object() || rx.get_heapptr() == null) return JIT_CALL_SLOW;
+    Heap* heap = ds.heap;
+    if (heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
+    bool all = builtin == builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal;
+    HString* out = builtins::regexp_replace_direct(heap, s, (HObject*)rx.get_heapptr(), rep, all);
+    if (out == null) return JIT_CALL_SLOW;
+    hobject::ic_note_callee((hobject::ICEntry*)ds.ic_base + (pc - ds.code_base), hobject::IC_BUILTIN_TARGET | (uint)builtin);
+    TVal result;
+    result.set_string(out);
+    heap.store_builtin_result(regs + pc.a, &result);
+    ds.curr_pc = next;
+    return 0;
+}
+
 // REGEXP_EXEC of optimized code: RegExpBuiltinExec of the boxed `recv` over the boxed `arg`, as
 // jit_call_regexp runs it, for test when `test` is 1. The result boxed, or 0 with nothing done for
 // a receiver regexp_plain refuses, an argument whose ToString could run script or an interrupted
@@ -1222,6 +1249,28 @@ $if types::USE_NANBOX:
     TVal result;
     result.set_undefined();
     if (!builtins::regexp_exec_plain(heap, rx, s, test != 0, &result)) return 0;
+    return result.bits;
+$else
+    return 0;
+$endif
+}
+
+// The match array of `rx` over `s` for the match generated code ran into Heap.regexp_caps
+// (jit::OptCg.emit_regexp_body), boxed; null when it could not be allocated. The allocation
+// does not collect.
+fn ulong jit_regexp_match(Heap* heap, HObject* rx, HString* s) {
+$if types::USE_NANBOX:
+    int* caps = &heap.regexp_caps;
+    if (caps[0] == -1) caps[0] = 0;
+    if (caps[1] == -1) caps[1] = caps[0];
+    HObject* arr = builtins::regexp_match_array(heap, (*rx.extra_ptr()).regexp.regexp_data, s, caps,
+                                                ((*rx.extra_ptr()).regexp.flags & 64) != 0);
+    TVal result;
+    if (arr == null) {
+        result.set_null();
+    } else {
+        result.set_object(arr);
+    }
     return result.bits;
 $else
     return 0;

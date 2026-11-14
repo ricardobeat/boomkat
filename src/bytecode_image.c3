@@ -402,7 +402,7 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, Vec{ModuleDecl}* declarat
             }
         }
         f.regexp_cache_count = f.const_count;
-        f.regexp_cache = (void**)r.array(f.const_count, void*::size)!;
+        f.regexp_cache = (RegExpLiteral*)r.array(f.const_count, RegExpLiteral::size)!;
         f.capture_count = r.count(8)!;
         f.capture_fixed = r.wide()!;
         f.capture_names = (uint*)r.array(f.capture_count, uint::size)!;

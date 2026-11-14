@@ -11,3 +11,7 @@ fn void? vm_retest(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
 macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
     return VM_ERROR~;
 }
+
+fn bool alloc_newregexp(Dispatch* ds, Instruction insn) {
+    return false;
+}

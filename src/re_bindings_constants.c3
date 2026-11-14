@@ -29,6 +29,21 @@ const int RE_MAX_CAPTURES = 256;
 
 alias ReInterruptFn = fn int(void*);
 
+// The arguments of a compiled body (re_jit::ReJitFn): the subject, the
+// position to start at, the capture buffer, which holds 2 * capture_count
+// ints, and the interrupt. The body keeps the rest of the run in its frame.
+struct ReCall {
+    char* data;
+    uint len;
+    uint start;
+    int* caps;
+    ReInterrupt* interrupt;
+}
+
+// The groups, group 0 included, whose bounds the capture buffer of a call
+// from generated code holds (Heap.regexp_caps).
+const int RE_CALL_GROUPS = 16;
+
 struct ReInterrupt {
     ReInterruptFn poll;
     void* opaque;

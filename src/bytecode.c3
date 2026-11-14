@@ -1938,6 +1938,15 @@ fn bool SourcePosition.same(&self, SourcePosition other) {
     return self.line == other.line && self.column == other.column && self.offset == other.offset;
 }
 
+// A regexp literal site, parsed and compiled once: the program, holding one
+// reference (re_bindings::re_compile), the source text, holding one reference,
+// and the JS flag bits (1=g, 2=i, 4=m, 8=s, 16=u, 32=y, 64=d, 128=v).
+struct RegExpLiteral {
+    void*    program;
+    HString* source;
+    int      flags;
+}
+
 struct CompiledFunction {
     // ---- Inline HeapHeader (binary-compatible with HeapHeader*) ----------
 
@@ -2060,14 +2069,12 @@ struct CompiledFunction {
     void*           var_ic_entries;  // VarICEntry* (opaque)
     uint            var_ic_count;
 
-    // ---- NEWREGEXP literal compile cache ---------------------------------
-    // Compiled bytecode for each NEWREGEXP site, parallel to the instruction
-    // stream, so `regexp_cache[pc_offset]` serves the literal at
-    // `code[pc_offset]` and it compiles once rather than on every execution.
-    // The array appears on the first NEWREGEXP execution, and freeing the
-    // function re_frees each entry. RegExp objects borrowing an entry take
-    // their own reference.
-    void**          regexp_cache;    // ReCompiled*[] (opaque), or null
+    // ---- NEWREGEXP literal sites ------------------------------------------
+    // One entry per constant, so `regexp_cache[k]` serves the literal whose
+    // "/pattern/flags" text is constant k. An entry is filled on the site's
+    // first evaluation and then never changes; freeing the function releases
+    // it. RegExp objects borrowing its program take their own reference.
+    RegExpLiteral*  regexp_cache;    // or null
     uint            regexp_cache_count;
 
     // ---- Source-text retention (Function.prototype.toString) ------------

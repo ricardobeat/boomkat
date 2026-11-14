@@ -1580,6 +1580,82 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     return true;
 }
 
+// String.prototype.replace, or replaceAll when `all`, on the narrow string `s`
+// with the plain RegExp `rx` and the narrow replacement `rep` that holds no `$`:
+// the result @@replace computes, without a builtin frame. The match positions
+// are found first, then one string of the exact size is filled; with no match
+// the result is `s`. Null, with nothing done, when the generic path must run:
+// another receiver, a wide string, a template, a sticky non-global pattern, a
+// non-global replaceAll (which throws), more groups than the stack buffer, an
+// interrupted run or a result past the length cap.
+fn HString* regexp_replace_direct(Heap* heap, HString* s, HObject* rx, HString* rep, bool all) {
+    if (!regexp_is_pristine(heap, rx) || s.is_wide() || rep.is_wide()) return null;
+    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+    int jsf = (*rx.extra_ptr()).regexp.flags;
+    bool global = (jsf & 1) != 0;
+    if ((all || (jsf & 32) != 0) && !global) return null;
+    if (re_bindings::re_group_count(re_data) > REGEXP_SMALL_GROUPS) return null;
+    char[] text = rep.latin1();
+    if (hstring::find_bytes(text, "$") >= 0) return null;
+    int[2 * REGEXP_SMALL_GROUPS] caps @noinit;
+    int[64] span_buf @noinit;
+    growvec::GrowVec{int} spans = { .heap = heap };
+    spans.use_storage(&span_buf, span_buf.len);
+    defer spans.free();
+    re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, heap };
+    char[] lit = re_bindings::re_whole_literal(re_data);
+    uint len = s.unit_len();
+    uint pos = 0;
+    ulong removed = 0;
+    while (pos <= len) {
+        int at;
+        int end;
+        if (lit.len > 0) {
+            at = regexp_find_literal(s, lit, pos);
+            if (at < 0) break;
+            end = at + (int)lit.len;
+        } else {
+            int ret = re_bindings::re_run_direct(re_data, s.data_ptr(), len, false, pos, &caps, caps.len, &interrupt);
+            if (heap.uncatchable_throw || ret < 0) return null;
+            if (ret != re_bindings::RE_MATCH) break;
+            at = caps[0];
+            end = caps[1];
+        }
+        if (!spans.push(at) || !spans.push(end)) return null;
+        removed += (ulong)(end - at);
+        if (!global) break;
+        // A narrow subject has no surrogate pairs: an empty match steps one unit.
+        pos = end == at ? (uint)end + 1 : (uint)end;
+    }
+    if (global) {
+        TVal zero;
+        zero.set_fastint(0);
+        rx.prop_values()[0] = (hobject::PropValue)zero;
+    }
+    usz count = spans.len / 2;
+    if (count == 0) return s;
+    ulong total = (ulong)len - removed + (ulong)count * text.len;
+    if (total == 0) return heap.str(heap::BuiltinStr.EMPTY);
+    if (hstring::length_exceeds_max(total)) return null;
+    HString* out = hstring::hstring_alloc_storage(heap, (uint)total, false, hstring::HASH_DEFERRED, (uint)total) ?? null;
+    if (out == null) return null;
+    char* dest = out.data_ptr();
+    char* src = s.data_ptr();
+    uint last = 0;
+    for (usz i = 0; i < spans.len; i += 2) {
+        uint at = (uint)spans.items[i];
+        mem::copy(dest, src + last, (usz)(at - last));
+        dest += (sz)(at - last);
+        mem::copy(dest, text.ptr, text.len);
+        dest += (sz)text.len;
+        last = (uint)spans.items[i + 1];
+    }
+    mem::copy(dest, src + last, (usz)(len - last));
+    out.finish_data();
+    heap.large_string_register(out);
+    return out;
+}
+
 // The first occurrence of the ASCII `lit` in `s` at or after `from`, or -1.
 fn int regexp_find_literal(HString* s, char[] lit, uint from) {
     if (!s.is_wide()) return hstring::find_bytes(s.latin1(), lit, from);
