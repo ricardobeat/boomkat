@@ -2638,7 +2638,7 @@ fn bool OptBuild.generic(&self) {
         switch (op) {
             // The compiler's own cells: NEWCELLS builds one, GETCELL writes A, and MOVECELL clears
             // the A it moved into the cell (its roles read A and leave the write out).
-            case NEWOBJ: case NEWARR: case NEWARR_CONST: case CLOSURE: case NEWREGEXP:
+            case NEWOBJ: case NEWARR: case NEWARR_CONST: case NEWARR_FILL: case CLOSURE: case NEWREGEXP:
             case NEWOBJ_SHAPE: case NEWTARGET: case DELPROP: case GETPROP_SUPER: case TOPROPKEY: case RESOLVEVAR:
             case NEWCELLS: case GETCELL: case MOVECELL:
                 extra_kill = self.w.a;

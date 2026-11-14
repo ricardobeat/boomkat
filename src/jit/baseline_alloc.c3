@@ -1,4 +1,4 @@
-// Baseline tier allocation ops: NEWARR, NEWARR_CONST, NEWOBJ and NEWOBJ_SHAPE.
+// Baseline tier allocation ops: NEWARR, NEWARR_CONST, NEWARR_FILL, NEWOBJ and NEWOBJ_SHAPE.
 //
 // A fresh ordinary object or short literal array is built inline. The pool pop
 // and the allocation accounting are one shared subroutine (ALLOC_SUB); the
@@ -102,6 +102,14 @@ fn bool Asm.inline_alloc_plan(&self, InlineAlloc* p) {
                    .gc = (uint)hobject::inline_array_gc(), .array_size = length, .array_used = length,
                    .copy_from = (long)(usz)(template + 1), .array_inline = length,
                    .proto_off = l.heap_array_proto };
+        case NEWARR_FILL:
+            // alloc_array_of: the elements come from registers B on (emit_fill_elements).
+            uint length = self.w.c;
+            if (length == 0 || length > hobject::ARRAY_INLINE_MAX_CAPACITY) return false;
+            flags = hobject::inline_array_flags(true);
+            *p = { .pool = l.heap_pool_arrays + (long)(length - 1) * l.pool_size,
+                   .gc = (uint)hobject::inline_array_gc(), .array_size = length, .array_used = length,
+                   .array_inline = length, .proto_off = l.heap_array_proto };
         default:
             return false;
     }
@@ -166,6 +174,46 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
         for (uint k = 0; k < p.fill_count; k++) {
             sljit_emit_op1(c, SLJIT_MOV, m | R0, p.fill_off + (long)k * 8, R1, 0);
         }
+    }
+}
+
+// NEWARR_FILL's elements, registers B to B+C-1: each one an object, a string or another inert
+// value other than undefined (which would make the array packed), checked before anything is
+// allocated; a jump in `slow` leaves nothing changed.
+fn void Asm.emit_fill_checks(&self, Jumps* slow) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    for (uint k = 0; k < self.w.c; k++) {
+        self.load(R3, self.w.b + k);
+        slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, l.undefined_bits));
+        void* inert = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
+        sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, SLJIT_IMM, K_STRING_START);
+        void* string = sljit_emit_cmp(c, SLJIT_LESS, R4, 0, span_op(), span_w());
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, k_obj_op(), k_obj_w());
+        slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
+        sljit_set_label(inert, sljit_emit_label(c));
+        sljit_set_label(string, sljit_emit_label(c));
+    }
+}
+
+// Copy NEWARR_FILL's elements into the fresh array in R0, counting each string as
+// Heap.init_slot_ref does; a pinned one is not. The array is young and the collector is not
+// marking, so the stores need no barrier. Uses R1, R3 and R4.
+fn void Asm.emit_fill_elements(&self) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    for (uint k = 0; k < self.w.c; k++) {
+        self.load(R3, self.w.b + k);
+        sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_size_array + (long)k * 8, R3, 0);
+        sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, SLJIT_IMM, K_STRING_START);
+        void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, span_op(), span_w());
+        sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R4, l.str_refcount);
+        void* pinned = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)types::STRING_PINNED_REFCOUNT);
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, 1);
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R4, l.str_refcount, R1, 0);
+        sljit_set_label(not_string, sljit_emit_label(c));
+        sljit_set_label(pinned, sljit_emit_label(c));
     }
 }
 
@@ -258,6 +306,7 @@ fn bool Asm.emit_alloc(&self) {
     switch (self.w.op) {
         case NEWARR:
         case NEWARR_CONST:
+        case NEWARR_FILL:
         case NEWOBJ:
         case NEWOBJ_SHAPE:
             break;
@@ -269,7 +318,10 @@ fn bool Asm.emit_alloc(&self) {
     InlineAlloc plan;
     uint ra = self.w.a;
     if (inline_alloc_ok() && self.inline_alloc_plan(&plan)) {
+        bool fill = self.w.op == Opcode.NEWARR_FILL;
+        if (fill) self.emit_fill_checks(&slow);
         self.emit_inline_alloc(&plan, &slow);
+        if (fill) self.emit_fill_elements();
         // The boxed object into the result register, which holds no count to release.
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
         self.store(ra, R0);
