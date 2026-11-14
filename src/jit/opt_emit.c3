@@ -2454,18 +2454,53 @@ fn bool OptCg.emit_known_add(&self, OptNode* n, void** done) {
     } else {
         self.value_to(n.a, R2);
     }
-    if (n.a == NO_NODE || self.g.nodes[n.a].counted) {
+    // A string is counted as Heap.init_slot_ref counts it, its object then marked for teardown
+    // (Asm.emit_fill_elements: the fresh object needs no barrier).
+    void* counted = null;
+    int rr = self.value_reg(n.b, R1);
+    if ((n.a == NO_NODE || self.g.nodes[n.a].counted) && !inline_alloc_ok()) {
         void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
         sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, k_obj_op(), k_obj_w());
         other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
         sljit_set_label(inert, sljit_emit_label(c));
+    } else if (n.a == NO_NODE || self.g.nodes[n.a].counted) {
+        Jumps plain;
+        plain.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START));
+        sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, k_obj_op(), k_obj_w());
+        plain.add(sljit_emit_cmp(c, SLJIT_LESS, R0, 0, span_op(), span_w()));
+        sljit_emit_op2(c, SLJIT_XOR, R0, 0, R2, 0, SLJIT_IMM, K_STRING_START);
+        other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w());
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R0, a.lay.str_refcount);
+        plain.add(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)types::STRING_PINNED_REFCOUNT));
+        sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, SLJIT_IMM, 1);
+        sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R0, a.lay.str_refcount, R3, 0);
+        counted = sljit_emit_jump(c, SLJIT_JUMP);
+        plain.bind(sljit_emit_label(c));
     }
-    int rr = self.value_reg(n.b, R1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     a.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, (long)slot * TVal::size, R2, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_shape, SLJIT_IMM, (long)n.shape);
     sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_prop_count, SLJIT_IMM, (long)slot + 1);
+    if (counted != null) {
+        void* stored = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(counted, sljit_emit_label(c));
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
+        a.prop_base(R0, R1);
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, (long)slot * TVal::size, R2, 0);
+        sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_shape, SLJIT_IMM, (long)n.shape);
+        sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, a.lay.obj_prop_count, SLJIT_IMM, (long)slot + 1);
+        // An object the pools could not place has no teardown bit: the sweep tears every such one down.
+        hobject::ObjFlags fallback;
+        fallback.pool_fallback = true;
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, 0);
+        sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, (long)(uint)fallback);
+        void* unpooled = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, R1, 0);
+        a.emit_needs_teardown();
+        sljit_set_label(unpooled, sljit_emit_label(c));
+        sljit_set_label(stored, sljit_emit_label(c));
+    }
     if (other == null) return false;
     *done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(other, sljit_emit_label(c));
