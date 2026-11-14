@@ -802,7 +802,8 @@ fn void OptCg.emit_check_int(&self, uint i, OptNode* n) {
     self.a.call.len = 0;
     self.a.load(R0, (uint)n.imm);
     self.int32_from_r0((uint)n.imm);
-    self.exit_calls(i, OptExit.NOT_INT32);
+    // An entry check (cc 1, OptBuild.entry_checks) leaves the parameters to the window when it fails.
+    self.exit_calls(i, n.cc != 0 ? OptExit.PARAM : OptExit.NOT_INT32);
     if (n.reg >= 0) sljit_emit_op1(c, SLJIT_MOV, n.reg, 0, R0, 0);
 }
 
@@ -810,7 +811,7 @@ fn void OptCg.emit_check_num(&self, uint i, OptNode* n) {
     self.a.call.len = 0;
     int dst = n.reg >= 0 ? n.reg : FR0;
     self.a.load_number(dst, (uint)n.imm);
-    self.exit_calls(i, OptExit.NOT_NUMBER);
+    self.exit_calls(i, n.cc != 0 ? OptExit.PARAM : OptExit.NOT_NUMBER);
     if (n.reg < 0) self.store_flt(n.home, dst);
 }
 

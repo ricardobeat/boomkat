@@ -31,6 +31,9 @@ const compiler::DecodedCfgBudget OPT_REGION_CFG_BUDGET = { OPT_REGION_WORDS_MAX,
 const compiler::DecodedCfgBudget OPT_REGION_LIVENESS_BUDGET = { 65536, 65536, 16 * 1024 * 1024 };
 
 // A loop phi's decision, overriding the speculation from the preheader.
+// OptOverride.block of a parameter's entry check (OptBuild.entry_checks).
+const uint OPT_ENTRY_BLOCK = uint::max;
+
 struct OptOverride {
     uint block;
     uint reg;
@@ -5134,6 +5137,7 @@ fn bool OptBuild.build_round(&self) {
         self.pos = pos;
         self.cold_exit = false;
         self.begin_block(pos);
+        if (pos == 0 && self.g.region.end == 0) self.entry_checks();
         uint b = self.rpo[pos];
         for (uint i = self.b_first[b]; i <= self.b_last[b] && !self.dead[pos]; i++) {
             self.context(i);
@@ -5155,9 +5159,11 @@ fn bool OptBuild.build_round(&self) {
 }
 
 // Check each back edge against the phis its header speculated; record an
-// override for each that disagrees. Returns whether any was recorded.
+// override for each that disagrees, and an entry check for each parameter that a back edge
+// brings a number into but no way in does (entry_checks). Returns whether any was recorded.
 fn bool OptBuild.repair(&self) {
     bool changed = self.g.region.end != 0 && self.region_carried();
+    bool params = self.g.region.end == 0 && !self.g.blocks[0].header && !opt_site_banned(self.f, self.f, OPT_BAN_PARAMS);
     for (uint pos = 0; pos < self.nrpo; pos++) {
         if (!self.g.blocks[pos].header) continue;
         uint first_node = self.g.blocks[pos].first;
@@ -5167,6 +5173,7 @@ fn bool OptBuild.repair(&self) {
             if (self.loop_facts && self.head_set[pos] && !self.dead[p]) changed |= self.meet_head(pos, p);
             for (uint r = 0; r < self.nregs; r++) {
                 uint phi = self.entries[(usz)pos * self.nregs + r].node;
+                if (params && r < self.f.num_formals && phi == NO_NODE && !self.dead[p]) changed |= self.ask_entry_check(pos, p, r);
                 if (phi == NO_NODE || phi < first_node || phi >= end_node || self.g.nodes[phi].op != OptOp.PHI) continue;
                 uint src = self.ends[(usz)p * self.nregs + r].node;
                 if (src == NO_NODE || self.rep_of(src) == OptRep.VALUE) {
@@ -5178,6 +5185,31 @@ fn bool OptBuild.repair(&self) {
         }
     }
     return changed;
+}
+
+// The parameter in register `r`, which the back edge from `p` brings into the loop header at `pos`
+// as a number while its ways in hold it in the window: ask the next round to check it on entry
+// (entry_checks), so that the header has a number from every edge and gives it a phi.
+fn bool OptBuild.ask_entry_check(&self, uint pos, uint p, uint r) {
+    uint src = self.ends[(usz)p * self.nregs + r].node;
+    if (src == NO_NODE || self.rep_of(src) == OptRep.VALUE || self.override_of(OPT_ENTRY_BLOCK, r) != 0) return false;
+    if (!self.live_in[self.b_first[self.rpo[pos]]].test(r)) return false;
+    foreach (q : self.preds(pos)) {
+        if (q < pos && !self.dead[q] && self.ends[(usz)q * self.nregs + r].node != NO_NODE) return false;
+    }
+    return self.set_override(OPT_ENTRY_BLOCK, r, self.rep_of(src));
+}
+
+// The entry checks repair asked for (ask_entry_check), at the start of the function's first block:
+// each parameter as a number of the rep its loop carries, leaving the function when it is not
+// one (OptExit.PARAM), the window keeping its value.
+fn void OptBuild.entry_checks(&self) {
+    foreach (o : self.overrides) {
+        if (o.block != OPT_ENTRY_BLOCK) continue;
+        uint n = self.guarded(o.rep == OptRep.INT32 ? OptOp.CHECK_I32 : OptOp.CHECK_NUM, o.rep, o.reg);
+        self.g.nodes[n].cc = 1;
+        self.set(o.reg, n, false);
+    }
 }
 
 // The moves along each edge: the phi inputs, and the dirty registers that are

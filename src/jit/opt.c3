@@ -70,6 +70,9 @@ enum OptExit : char (String label) {
     ENTRY {"entry"},
     // A watched binding changed (OptPolicy.watch_epoch). The rebuild reads it instead.
     WATCH {"watch"},
+    // A parameter checked as a number on entry, for the phi of a loop that carries it
+    // (OptBuild.entry_checks), held something else. The rebuild leaves the parameters in the window.
+    PARAM {"param"},
 }
 
 // A binding whose object value optimized code holds as a constant: slot `idx` of `holder`, a
@@ -136,6 +139,8 @@ const uint OPT_SITE_EXITS = 2;
 const uint OPT_BAN_MAX = 16;
 // OptBan.pc naming every site of the function.
 const uint OPT_BAN_ALL = 0xFFFFFFFF;
+// OptBan.pc naming the entry checks of the function's parameters (OptExit.PARAM).
+const uint OPT_BAN_PARAMS = 0xFFFFFFFE;
 const uint OPT_HIT_SLOTS = 8;
 // Global bindings remembered as changing (OptPolicy.unfolded).
 const uint OPT_UNFOLD_MAX = 64;
@@ -1143,6 +1148,11 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         io::eprintfn(" +%d %s %s", at, oc.f.code[at].op, ((OptExit)reason).label);
     }
     if (opt_exit_transient(h, reason)) return 0;
+    if (reason == OptExit.PARAM.ordinal) {
+        opt_ban(h, oc.f, oc.f, OPT_BAN_PARAMS);
+        opt_relearn(h, oc);
+        return 0;
+    }
     oc.exits++;
     bool repeat = false;
     if (oc.f.opt_code == oc && oc.f.ic_entries != null) {
@@ -1414,20 +1424,26 @@ fn uint opt_ban_hits(Heap* h, OptCode* oc, uint* hit_sites) {
         // exit from next: the second time a body of the function is discarded, none is speculated on.
         uint pc = root.opt_reopts != 0 && !x.call && !x.fold ? OPT_BAN_ALL : x.pc;
         if (opt_site_banned(root, x.cf, pc, x.fold)) continue;
-        OptBans* bans = root.opt_bans;
-        if (bans == null) {
-            bans = h.alloc_func(h.heap_udata, OptBans::size);
-            if (bans == null) { *hit_sites = sites; return added; }
-            mem::clear(bans, OptBans::size);
-            root.opt_bans = bans;
-        }
-        if (bans.count >= OPT_BAN_MAX) { *hit_sites = sites; return added; }
-        bans.items[bans.count++] = { .cf = x.cf, .pc = pc, .fold = x.fold };
-        h.opt.bans++;
+        if (!opt_ban(h, root, x.cf, pc, x.fold)) { *hit_sites = sites; return added; }
         added++;
     }
     *hit_sites = sites;
     return added;
+}
+
+// Ban word `pc` of `cf` in the builds of `root` (OptBan). False when there is no room.
+fn bool opt_ban(Heap* h, CompiledFunction* root, CompiledFunction* cf, uint pc, bool fold = false) {
+    OptBans* bans = root.opt_bans;
+    if (bans == null) {
+        bans = h.alloc_func(h.heap_udata, OptBans::size);
+        if (bans == null) return false;
+        mem::clear(bans, OptBans::size);
+        root.opt_bans = bans;
+    }
+    if (bans.count >= OPT_BAN_MAX) return false;
+    bans.items[bans.count++] = { .cf = cf, .pc = pc, .fold = fold };
+    h.opt.bans++;
+    return true;
 }
 
 // opt_exit for an exit from inside an inlined body: count it and publish the frames of the calls
