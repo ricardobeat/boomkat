@@ -1229,6 +1229,24 @@ fn long jit_call_string_regexp(Dispatch* ds, Instruction* next, long builtin) {
     return 0;
 }
 
+// STRING_REGEXP of optimized code: String.prototype.replace, or replaceAll when `all`, of the
+// boxed string args[0] by the plain RegExp args[1] with the string args[2], as
+// builtins::regexp_replace_direct computes it, stored into the window slot `dst`: 1, or 0 with
+// nothing done for anything that refuses, which the baseline code at the call then performs. The
+// allocation does not collect, so a due collection waits for the code's next poll.
+fn long jit_opt_string_regexp(Dispatch* ds, TVal* args, TVal* dst, long all) {
+    HString* s = builtins::regexp_plain_input(&args[0]);
+    HString* rep = builtins::regexp_plain_input(&args[2]);
+    if (s == null || rep == null || !args[1].is_object() || args[1].get_heapptr() == null) return 0;
+    Heap* heap = ds.heap;
+    HString* out = builtins::regexp_replace_direct(heap, s, (HObject*)args[1].get_heapptr(), rep, all != 0);
+    if (out == null) return 0;
+    TVal result;
+    result.set_string(out);
+    heap.store_builtin_result(dst, &result);
+    return 1;
+}
+
 // REGEXP_EXEC of optimized code: RegExpBuiltinExec of the boxed `recv` over the boxed `arg`, as
 // jit_call_regexp runs it, for test when `test` is 1. The result boxed, or 0 with nothing done for
 // a receiver regexp_plain refuses, an argument whose ToString could run script or an interrupted

@@ -1916,7 +1916,10 @@ fn bool OptBuild.get_field(&self) {
     bool inherited = ic.has_proto;
     bool mono = ic.chain_len == 0;
     bool exact = inherited && self.cur_fn == 0 && self.w.op != Opcode.GETTHISC && opt_settled_shape(self.h, ic) != null && ic.chain.protos == null;
-    bool known = mono && self.guards_known(recv, ic.shape_id);
+    // A string primitive's read is an own property of String.prototype by its shape.
+    bool string = mono && !inherited && self.w.op != Opcode.GETTHISC && self.h.string_proto != null
+        && ic.shape_id == self.h.string_proto.shape_id;
+    bool known = !string && mono && self.guards_known(recv, ic.shape_id);
     bool plain = self.known_plain(recv);
     uint shape = ic.shape_id;
     uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
@@ -1927,13 +1930,13 @@ fn bool OptBuild.get_field(&self) {
         self.snapshot(n);
         self.set(ra, n);
     }
-    self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
+    self.g.nodes[n].cc = string ? 4 : (inherited ? 2 : (known ? 1 : 0));
     self.g.nodes[n].exact = exact;
     self.g.nodes[n].plain = plain;
     self.g.nodes[n].b = rnode;
     self.g.nodes[n].key = key;
     self.set_poly(n, ic);
-    if (mono || exact) self.learn(recv, shape);
+    if ((mono || exact) && !string) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
     if (recv < self.nregs && recv == ra) {
         self.fact_shape[recv] = heap::SHAPE_NONE;
@@ -2042,6 +2045,43 @@ fn bool OptBuild.regexp_call(&self) {
     self.g.nodes[n].cc = test ? 1 : 0;
     self.snapshot(n);
     self.set(ra, n);
+    self.forget_facts();
+    self.builtin_calls++;
+    return true;
+}
+
+// A CALL of String.prototype.replace or replaceAll with two arguments that the site has always
+// made (hobject::IC_BUILTIN_TARGET), in the function's own body: a CHECK_BUILTIN of the callee,
+// then a STRING_REGEXP of the receiver and arguments, which stay in the window.
+fn bool OptBuild.string_regexp_call(&self) {
+    if (self.w.op != Opcode.CALL || self.wide || self.cur_fn != 0 || self.w.c != 2) return false;
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
+    if (builtin != builtins::Builtin.STRING_PROTO_REPLACE.ordinal && builtin != builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal) return false;
+    if (opt_site_banned(self.f, f, self.next_pc - 1)) return false;
+    uint callee = self.w.b;
+    uint ra = self.w.a;
+    if (callee + 3 >= self.nregs || ra >= self.nregs) return false;
+    uint fn_node = NO_NODE;
+    if (self.holds_value(callee)) {
+        fn_node = self.cur[callee].node;
+    } else if (!self.in_window(callee)) {
+        return false;
+    }
+    for (uint k = 1; k <= 3; k++) {
+        if (!self.in_window(callee + k)) return false;
+    }
+    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, fn_node, NO_NODE, (long)builtin);
+    self.g.nodes[chk].home = callee;
+    self.snapshot(chk);
+    uint n = self.add(OptOp.STRING_REGEXP, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.g.nodes[n].cc = builtin == builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal ? 1 : 0;
+    self.snapshot(n);
+    self.kill(ra);
+    // The pattern's lastIndex may have been written.
     self.forget_facts();
     self.builtin_calls++;
     return true;
@@ -4293,6 +4333,11 @@ fn bool OptBuild.lower_op(&self) {
                 }
             } else if (v.is_number()) {
                 self.set(ra, self.const_f64(v.get_number()));
+            } else if (v.is_string() && ra < self.nregs) {
+                // The constant table counts the string, so the slot takes it as the baseline's store does.
+                uint n = self.add(OptOp.STORE_CONST, OptRep.NONE, NO_NODE, NO_NODE, (long)v.bits);
+                self.g.nodes[n].home = ra;
+                self.kill(ra);
             } else {
                 return self.generic();
             }
@@ -4470,6 +4515,7 @@ fn bool OptBuild.lower_op(&self) {
             if (self.push_call()) return true;
             if (self.math_call()) return true;
             if (self.regexp_call()) return true;
+            if (self.string_regexp_call()) return true;
             if (self.try_inline()) return true;
             return self.generic();
         case CALL_S:

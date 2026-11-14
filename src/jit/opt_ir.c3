@@ -187,7 +187,8 @@ enum OptOp : char {
     // Of rep VALUE the value stays in a register (finish_value), for a home beyond the
     // caller's frame.
     COPY_WINDOW,
-    // The boxed constant imm (undefined, null or a boolean) stored to the window slot home.
+    // The boxed constant imm (undefined, null, a boolean, or a string of the constant table) stored to
+    // the window slot home.
     STORE_CONST,
     // A TYPEOF of an inlined body: the interned builtin name (heap.strs) of the value in the VALUE
     // node a, or in the window slot imm when a is NO_NODE, stored to the window slot home. cc 1 is a
@@ -233,6 +234,12 @@ enum OptOp : char {
     // as a VALUE: the match array or null, or a boolean for test. Exits (SLOW_PATH) before any
     // effect for any other receiver or argument (vm::jit_opt_regexp).
     REGEXP_EXEC,
+    // A CALL (pc) in the function's own body of String.prototype.replace or replaceAll with two
+    // arguments (OptStringRegexp cc), after the CHECK_BUILTIN of its callee, its receiver and
+    // arguments read from the window: the result stored into the call's window slot, as the
+    // builtin computes it for a string receiver, a plain RegExp and a replacement string.
+    // Exits (SLOW_PATH) before any effect for anything else (vm::jit_opt_string_regexp).
+    STRING_REGEXP,
     // A call of a Math function (OptMath imm) on the numbers a and b (b: NO_NODE but for two
     // arguments), after the CHECK_BUILTIN of its callee. INT32 for ABS, MIN and MAX of INT32
     // operands, where ABS exits (OVERFLOW) at -2^31; FLOAT64 otherwise.
