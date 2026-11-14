@@ -3231,7 +3231,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 why = OptInlineReject.THIS;
             case LDCONST:
                 uint index = self.w.get_bc();
-                ok = index < cf.const_count && (cf.constants[index].is_fastint() || cf.constants[index].is_number());
+                ok = index < cf.const_count && (cf.constants[index].is_numeric() || cf.constants[index].is_string());
                 why = OptInlineReject.CONSTANT;
             default:
                 break;
@@ -4497,6 +4497,12 @@ fn bool OptBuild.lower_op(&self) {
                 }
             } else if (v.is_number()) {
                 self.set(ra, self.const_f64(v.get_number()));
+            } else if (v.is_string() && self.cur_fn != 0 && ra < self.nregs) {
+                // An inlined body's register may lie beyond the caller's frame: a VALUE node, which
+                // the constant table keeps alive and a store into the heap counts.
+                uint n = self.add(OptOp.CONST_OBJ, OptRep.VALUE, NO_NODE, NO_NODE, (long)v.bits);
+                self.g.nodes[n].counted = true;
+                self.set(ra, n);
             } else if (v.is_string() && ra < self.nregs) {
                 // The constant table counts the string, so the slot takes it as the baseline's store does.
                 uint n = self.add(OptOp.STORE_CONST, OptRep.NONE, NO_NODE, NO_NODE, (long)v.bits);
