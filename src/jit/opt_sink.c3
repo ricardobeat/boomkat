@@ -205,7 +205,9 @@ fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v, bool trace) {
                         bool fits = n.rep == OptRep.NONE || vr == n.rep || (n.rep == OptRep.FLOAT64 && vr == OptRep.INT32);
                         if (!fits) { ok = false; break; }
                         s.edits.push({ .act = LOAD, .node = j, .val = val });
-                    } else if (n.cc == 2 && n.key != null) {
+                    } else if (n.cc == 2 && n.key != null && !n.folded) {
+                        // A folded read (OptNode.folded) stands on its receiver's chain test, which
+                        // a read through the site's validation (cc 3) would not make.
                         uint r = sk.read_count;
                         for (uint k = 0; k < sk.read_count; k++) if (sk.reads[k] == n.key) r = k;
                         if (r == sk.read_count) {
