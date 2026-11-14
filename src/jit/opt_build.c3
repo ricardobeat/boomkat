@@ -862,7 +862,7 @@ fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_
     if (!keeps_fresh(op)) self.fresh_n = 0;
     OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .c = NO_NODE, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1, .home = NO_NODE, .shape = heap::SHAPE_NONE };
     switch (op) {
-        case LOAD_FIELD: case LOAD_ELEM: case LOAD_CAP: case LOAD_GLOBAL:
+        case LOAD_FIELD: case LOAD_ELEM: case LOAD_CAP: case LOAD_GLOBAL: case COPY_WINDOW:
             n.counted = rep == OptRep.VALUE;
         case COPY:
             n.counted = self.g.nodes[a].counted;
@@ -1645,7 +1645,8 @@ fn bool OptBuild.load_this(&self) {
 
 // A window value copied to register `ra` of an inlined body, from the receiver slot (cc 1), register
 // B of the instruction (cc 2) or register A (cc 0, a return). A slot beyond the caller's frame takes
-// it in a register as a VALUE node instead, which exits for any other value.
+// it in a register as a VALUE node instead, an object, string or inert value, which exits for any
+// other.
 fn bool OptBuild.window_copy(&self, uint ra, char cc, uint* node = null) {
     if (ra >= self.nregs) return false;
     bool beyond = ra >= self.caller_regs;
@@ -2162,7 +2163,7 @@ fn bool OptBuild.regexp_call(&self) {
 
 // A CALL of String.prototype.replace or replaceAll with two arguments that the site has always
 // made (hobject::IC_BUILTIN_TARGET), in the function's own body: a CHECK_BUILTIN of the callee,
-// then a STRING_REGEXP of the receiver and arguments, which stay in the window.
+// then a STRING_REGEXP of the receiver and arguments, from their nodes (a, b, c) or the window.
 fn bool OptBuild.string_regexp_call(&self) {
     if (self.w.op != Opcode.CALL || self.wide || self.cur_fn != 0 || self.w.c != 2) return false;
     CompiledFunction* f = self.cur_f();
@@ -2175,19 +2176,19 @@ fn bool OptBuild.string_regexp_call(&self) {
     uint callee = self.w.b;
     uint ra = self.w.a;
     if (callee + 3 >= self.nregs || ra >= self.nregs) return false;
-    uint fn_node = NO_NODE;
-    if (self.holds_value(callee)) {
-        fn_node = self.cur[callee].node;
-    } else if (!self.in_window(callee)) {
-        return false;
+    uint[4] nodes;
+    for (uint k = 0; k < 4; k++) {
+        uint r = callee + k;
+        nodes[k] = self.cur[r].node;
+        if (nodes[k] != NO_NODE && (k != 0 || self.holds_value(r))) continue;
+        nodes[k] = NO_NODE;
+        if (!self.in_window(r)) return false;
     }
-    for (uint k = 1; k <= 3; k++) {
-        if (!self.in_window(callee + k)) return false;
-    }
-    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, fn_node, NO_NODE, (long)builtin);
+    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, nodes[0], NO_NODE, (long)builtin);
     self.g.nodes[chk].home = callee;
     self.snapshot(chk);
-    uint n = self.add(OptOp.STRING_REGEXP, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    uint n = self.add(OptOp.STRING_REGEXP, OptRep.NONE, nodes[1], nodes[2], (long)self.pc);
+    self.g.nodes[n].c = nodes[3];
     self.g.nodes[n].cc = builtin == builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal ? 1 : 0;
     self.snapshot(n);
     self.kill(ra);
@@ -2589,6 +2590,20 @@ fn bool OptBuild.not_value(&self) {
     } else {
         self.set(ra, n);
     }
+    return true;
+}
+
+// A call of the function's own body that has never run, while the function may still be rebuilt
+// for what it learns: an exit (OptExit.UNPROFILED) instead of a GENERIC, so that the rebuild can
+// inline or specialize it. Nothing after it on this path is lowered.
+fn bool OptBuild.unprofiled_call(&self) {
+    if (self.cur_fn != 0 || self.wide || self.f.ic_entries == null || self.f.opt_relearns >= OPT_RELEARN_MAX) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.next_pc - 1];
+    if ((ic.feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0) return false;
+    uint n = self.add(OptOp.EXIT, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.g.nodes[n].cc = OPT_EXIT_UNPROFILED;
+    self.snapshot(n);
+    self.cold_exit = true;
     return true;
 }
 
@@ -3085,7 +3100,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     for (uint k = 0; k < cfg.instruction_count; k++) {
         Opcode op = cfg.nodes[k].view.insn.op;
         if (!inline_op_ok(op)) { self.rej_op = op; return self.reject(OptInlineReject.OPCODE); }
-        s.has_calls |= inline_call_op(op) && !opt_push_site(self.h, cf, cfg.nodes[k].view.pc);
+        s.has_calls |= inline_call_op(op) && !opt_node_call_site(self.h, cf, cfg.nodes[k].view.pc);
         // A CALL_S is a spread call unless it completes a forwarding call, which only a function
         // whose `arguments` register holds the argument count makes.
         bool paired = op == Opcode.APPLY_ARGS ? forward_pair(cfg, k) : (op != Opcode.CALL_S || (k > 0 && forward_pair(cfg, k - 1)));
@@ -3569,8 +3584,8 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
     self.sites[si].child_of = mem::new_array(uint, count);
     for (uint k = 0; k < count; k++) {
         if (!inline_call_op(self.sites[si].cfg.nodes[k].view.insn.op)) continue;
-        // A push the body builds as a node (OptBuild.push_call).
-        if (opt_push_site(self.h, self.sites[si].cf, self.sites[si].cfg.nodes[k].view.pc)) continue;
+        // A push or regexp call the body builds as a node (OptBuild.push_call, regexp_call).
+        if (opt_node_call_site(self.h, self.sites[si].cf, self.sites[si].cfg.nodes[k].view.pc)) continue;
         OptInlineSite c;
         self.rej = OptInlineReject.BUILD;
         Opcode cop = self.sites[si].cfg.nodes[k].view.insn.op;
@@ -3685,7 +3700,7 @@ fn bool OptBuild.makes_calls(&self, uint si) {
         if (!t.has_calls) continue;
         for (uint k = 0; k < t.cfg.instruction_count; k++) {
             DecodedBytecode view = t.cfg.nodes[k].view;
-            if (inline_call_op(view.insn.op) && t.child_of[k] == 0 && !opt_push_site(self.h, t.cf, view.pc)) return true;
+            if (inline_call_op(view.insn.op) && t.child_of[k] == 0 && !opt_node_call_site(self.h, t.cf, view.pc)) return true;
         }
     }
     return false;
@@ -3972,7 +3987,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
             && self.call_operand(callee_reg + 2, &recv_node);
     } else if (!s.var_call) {
         state_ok = self.call_operand(callee_reg, &callee_node);
-        if (state_ok && !s.construct && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.call_operand(callee_reg + 1, &recv_node);
+        if (state_ok && !s.construct && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.receiver_operand(s, callee_reg + 1, &recv_node);
     }
     if (!state_ok) {
         self.fail_flat(si, OptInlineReject.STATE);
@@ -4228,6 +4243,13 @@ fn bool OptBuild.call_operand(&self, uint r, uint* node) {
     return false;
 }
 
+// call_operand of the receiver slot `r` of site `s`. A plain call stores undefined there, so a
+// number the slot holds is replaced by that first.
+fn bool OptBuild.receiver_operand(&self, OptInlineSite* s, uint r, uint* node) {
+    if (!s.method && r < self.nregs && self.cur[r].node != NO_NODE && !self.holds_value(r)) self.store_const(r, K_UNDEF);
+    return self.call_operand(r, node);
+}
+
 // The registers of the inlined body being lowered (by its own numbering) that hold values across
 // its call at `insn`: those live after it and written before it, and the call's callee and receiver.
 fn uint OptBuild.keep_across(&self, OptInlineSite* p, uint insn, uint callee_reg) {
@@ -4284,7 +4306,7 @@ fn bool OptBuild.try_inline(&self) {
     } else {
         state_ok = self.call_operand(callee_reg, &callee_node);
         // A NEW_OBJ's receiver slot receives the object the inline allocates.
-        if (state_ok && !s.construct && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.call_operand(callee_reg + 1, &recv_node);
+        if (state_ok && !s.construct && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.receiver_operand(s, callee_reg + 1, &recv_node);
     }
     if (!state_ok) {
         if (!s.counted && !self.inline_unsafe) self.count_reject(OptInlineReject.STATE, Opcode.NOP);
@@ -4681,6 +4703,7 @@ fn bool OptBuild.lower_op(&self) {
             if (self.string_regexp_call()) return true;
             if (self.leaf_call()) return true;
             if (self.try_inline()) return true;
+            if (self.unprofiled_call()) return true;
             return self.generic();
         case TAILCALL_CALL:
         case TAILCALL_UNDEF_THIS:
@@ -4794,8 +4817,9 @@ fn void OptBuild.begin_block(&self, uint pos) {
         bool merge = fwd + back >= 2;
         for (uint r = 0; r < self.nregs; r++) {
             if (!self.live_in[first_insn].test(r)) continue;
+            // A header whose ways in all exited holds the window's values.
             if (!merge) {
-                self.cur[r] = self.ends[(usz)single * self.nregs + r];
+                if (fwd != 0) self.cur[r] = self.ends[(usz)single * self.nregs + r];
                 continue;
             }
             bool numeric = true;

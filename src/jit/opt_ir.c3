@@ -586,6 +586,8 @@ enum OptMath : char (uint args) {
 
 // OptNode.cc of an EXIT that leaves a region (OptOp.EXIT).
 const char OPT_EXIT_LEAVE = 1;
+// OptNode.cc of an EXIT at a call that had never run: the rebuild sees its feedback.
+const char OPT_EXIT_UNPROFILED = 2;
 
 struct OptJoin {
     uint pos;

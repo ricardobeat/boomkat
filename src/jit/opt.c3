@@ -424,7 +424,7 @@ fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     for (uint i = 0; i < f.code_count; i++) {
         OptCallees set;
         if ((ic[i].feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0 && (opt_inline_plausible(h, f, i) || opt_direct_targets(h, f, i, &set))) return true;
-        if (opt_push_site(h, f, i)) return true;
+        if (opt_node_call_site(h, f, i)) return true;
     }
     return false;
 }
@@ -512,12 +512,25 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 
         if (!inline_op_ok(kop)) return false;
         // A call in the body must be one to inline in turn, or one to make from the body as a
         // register call (OptBuild.add_children).
-        if (!inline_call_op(kop) || opt_push_site(h, cf, k)) continue;
+        if (!inline_call_op(kop) || opt_node_call_site(h, cf, k)) continue;
         if (cf.ic_entries == null) return false;
         OptCallees set;
         if ((depth >= OPT_INLINE_DEPTH || !opt_inline_plausible(h, cf, k, depth + 1)) && !opt_direct_targets(h, cf, k, &set)) return false;
     }
     return true;
+}
+
+// Whether the CALL at word `i` of `f` is one the optimizer builds as a node rather than a call:
+// a push (opt_push_site) or a RegExp exec or test (OptBuild.regexp_call).
+fn bool opt_node_call_site(Heap* h, CompiledFunction* f, uint i) {
+    if (opt_push_site(h, f, i)) return true;
+    if (f.ic_entries == null || i == 0 || i >= f.code_count) return false;
+    Instruction w = f.code[i];
+    if (w.op != Opcode.CALL || w.c != 1 || f.code[i - 1].op == Opcode.WIDE) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
+    return builtin == builtins::Builtin.REGEXP_PROTO_EXEC.ordinal || builtin == builtins::Builtin.REGEXP_PROTO_TEST.ordinal;
 }
 
 // Whether the CALL at word `i` of `f` passes one argument to Array.prototype.push as far as the
