@@ -2034,16 +2034,18 @@ fn bool OptBuild.get_field(&self) {
     bool known = !string && mono && self.guards_known(recv, ic.shape_id);
     bool plain = self.known_plain(recv);
     uint shape = ic.shape_id;
-    uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
+    uint watched = exact && ra < self.nregs ? self.watched_method(ic) : NO_NODE;
+    uint n = watched != NO_NODE ? NO_NODE : self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
     if (n == NO_NODE) {
         // The value stays in a register until something reads the window; a numeric use asks the
-        // next round for a number instead (OptBuild.ask_number).
-        n = self.add(OptOp.LOAD_FIELD, OptRep.VALUE, NO_NODE, NO_NODE, (long)self.pc);
+        // next round for a number instead (OptBuild.ask_number). A folded read only guards.
+        n = self.add(OptOp.LOAD_FIELD, watched != NO_NODE ? OptRep.NONE : OptRep.VALUE, NO_NODE, NO_NODE, (long)self.pc);
         self.snapshot(n);
-        self.set(ra, n);
+        if (watched == NO_NODE) self.set(ra, n);
     }
     self.g.nodes[n].cc = string ? 4 : (inherited ? 2 : (known ? 1 : 0));
     self.g.nodes[n].exact = exact;
+    self.g.nodes[n].folded = watched != NO_NODE;
     self.g.nodes[n].plain = plain;
     self.g.nodes[n].b = rnode;
     self.g.nodes[n].key = key;
@@ -2055,7 +2057,22 @@ fn bool OptBuild.get_field(&self) {
         self.fact_plain[recv] = false;
     }
     if (self.g.nodes[n].rep != OptRep.NONE && (rkey != NO_NODE || recv != ra)) self.note_field(key, rkey, recv, n);
+    if (watched != NO_NODE) self.fold_binding(watched);
     return true;
+}
+
+// The binding of the function an exact inherited read finds in its owner's slot, watched so that
+// the read folds to it and a call's guard of it is proven (OptBuild.prove_callee); NO_NODE when
+// the slot holds anything else or the watches are full.
+fn uint OptBuild.watched_method(&self, hobject::ICEntry* ic) {
+    // The emitter's settled path is the read's only one (OptCg.settled_chain_slots).
+    if (opt_settled_shape(self.h, ic) == null) return NO_NODE;
+    hobject::ICChainEpoch* e = &ic.chain.epoch;
+    hobject::PropValue* slot = &e.owner.prop_values()[ic.prop_idx];
+    TVal v = slot.get();
+    if (!v.is_object() || !((HObject*)v.get_heapptr()).is_callable()) return NO_NODE;
+    uint k = self.binding_entry(e.owner, slot, true);
+    return k != NO_NODE && self.g.bindings[k].watch ? k : NO_NODE;
 }
 
 // Whether the instruction being lowered is a GETPROPC or GETPROPC_CACHED of the constant key

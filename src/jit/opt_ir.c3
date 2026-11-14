@@ -426,6 +426,9 @@ struct OptNode {
     // An inherited LOAD_FIELD (cc 2) whose entry has only ever held one receiver shape: any other
     // exits (OptExit.RECEIVER), so the read proves the shape as an own one does.
     bool exact;
+    // An exact LOAD_FIELD whose owner's slot the code watches (OptBuild.watched_method): it only
+    // proves the receiver reads that slot, and a CONST_OBJ after it is the value.
+    bool folded;
     // A VALUE node that may hold a string (read from a counted holder by a load, or a copy or phi
     // of one), which a store into the heap counts. Any other VALUE node holds no counted value.
     bool counted;

@@ -1700,7 +1700,12 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
             hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
             Jumps settled;
             self.settled_chain_slots(ic, i, &settled);
-            self.select_chain_slot(ic, n.plain);
+            if (n.folded) {
+                // A moved epoch may have the receiver read another slot than the watched one.
+                self.exit_at(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.SHAPE);
+            } else {
+                self.select_chain_slot(ic, n.plain);
+            }
             settled.bind(sljit_emit_label(c));
             known_slot = true;
         } else if (poly.count > 1) {
@@ -1709,6 +1714,10 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         } else {
             self.guard_shape(R1, poly.shape[0]);
         }
+    }
+    if (n.folded) {
+        self.exit_calls(i, OptExit.SHAPE);
+        return;
     }
     if (known_slot) {
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
