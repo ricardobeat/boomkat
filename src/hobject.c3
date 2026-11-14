@@ -1851,6 +1851,7 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
         }
         sh = sh.parent_shape;
     }
+    h.property_changed(self, idx, false);
     if (self.gc.prototype_observed) h.bump_prototype_epoch(self);
     if (self.retransition_flags(idx, new_flags, h)) return;
     self.make_shape_private(h);
@@ -2293,6 +2294,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
     assert(!self.is_proxy(), "a property added to a proxy");
+    if (((HString*)key).is_symbol()) h.holder_changed(self);
     if (self.gc.packed && ((HString*)key).is_arridx()) self.unpack(h);
     if (self.gc.prototype_observed) h.bump_prototype_epoch(self);
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
@@ -2462,6 +2464,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         return false;
     }
     if (self.gc.watched) h.watched_write();
+    h.property_changed(self, (uint)idx, true);
 
     uint ui = (uint)idx;
     uint new_count = self.prop_count - 1;
@@ -3965,7 +3968,7 @@ fn bool ic_poly_add(ICEntry* ic, uint shape_id, uint prop_idx, heap::Heap* h) {
 // the optimizing tier reads: the entry itself, as every store hit path matches it, holds one shape.
 fn void ic_fill_put_own(ICEntry* ic, HObject* hobj, uint idx, PropFlags flags, HString* key, heap::Heap* h) {
     // A store into a watched object must reach a path that clears what it guards.
-    if (hobj.gc.watched) return;
+    if (hobj.gc.watched || hobj.gc.bindings_watched) return;
     bool own_same = ic.key.borrow() == (void*)key && ic.shape_id != heap::SHAPE_NONE && !ic.has_proto
         && ic.prop_idx != IC_PROP_ABSENT && ic.prop_idx != IC_PROP_MISSING
         && !ic.prop_flags.is_accessor && ic.prop_flags.writable
@@ -4511,6 +4514,11 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     if (bindings != null) {
         ((HObject*)bindings).gc.ic_bound = true;
         vic.slot_ptr = vic.slot();
+        // A watched binding's stores take the full path, which fires the watch.
+        if (h.binding_watched((HObject*)bindings, prop_idx)) {
+            vic.varref_store_ok = false;
+            vic.prop_flags.writable = false;
+        }
         if (vic.prop_flags.is_accessor) var_ic_alias_import(vic, h);
     }
 }

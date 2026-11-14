@@ -593,6 +593,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         cur.bindings.prop_values()[idx].set_number(new_d);
                         vm.heap.set_reg_number(ra, new_d);
                     }
+                    vm.heap.slot_stored(cur.bindings, &cur.bindings.prop_values()[idx]);
                     found = true;
                     ic_env = cur;
                     ic_prop_idx = idx;
@@ -782,6 +783,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         cur.bindings.prop_values()[idx].set_number(new_d);
                         vm.heap.set_reg_number(ra, new_d);
                     }
+                    vm.heap.slot_stored(cur.bindings, &cur.bindings.prop_values()[idx]);
                     found = true;
                     // Cache only plain data slots (fastint/number path). BigInt
                     // slots are fine to cache too (guard re-reads value), but the

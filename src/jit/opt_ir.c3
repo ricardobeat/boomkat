@@ -159,7 +159,8 @@ enum OptOp : char {
     // there is room for it. The nodes after it, until the next such node, are the callee's body.
     // a and b, when not NO_NODE, are VALUE nodes holding the callee and the receiver (a nested
     // call whose window lies beyond the caller's frame). Before a CALL_REG of a polymorphic call,
-    // imm is 0 and poly names the functions any of which passes.
+    // imm is 0 and poly names the functions any of which passes. With cc bit OPT_CALLEE_PROVEN the
+    // callee is a constant the builder proved such a closure, and only the frame is tested.
     CHECK_CALLEE,
     // The variable a CALL_VAR (cc nonzero) or CALL_GLOBAL (imm its pc) names, stored in the call's
     // callee register as a published value; exits (SLOW_PATH) when its cache does not hold. Of
@@ -168,10 +169,18 @@ enum OptOp : char {
     // A GETGLOBAL of an inlined body (imm its pc) read as a number of the node's rep; exits when
     // its cache does not hold or the value is not that kind of number.
     LOAD_GLOBAL,
+    // A PUTGLOBAL (imm its pc) of the value of node a, or of its window slot when NO_NODE, into
+    // the slot its cache names; exits (SLOW_PATH) when the cache does not hold or does not allow
+    // the store, which it does not for a watched binding (OptWatch).
+    STORE_GLOBAL,
+    // An INC_GLOBAL or DEC_GLOBAL (imm its pc) of a fastint that stays one, through its cache as
+    // STORE_GLOBAL; the result is the VALUE node.
+    STEP_GLOBAL,
     // Exits (BINDING) before the GETGLOBAL or GETCAP at pc unless the binding OptGraph.bindings[imm]
     // still holds the value the code folded, the backing store of a typed array value included: with
     // cc bit OPT_GUARD_LAYOUT first its holder's layout, with OPT_GUARD_EPOCH the folded-object epoch
-    // (OptBinding). While the collector marks, an object value is shaded, as a load of it would be.
+    // (OptBinding). A watched binding's guard (OPT_GUARD_WATCH) compares only the watch epoch, which
+    // proves every watched binding at once, and exits WATCH. While the collector marks, an object value is shaded, as a load of it would be.
     // It defines nothing.
     GUARD_BINDING,
     // Exits (CAPTURE) before the GETCAP at pc unless the running closure's capture record is
@@ -197,6 +206,8 @@ enum OptOp : char {
     // An INSTANCEOF (pc) of an inlined body, as the baseline's inline path answers it from the
     // site's cache: the object in VALUE node a and the constructor in b, or in the window when
     // NO_NODE, the boolean to its A slot. Any case the cache does not answer leaves for the baseline code.
+    // Of rep VALUE, a boolean: the left operand in VALUE node a or window slot imm walked to the
+    // prototype object key of a constant constructor whose `prototype` the code watches.
     INSTANCEOF,
     // A NEWOBJ, NEWOBJ_SHAPE, NEWARR or NEWARR_CONST (pc) of an inlined body, allocated inline as the
     // baseline emitter allocates it and stored boxed to the window slot home. The allocator adopts
@@ -272,6 +283,8 @@ enum OptOp : char {
     // not constructable, the cache does not hold or the allocation fails. a, when not NO_NODE, is the
     // VALUE node holding the constructor. Sunk, it allocates nothing: c is its OptGraph.sinks
     // entry, and it exits where the allocation would unless the state its site validated holds.
+    // key, when not null, is the prototype of a constant constructor whose `prototype` the code
+    // watches (OptBuild.constant_prototype), which needs neither the cache nor its tests.
     NEW_OBJECT,
     // The guard of an inlined forwarding call (`f.apply(x, arguments)`, OptBuild.forward_window):
     // exits (CALLEE) unless the VALUE node a, or the window slot home when a is NO_NODE, holds the
@@ -517,6 +530,9 @@ struct OptBinding {
     uint holder;
     hobject::PropValue* slot;
     ulong value;
+    // An object value held under a watch on the binding (OptWatch), which no guard tests but the
+    // watch epoch (OPT_GUARD_WATCH).
+    bool watch;
 }
 
 const uint OPT_NO_HOLDER = uint::max;
@@ -531,6 +547,10 @@ struct OptCapture {
 // GUARD_BINDING's cc bits.
 const char OPT_GUARD_LAYOUT = 1;
 const char OPT_GUARD_EPOCH = 2;
+const char OPT_GUARD_WATCH = 4;
+
+// CHECK_CALLEE's cc bit for a constant callee proven at build time.
+const char OPT_CALLEE_PROVEN = 16;
 
 // A join (block `pos` in reverse postorder) and a register merged there.
 // The function of a MATH node, with the number of arguments its call passes.
@@ -597,8 +617,9 @@ struct OptGraph {
     List{OptBinding} bindings;
     List{OptCapture} captures;
     List{OptEntryFact} entry_facts;
-    // Heap.folded_epoch when the graph was built.
+    // Heap.folded_epoch and OptPolicy.watch_epoch when the graph was built.
     uint folded_epoch;
+    uint watch_epoch;
     // The frame whose entry or loop asked for the compile, or null; its closure's capture records,
     // once a GETCAP is lowered (OptBuild.frame_refs).
     Activation* frame;
@@ -676,7 +697,7 @@ fn bool OptGraph.loads_elements(&self) {
 fn bool OptGraph.is_boolean(&self, OptNode* n) {
     while (n.op == OptOp.COPY) n = &self.nodes[n.a];
     if (n.rep != OptRep.VALUE) return false;
-    return n.op == OptOp.COMPARE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || (n.op == OptOp.PHI && n.cc == 1);
+    return n.op == OptOp.COMPARE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.INSTANCEOF || (n.op == OptOp.PHI && n.cc == 1);
 }
 
 // Whether VALUE node `n` may hold a value the collector has not seen while it marks: anything but a

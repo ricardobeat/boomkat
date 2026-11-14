@@ -68,6 +68,18 @@ enum OptExit : char (String label) {
     // code assumes there (OptCg.emit_entry_facts). The rebuild reads the caches the baseline code
     // has updated since.
     ENTRY {"entry"},
+    // A watched binding changed (OptPolicy.watch_epoch). The rebuild reads it instead.
+    WATCH {"watch"},
+}
+
+// A binding whose object value optimized code holds as a constant: slot `idx` of `holder`, a
+// bindings_watched object. No store fast path writes the slot (opt_watch), so every write reaches
+// opt_watch_store, which fires the watch when the value changes, as a change to the property or
+// its deletion does (opt_watch_property).
+struct OptWatch {
+    HObject* holder;
+    uint idx;
+    ulong value;
 }
 
 // Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a
@@ -127,6 +139,8 @@ const uint OPT_BAN_ALL = 0xFFFFFFFF;
 const uint OPT_HIT_SLOTS = 8;
 // Global bindings remembered as changing (OptPolicy.unfolded).
 const uint OPT_UNFOLD_MAX = 64;
+// Bindings watched at once (OptPolicy.watches).
+const uint OPT_WATCH_MAX = 128;
 // Rebuilds that move phis without a machine register to the window before the function is refused.
 const uint OPT_PRESSURE_ROUNDS = 6;
 
@@ -196,6 +210,8 @@ struct OptSinkSite {
     ulong proto_off;
     // The NEW_OBJ's cache, and the property count the object is built with room for.
     hobject::ICEntry* new_ic;
+    // A constant constructor whose `prototype`, proto, the code watches: no cache is read.
+    bool fixed;
     uint want;
     uint add_count;
     uint read_count;
@@ -279,6 +295,11 @@ struct OptPolicy {
     // reader's. The oldest give way first.
     void*[OPT_UNFOLD_MAX] unfolded;
     uint unfolded_next;
+    // The watched bindings, and the epoch a firing moves: code holding a watched value compares
+    // it after anything that runs code (OPT_GUARD_WATCH).
+    OptWatch[OPT_WATCH_MAX] watches;
+    uint watch_count;
+    uint watch_epoch;
     // Test hook: zero, or one more than the OptExit every optimized body
     // takes `force_count` times at instruction `force_at`.
     uint force_reason;
@@ -747,6 +768,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, Activation* act, uint osr_
     defer g.free();
     g.frame = act;
     g.folded_epoch = h.folded_epoch;
+    g.watch_epoch = p.watch_epoch;
     if (region) {
         if (!opt_find_region(f, osr_pc, f.opt_region_fails, &g.region)) return opt_refuse_build(h, f, OptRefuse.CFG, Opcode.NOP, true);
         g.region.regs = regs;
@@ -835,6 +857,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, Activation* act, uint osr_
     f.opt_code = oc;
     f.opt_state = OPT_ACTIVE;
     f.jit_code = code;
+    foreach (&x : g.bindings) if (x.watch) opt_watch(h, g.holders[x.holder].obj, x.slot, x.value);
     if (p.log) {
         io::eprintf("opt compile ");
         opt_log_fn(f);
@@ -1029,7 +1052,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     bool widened = (reason == OptExit.NOT_INT32.ordinal || reason == OptExit.NOT_NUMBER.ordinal) && oc.f.ic_entries != null
         && opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
-    if (reason == OptExit.UNPROFILED.ordinal || widened) {
+    if (reason == OptExit.UNPROFILED.ordinal || reason == OptExit.WATCH.ordinal || widened) {
         opt_relearn(h, oc);
         return 0;
     }
@@ -1135,6 +1158,99 @@ fn void opt_note_unfold(OptPolicy* p, CompiledFunction* cf, uint pc, Activation*
 fn bool opt_unfolded(OptPolicy* p, void* slot) {
     foreach (s : p.unfolded) if (s == slot) return true;
     return false;
+}
+
+// Make `holder` one whose bindings code may watch. A property cache filled for it before could
+// store to a watched slot: its shape's storage generation moves, which every such cache compares.
+fn void opt_watch_holder(Heap* h, HObject* holder) {
+    if (holder.gc.bindings_watched) return;
+    holder.gc.bindings_watched = true;
+    h.bump_shape_gen(holder.shape_id);
+}
+
+fn bool opt_watching(Heap* h, HObject* holder, uint idx) {
+    OptPolicy* p = &h.opt;
+    for (uint w = 0; w < p.watch_count; w++) if (p.watches[w].holder == holder && p.watches[w].idx == idx) return true;
+    return false;
+}
+
+// Watch the binding at `slot` of `holder` (opt_watch_holder), which holds `value`: the variable
+// caches naming the slot lose their store fast paths. The build reserved the room.
+fn void opt_watch(Heap* h, HObject* holder, hobject::PropValue* slot, ulong value) {
+    OptPolicy* p = &h.opt;
+    uint idx = (uint)(slot - holder.prop_values());
+    if (opt_watching(h, holder, idx)) return;
+    p.watches[p.watch_count++] = { .holder = holder, .idx = idx, .value = value };
+    for (uint fi = 0; fi < h.compiled_func_count; fi++) {
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+        if (cf == null || cf.var_ic_entries == null) continue;
+        hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
+        for (uint i = 0; i < cf.var_ic_count; i++) {
+            if (vics[i].slot_ptr != slot) continue;
+            vics[i].varref_store_ok = false;
+            vics[i].prop_flags.writable = false;
+        }
+    }
+    // Code stores the value to frames the collector may have scanned already.
+    TVal v = { .bits = value };
+    if (h.gc_phase == heap::GcPhase.MARK) h.shade_value(v);
+}
+
+fn void opt_watch_fire(Heap* h, uint w) {
+    OptPolicy* p = &h.opt;
+    OptWatch* x = &p.watches[w];
+    void* slot = &x.holder.prop_values()[x.idx];
+    if (!opt_unfolded(p, slot)) p.unfolded[p.unfolded_next++ % OPT_UNFOLD_MAX] = slot;
+    p.watches[w] = p.watches[--p.watch_count];
+    p.watch_epoch++;
+}
+
+// A store into `slot` of `owner`: the watch on it fires when the value changed.
+fn void opt_watch_store(Heap* h, HObject* owner, hobject::PropValue* slot) @noinline {
+    OptPolicy* p = &h.opt;
+    uint idx = (uint)(slot - owner.prop_values());
+    for (uint w = 0; w < p.watch_count; w++) {
+        OptWatch* x = &p.watches[w];
+        if (x.holder != owner || x.idx != idx) continue;
+        if (slot.get().bits != x.value) opt_watch_fire(h, w);
+        return;
+    }
+}
+
+// A change to the property at `idx` of `owner`, or its deletion: the watch on it fires, and a
+// deletion moves the watches of the slots after it down by one, as it moves their values.
+fn void opt_watch_property(Heap* h, HObject* owner, uint idx, bool deleted) @noinline {
+    OptPolicy* p = &h.opt;
+    for (uint w = p.watch_count; w-- > 0;) {
+        OptWatch* x = &p.watches[w];
+        if (x.holder != owner) continue;
+        if (x.idx == idx) {
+            opt_watch_fire(h, w);
+        } else if (deleted && x.idx > idx) {
+            x.idx--;
+        }
+    }
+}
+
+// `owner` gained an own symbol-keyed property or another [[Prototype]]: what the code assumed of its
+// `instanceof` may not hold, and its watches fire.
+fn void opt_watch_holder_changed(Heap* h, HObject* owner) @noinline {
+    OptPolicy* p = &h.opt;
+    for (uint w = p.watch_count; w-- > 0;) if (p.watches[w].holder == owner) opt_watch_fire(h, w);
+}
+
+// The watched values are roots: code stores them to frames without a barrier.
+fn void opt_mark_watches(Heap* h) {
+    OptPolicy* p = &h.opt;
+    for (uint w = 0; w < p.watch_count; w++) {
+        TVal v = { .bits = p.watches[w].value };
+        h.mark_tval(&v);
+    }
+}
+
+fn void opt_clear_watches(Heap* h) {
+    h.opt.watch_count = 0;
+    h.opt.watch_epoch++;
 }
 
 // Whether an exit says nothing about the body's speculation: a slow path taken while the collector

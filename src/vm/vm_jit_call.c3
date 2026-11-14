@@ -495,11 +495,16 @@ fn bool jit_opt_sink_check(Dispatch* ds, HObject* ctor, jit::OptSinkSite* site) 
     h.opt.sink_checks++;
     hobject::ICEntry* ic = site.new_ic;
     if (!ctor.is_constructable()) return false;
-    if (ic.key.borrow() != (void*)h.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
-        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(h)
-        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return false;
-    TVal proto = ctor.prop_values()[ic.prop_idx].get();
-    if (!proto.is_object()) return false;
+    TVal proto;
+    if (site.fixed) {
+        proto.set_object_borrowed((HObject*)site.proto);
+    } else {
+        if (ic.key.borrow() != (void*)h.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
+            || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(h)
+            || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return false;
+        proto = ctor.prop_values()[ic.prop_idx].get();
+        if (!proto.is_object()) return false;
+    }
     HObject* first = (HObject*)proto.get_heapptr();
     for (HObject* cur = first; cur != null; cur = cur.prototype) {
         if (!hobject::plain_property_object(cur)) return false;

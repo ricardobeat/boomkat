@@ -882,7 +882,7 @@ fn bool keeps_fresh(OptOp op) {
         case ADD_I32: case SUB_I32: case MUL_I32: case AND_I32: case OR_I32: case XOR_I32: case NOT_I32:
         case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32: case I32_TO_F64: case F64_TO_I32:
         case ADD_F64: case SUB_F64: case MUL_F64: case DIV_F64: case NEG_F64: case MATH:
-        case CHECK_CALLEE: case LOAD_VAR: case LOAD_GLOBAL: case GUARD_BINDING: case GUARD_CAPTURE:
+        case CHECK_CALLEE: case LOAD_VAR: case LOAD_GLOBAL: case GUARD_BINDING: case GUARD_CAPTURE: case STORE_GLOBAL: case STEP_GLOBAL:
         case COPY_WINDOW: case STORE_CONST: case TYPEOF: case INSTANCEOF: case COMPARE: case LNOT: case NEW_OBJECT:
         case CHECK_BUILTIN: case MOVE_WINDOW: case ADD_FIELD:
             return true;
@@ -1340,6 +1340,26 @@ fn bool OptBuild.get_global(&self) {
     return self.get_variable(false);
 }
 
+// PUTGLOBAL, INC_GLOBAL or DEC_GLOBAL of the function's own: the store through the instruction's
+// cache (STORE_GLOBAL, STEP_GLOBAL), whose misses leave for the baseline code; one that has left
+// repeatedly runs the baseline's. A store may change a folded binding no watch covers.
+fn bool OptBuild.put_global(&self) {
+    uint ra = self.w.a;
+    if (self.cur_fn != 0 || self.wide || ra >= self.nregs || self.f.var_ic_entries == null || opt_site_banned(self.f, self.f, self.next_pc - 1)) return self.generic();
+    if (self.w.op == Opcode.PUTGLOBAL) {
+        uint v = self.cur[ra].node;
+        if (v != NO_NODE && self.rep_of(v) == OptRep.NONE) return self.generic();
+        uint n = self.add(OptOp.STORE_GLOBAL, OptRep.NONE, v, NO_NODE, (long)self.pc);
+        self.snapshot(n);
+    } else {
+        uint n = self.add(OptOp.STEP_GLOBAL, OptRep.VALUE, NO_NODE, NO_NODE, (long)self.pc);
+        self.snapshot(n);
+        self.set(ra, n);
+    }
+    self.fact_bindings &= OPT_FACT_WATCH;
+    return true;
+}
+
 // GETVAR in an inlined body, as GETGLOBAL, through its scope cache. The cache is keyed by the scope
 // chain the function runs with, which is the callee closure's, not the running frame's: the read
 // takes the closure from its window slot, or from the VALUE node a nested call's guard checked
@@ -1381,14 +1401,17 @@ fn bool OptBuild.get_variable(&self, bool scoped) {
 }
 
 // The fact bits of fact_bindings: OptGraph.bindings entries from bit 0, the layouts of the
-// OptGraph.holders from OPT_FACT_HOLDER, and the folded-object epoch.
+// OptGraph.holders from OPT_FACT_HOLDER, the folded-object epoch and the watch epoch.
 const uint OPT_BINDINGS_MAX = 56;
 const uint OPT_HOLDERS_MAX = 4;
 const uint OPT_FACT_HOLDER = 56;
 const ulong OPT_FACT_EPOCH = 1UL << 62;
+// The watch epoch, which proves every watched binding (OptBinding.watch).
+const ulong OPT_FACT_WATCH = 1UL << 63;
 
-// GETGLOBAL of a binding the code can fold: a `var` or function declaration of a script, which is a
-// non-configurable data property of the global object.
+// GETGLOBAL of a binding the code can fold: a data property of the global object, which a `var` or
+// function declaration of a script makes non-configurable, or under a watch a configurable one or a
+// `let`, `const` or class binding of a script or module, once initialized.
 fn bool OptBuild.fold_global(&self) {
     CompiledFunction* f = self.cur_f();
     uint pc = self.next_pc - 1;
@@ -1397,9 +1420,14 @@ fn bool OptBuild.fold_global(&self) {
     // The cache names the binding while its epoch is the heap's; the global environment is the
     // one with no parent, and its bindings are the global object.
     if (vic.slot_ptr == null || vic.recycle_epoch != self.h.shape_recycle_epoch || vic.env == null) return false;
-    if (((env::EnvRecord*)vic.env).parent != null || vic.prop_flags.is_accessor || vic.prop_flags.configurable) return false;
-    uint k = self.binding_entry((HObject*)vic.bindings, vic.slot_ptr);
-    if (k == NO_NODE) return false;
+    // A script's or module's declarative record, whose parent is the global one, is watched too.
+    env::EnvRecord* e = vic.env;
+    bool lexical = e.parent != null;
+    if ((lexical && (!e.flags.is_declarative || e.parent.parent != null)) || vic.prop_flags.is_accessor) return false;
+    uint k = self.binding_entry((HObject*)vic.bindings, vic.slot_ptr, true);
+    if (lexical && k != NO_NODE && !self.g.bindings[k].watch) return false;
+    // Only a watch sees a configurable global deleted or redefined.
+    if (k == NO_NODE || (vic.prop_flags.configurable && !self.g.bindings[k].watch)) return false;
     self.fold_binding(k);
     return true;
 }
@@ -1454,9 +1482,9 @@ fn CaptureRef* OptBuild.frame_refs(&self) {
     return g.refs;
 }
 
-// Whether the binding value `v` is one the code folds: a number, or a typed array whose elements the
-// code then addresses directly. Other objects, often rebound, gain nothing yet.
-fn bool OptBuild.fold_value(&self, TVal v) {
+// Whether the binding value `v` is one the code folds without a watch: a number, or a typed array
+// whose elements the code then addresses directly.
+fn bool opt_fold_unwatched(TVal v) {
     if (v.is_numeric()) return true;
     OptView view;
     return v.is_object() && opt_const_view(v.get_raw_bits(), false, &view);
@@ -1464,28 +1492,40 @@ fn bool OptBuild.fold_value(&self, TVal v) {
 
 // The OptGraph.bindings entry for the binding at `slot` of `holder` (none for a value snapshot),
 // added with its holder's when the value is one to fold; NO_NODE when it is not, or when the
-// binding's guard failed somewhere (opt_unfolded).
-fn uint OptBuild.binding_entry(&self, HObject* holder, hobject::PropValue* slot) {
+// binding changed before (opt_unfolded). Another object is folded when the binding can be
+// watched (`watchable`, a global's), and while the watches have room.
+fn uint OptBuild.binding_entry(&self, HObject* holder, hobject::PropValue* slot, bool watchable = false) {
     Heap* h = self.h;
     TVal v = slot.get();
-    if (!self.fold_value(v) || (holder != null && opt_unfolded(&h.opt, slot))) return NO_NODE;
+    if (holder != null && opt_unfolded(&h.opt, slot)) return NO_NODE;
+    bool watch = false;
+    if (!opt_fold_unwatched(v)) {
+        if (!watchable || !v.is_object()) return NO_NODE;
+        uint watches = h.opt.watch_count;
+        foreach (&b : self.g.bindings) if (b.watch) watches++;
+        if (watches >= OPT_WATCH_MAX) return NO_NODE;
+        watch = true;
+        if (!holder.gc.bindings_watched) {
+            opt_watch_holder(h, holder);
+            foreach (&x : self.g.holders) if (x.obj == holder) x.gen = h.get_shape(holder.shape_id).generation;
+        }
+    }
     uint ho = OPT_NO_HOLDER;
     if (holder != null) {
         hobject::Shape* shape = h.get_shape(holder.shape_id);
         if (shape == null) return NO_NODE;
         ho = (uint)self.g.holders.len();
         foreach (j, &x : self.g.holders) if (x.obj == holder) ho = (uint)j;
-        if (ho == self.g.holders.len()) {
-            if (ho >= OPT_HOLDERS_MAX) return NO_NODE;
-            self.g.holders.push({ .obj = holder, .shape = holder.shape_id, .gen = shape.generation });
-        }
+        // A watched binding's holder needs no fact bit.
+        if (!watch && ho >= OPT_HOLDERS_MAX) return NO_NODE;
+        if (ho == self.g.holders.len()) self.g.holders.push({ .obj = holder, .shape = holder.shape_id, .gen = shape.generation });
     }
     ulong bits = v.get_raw_bits();
     uint k = (uint)self.g.bindings.len();
     foreach (j, &b : self.g.bindings) if (b.holder == ho && b.value == bits && (holder == null || b.slot == slot)) k = (uint)j;
     if (k == self.g.bindings.len()) {
         if (k >= OPT_BINDINGS_MAX) return NO_NODE;
-        self.g.bindings.push({ .holder = ho, .slot = holder != null ? slot : null, .value = bits });
+        self.g.bindings.push({ .holder = ho, .slot = holder != null ? slot : null, .value = bits, .watch = watch });
     }
     return k;
 }
@@ -1494,19 +1534,11 @@ fn uint OptBuild.binding_entry(&self, HObject* holder, hobject::PropValue* slot)
 // the last node that runs code.
 fn void OptBuild.fold_binding(&self, uint k) {
     OptBinding* b = &self.g.bindings[k];
-    uint ho = b.holder;
     TVal v = { .bits = b.value };
-    bool object = v.is_object();
-    bool holder = ho != OPT_NO_HOLDER;
-    ulong need = (1UL << k) | (holder ? 1UL << (OPT_FACT_HOLDER + ho) : 0) | (object ? OPT_FACT_EPOCH : 0);
-    if ((self.fact_bindings & need) != need) {
-        char cc = 0;
-        if (holder && (self.fact_bindings & (1UL << (OPT_FACT_HOLDER + ho))) == 0) cc |= OPT_GUARD_LAYOUT;
-        if (object && (self.fact_bindings & OPT_FACT_EPOCH) == 0) cc |= OPT_GUARD_EPOCH;
-        uint g = self.add(OptOp.GUARD_BINDING, OptRep.NONE, NO_NODE, NO_NODE, (long)k);
-        self.g.nodes[g].cc = cc;
-        self.snapshot(g);
-        self.fact_bindings |= need;
+    if (b.watch) {
+        self.need_watch(k);
+    } else {
+        self.need_binding(k);
     }
     uint n;
     if (v.is_fastint() && v.get_fastint() >= int::min && v.get_fastint() <= int::max) {
@@ -1515,10 +1547,40 @@ fn void OptBuild.fold_binding(&self, uint k) {
         n = self.const_f64(v.get_number_or_fastint());
     } else {
         // Its death would let its address name another object: folded, it moves the epoch first.
-        ((HObject*)v.get_heapptr()).mark_folded();
+        // A watched one lives while its binding holds it.
+        if (!b.watch) ((HObject*)v.get_heapptr()).mark_folded();
         n = self.add(OptOp.CONST_OBJ, OptRep.VALUE, NO_NODE, NO_NODE, (long)b.value);
     }
     self.set(self.w.a, n);
+}
+
+// A GUARD_BINDING of the unwatched binding `k`, its holder's layout and the folded-object epoch as
+// it needs them, unless they are proven since the last node that runs code.
+fn void OptBuild.need_binding(&self, uint k) {
+    OptBinding* b = &self.g.bindings[k];
+    uint ho = b.holder;
+    TVal v = { .bits = b.value };
+    bool object = v.is_object();
+    bool holder = ho != OPT_NO_HOLDER;
+    ulong need = (1UL << k) | (holder ? 1UL << (OPT_FACT_HOLDER + ho) : 0) | (object ? OPT_FACT_EPOCH : 0);
+    if ((self.fact_bindings & need) == need) return;
+    char cc = 0;
+    if (holder && (self.fact_bindings & (1UL << (OPT_FACT_HOLDER + ho))) == 0) cc |= OPT_GUARD_LAYOUT;
+    if (object && (self.fact_bindings & OPT_FACT_EPOCH) == 0) cc |= OPT_GUARD_EPOCH;
+    uint g = self.add(OptOp.GUARD_BINDING, OptRep.NONE, NO_NODE, NO_NODE, (long)k);
+    self.g.nodes[g].cc = cc;
+    self.snapshot(g);
+    self.fact_bindings |= need;
+}
+
+// A GUARD_BINDING of the watch epoch (binding `k`, a watched one), unless it is proven since the
+// last node that runs code: it proves every watched binding.
+fn void OptBuild.need_watch(&self, uint k) {
+    if ((self.fact_bindings & OPT_FACT_WATCH) != 0) return;
+    uint g = self.add(OptOp.GUARD_BINDING, OptRep.NONE, NO_NODE, NO_NODE, (long)k);
+    self.g.nodes[g].cc = OPT_GUARD_WATCH;
+    self.snapshot(g);
+    self.fact_bindings |= OPT_FACT_WATCH;
 }
 
 // A typed array whose elements an access can address directly when it is a constant: a
@@ -1786,6 +1848,54 @@ fn HObject* constant_callee(TVal v, CompiledFunction* cf) {
     if (fx.comp_func != cf || fx.var_env == null || (fx.lex_env != null && fx.lex_env.flags.is_with)) return null;
     fo.observe_prototype();
     return fo;
+}
+
+// The CHECK_CALLEE `chk` of a call of `cf`, a construct one when `construct`: proven when its callee
+// is a constant closure of `cf` whose code the call can enter, which nothing about a function
+// object changes.
+fn void OptBuild.prove_callee(&self, uint chk, CompiledFunction* cf, bool construct) {
+    OptNode* n = &self.g.nodes[chk];
+    if (cf == null || n.a == NO_NODE || self.g.nodes[n.a].op != OptOp.CONST_OBJ) return;
+    TVal v = { .bits = (ulong)self.g.nodes[n.a].imm };
+    if (!v.is_object()) return;
+    HObject* fo = (HObject*)v.get_heapptr();
+    if (fo.callable_kind() != hobject::CallableKind.COMPILED_FN || fo.flags.exotic_proxyobj || fo.flags.obj_class != hobject::ObjClass.FUNCTION) return;
+    if (construct && !fo.flags.constructable) return;
+    hobject::HObjectFunction* fx = &(*fo.extra_ptr()).func;
+    if (fx.comp_func != cf || fx.builtin_fn_index >= 0 || fx.var_env == null || (fx.lex_env != null && fx.lex_env.flags.is_with)) return;
+    n.cc |= OPT_CALLEE_PROVEN;
+}
+
+// The prototype object (its address) a NEW_OBJ gives its object when CHECK_CALLEE `chk` proved its
+// constructor a constant whose `prototype` the code watches (watched_prototype), else null.
+fn void* OptBuild.constant_prototype(&self, uint chk) {
+    void* proto;
+    OptNode* n = &self.g.nodes[chk];
+    if ((n.cc & OPT_CALLEE_PROVEN) == 0 || !self.watched_prototype(n.a, &proto)) return null;
+    return proto;
+}
+
+// The callee of the CALL_VAR or CALL_GLOBAL being lowered, into its register: for a CALL_GLOBAL
+// the constant its binding holds when the code can fold it (fold_global), its node in `node`; else
+// read by a LOAD_VAR in the scope of `closure`, its node in `node` beyond the caller's frame.
+fn void OptBuild.global_callee(&self, uint callee_reg, uint closure, uint* node) {
+    if (self.w.op == Opcode.CALL_GLOBAL && callee_reg < self.nregs && self.fold_global()) {
+        // A frame the call publishes reads its function from the window, where liveness, for which
+        // the call writes the register, does not store it.
+        if (callee_reg < self.caller_regs) self.publish_value(callee_reg);
+        *node = self.cur[callee_reg].node;
+        return;
+    }
+    bool beyond = callee_reg >= self.caller_regs;
+    uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, closure, (long)self.pc);
+    self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
+    self.snapshot(load);
+    if (beyond) {
+        self.set(callee_reg, load);
+        *node = load;
+    } else {
+        self.kill(callee_reg);
+    }
 }
 
 // The cache entry of the instruction being lowered when it names an own data property of a
@@ -2444,12 +2554,43 @@ fn bool OptBuild.typeof_value(&self) {
     return true;
 }
 
-// INSTANCEOF in an inlined body: the baseline's inline path on the VALUE nodes the operand
-// registers hold, or on their window slots. The function's own stays a GENERIC.
+// Whether the constant `node` is a function whose `instanceof` is OrdinaryHasInstance with the
+// prototype object `proto` (its address) its `prototype` property holds, under a watch on that property; its
+// [[Prototype]] and an own @@hasInstance are watched with it (opt_watch_holder_changed).
+fn bool OptBuild.watched_prototype(&self, uint node, void** proto) {
+    Heap* h = self.h;
+    TVal f = { .bits = (ulong)self.g.nodes[node].imm };
+    if (!f.is_object()) return false;
+    HObject* fo = (HObject*)f.get_heapptr();
+    if (fo.prototype != h.function_proto || fo.in_dict_mode(h) || !hobject::uses_default_has_instance(h, fo)) return false;
+    if (h.hasinstance_symbol != null && fo.find_prop_idx((void*)h.hasinstance_symbol, h) >= 0) return false;
+    int idx = fo.find_prop_idx(h.strs[heap::BuiltinStr.PROTOTYPE], h);
+    if (idx < 0 || fo.get_prop_flags((uint)idx, h).is_accessor) return false;
+    uint k = self.binding_entry(fo, &fo.prop_values()[idx], true);
+    if (k == NO_NODE || !self.g.bindings[k].watch) return false;
+    self.need_watch(k);
+    TVal p = { .bits = self.g.bindings[k].value };
+    *proto = p.get_heapptr();
+    return true;
+}
+
+// INSTANCEOF: with a constant on the right whose `prototype` the code watches (watched_prototype),
+// the walk of the left operand's prototype chain, as a boolean; else in an inlined body the
+// baseline's inline path on the VALUE nodes the operand registers hold, or on their window slots.
+// The function's own other cases stay a GENERIC.
 fn bool OptBuild.instance_of(&self) {
-    if (self.cur_fn == 0) return self.generic();
     uint ra = self.w.a;
-    if (ra >= self.nregs || self.w.b >= self.nregs || self.w.c >= self.nregs || self.wide || self.cur_f().ic_entries == null) return self.generic();
+    if (ra >= self.nregs || self.w.b >= self.nregs || self.w.c >= self.nregs || self.wide) return self.generic();
+    void* proto;
+    if (self.const_object(self.w.c) && (self.cur[self.w.b].node == NO_NODE || self.holds_value(self.w.b))
+        && self.watched_prototype(self.cur[self.w.c].node, &proto)) {
+        uint n = self.add(OptOp.INSTANCEOF, OptRep.VALUE, self.cur[self.w.b].node, NO_NODE, (long)self.w.b);
+        self.g.nodes[n].key = proto;
+        self.snapshot(n);
+        self.set(ra, n);
+        return true;
+    }
+    if (self.cur_fn == 0 || self.cur_f().ic_entries == null) return self.generic();
     foreach (r : (uint[2]){ self.w.b, self.w.c }) {
         if (self.cur[r].node != NO_NODE && !self.holds_value(r)) return self.generic();
     }
@@ -2549,23 +2690,14 @@ fn bool OptBuild.direct_callee(&self, CompiledFunction** one) {
     if (var_call) {
         uint closure;
         if (!self.body_closure(&closure)) return false;
-        // Into a VALUE node beyond the caller's frame, else into the callee register.
-        bool beyond = callee_reg >= self.caller_regs;
-        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, closure, (long)self.pc);
-        self.g.nodes[load].cc = op == Opcode.CALL_VAR ? 1 : 0;
-        self.snapshot(load);
-        if (beyond) {
-            self.set(callee_reg, load);
-            callee_node = load;
-        } else {
-            self.kill(callee_reg);
-        }
+        self.global_callee(callee_reg, closure, &callee_node);
     } else {
         if (!self.call_operand(callee_reg, &callee_node)) return false;
         if ((method || callee_reg + 1 < self.caller_regs) && !self.call_operand(callee_reg + 1, &recv_node)) return false;
     }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)cf);
     self.g.nodes[chk].cc = method ? 1 : 0;
+    self.prove_callee(chk, cf, false);
     if (cf == null) {
         self.g.callees.push(set);
         self.g.nodes[chk].poly = (uint)self.g.callees.len();
@@ -3777,16 +3909,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
             self.fail_flat(si, OptInlineReject.STATE);
             return true;
         }
-        bool beyond = callee_reg >= self.caller_regs;
-        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, closure, (long)self.pc);
-        self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
-        self.snapshot(load);
-        if (beyond) {
-            self.set(callee_reg, load);
-            callee_node = load;
-        } else {
-            self.kill(callee_reg);
-        }
+        self.global_callee(callee_reg, closure, &callee_node);
     }
     if (s.forward) {
         uint fwd = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, apply_node, NO_NODE, (long)builtins::Builtin.FUNCTION_PROTO_APPLY.ordinal);
@@ -3795,6 +3918,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
     }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     self.g.nodes[chk].cc = s.construct ? 2 : (s.method ? 1 : 0);
+    if (!s.forward) self.prove_callee(chk, s.cf, s.construct);
     if (s.method && !s.forward) self.settle_method(chk, callee_reg, s.cf, s);
     self.snapshot(chk);
     if (s.forward) {
@@ -3809,7 +3933,9 @@ fn bool OptBuild.enter_flat(&self, uint si) {
         }
     }
     if (s.construct) {
+        void* proto = self.constant_prototype(chk);
         uint object = self.add(OptOp.NEW_OBJECT, OptRep.VALUE, callee_node, NO_NODE, (long)(usz)s.cf);
+        self.g.nodes[object].key = proto;
         self.snapshot(object);
         self.set(callee_reg + 1, object);
         self.note_fresh(object, s.cf);
@@ -4118,16 +4244,7 @@ fn bool OptBuild.try_inline(&self) {
     if (s.var_call) {
         // The callee is read from its variable into the callee register, as the call would; beyond
         // the caller's frame into a VALUE node.
-        bool beyond = callee_reg >= self.caller_regs;
-        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.VALUE : OptRep.NONE, NO_NODE, scope_node, (long)self.pc);
-        self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
-        self.snapshot(load);
-        if (beyond) {
-            self.set(callee_reg, load);
-            callee_node = load;
-        } else {
-            self.kill(callee_reg);
-        }
+        self.global_callee(callee_reg, scope_node, &callee_node);
     }
     // The guard resumes the call itself, in the caller's context.
     if (s.forward || s.dotcall) {
@@ -4139,6 +4256,7 @@ fn bool OptBuild.try_inline(&self) {
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     // Bit 2: the function and receiver are those after the callee register (`apply`, `call`).
     self.g.nodes[chk].cc = (s.construct ? 2 : (s.method ? 1 : 0)) | (s.dotcall ? 4 : 0);
+    if (!s.forward && !s.dotcall) self.prove_callee(chk, s.cf, s.construct);
     if (s.method && !s.forward && !s.dotcall) self.settle_method(chk, callee_reg, s.cf);
     self.snapshot(chk);
     bool move_pending = false;
@@ -4151,7 +4269,9 @@ fn bool OptBuild.try_inline(&self) {
     // A constructor's object, allocated in the caller's context: its exit resumes the NEW_OBJ.
     uint object = NO_NODE;
     if (s.construct) {
+        void* proto = self.constant_prototype(chk);
         object = self.add(OptOp.NEW_OBJECT, OptRep.VALUE, callee_node, NO_NODE, (long)(usz)s.cf);
+        self.g.nodes[object].key = proto;
         self.snapshot(object);
         self.set(callee_reg + 1, object);
         self.note_fresh(object, s.cf);
@@ -4412,6 +4532,10 @@ fn bool OptBuild.lower_op(&self) {
         case GETVAR:
             if (self.cur_fn == 0) return self.generic();
             return self.get_scoped();
+        case PUTGLOBAL:
+        case INC_GLOBAL:
+        case DEC_GLOBAL:
+            return self.put_global();
         case LDTHIS:
             if (self.cur_fn == 0) {
                 if (self.w.a >= self.nregs) return false;
