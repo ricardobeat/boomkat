@@ -159,14 +159,26 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     return true;
 }
 
-// A read at the site of the epoch entry `ic` whose receiver `hobj` the entry does not hold (an
-// optimized load left for it): when the property is an ordinary data property of a prototype an
-// epoch entry could cache, its case joins the entry's prototype-read set. True when the set gained it.
+// A read at the site of the entry `ic` whose receiver `hobj` the entry does not hold (an optimized
+// load left for it), when one site meets both kinds of receiver: an epoch entry's receiver with
+// the property as its own data property, or an own entry's (one shape or several) receiver that
+// inherits it as an ordinary data property of a prototype an epoch entry could cache. The case
+// joins the entry's prototype-read set, an own one with no owner (hobject::ICProtoCase). True when
+// the set gained it.
 fn bool ic_note_proto_read(Heap* heap, hobject::ICEntry* ic, HObject* hobj) {
     void* key = (void*)ic.key.borrow();
-    if (key == null || !ic.has_proto || ic.chain_len != hobject::IC_CHAIN_EPOCH || ic.chain == null) return false;
+    if (key == null || ic.prop_flags.is_accessor) return false;
+    bool epoch = ic.has_proto && ic.chain_len == hobject::IC_CHAIN_EPOCH && ic.chain != null;
+    bool own = !ic.has_proto && (ic.chain_len == 0 || ic.chain_len == hobject::IC_CHAIN_POLY);
+    if (!epoch && !own) return false;
     if (((HString*)key).is_arridx() || ((HString*)key).is_hidden()) return false;
-    if (!hobject::plain_property_object(hobj) || hobj.in_dict_mode(heap) || hobj.find_prop_idx(key, heap) >= 0) return false;
+    if (!hobject::plain_property_object(hobj) || hobj.in_dict_mode(heap)) return false;
+    int own_idx = hobj.find_prop_idx(key, heap);
+    if (own_idx >= 0) {
+        if (!epoch || hobj.get_prop_flags((uint)own_idx, heap).is_accessor) return false;
+        return hobject::ic_proto_add(ic, hobj.shape_id, hobj.prototype, null, (uint)own_idx, heap);
+    }
+    if (!hobject::ic_reserve_chain(ic, heap)) return false;
     HObject* walk = hobj;
     for (uint depth = 0; depth < hobject::IC_MAX_CHAIN; depth++) {
         walk = walk.prototype;

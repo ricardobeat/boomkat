@@ -2024,9 +2024,10 @@ fn bool OptBuild.get_field(&self) {
     }
     // A property of a prototype is read through the entry at run time, with no shape fact, unless
     // the entry has only ever held the one receiver (OptNode.exact). An inlined body's entry is
-    // shared by every caller, and its exits do not teach it.
+    // shared by every caller, whose receivers no one of them speaks for.
     bool inherited = ic.has_proto;
-    bool mono = ic.chain_len == 0;
+    // An own read whose site also met receivers inheriting the property proves no one shape.
+    bool mono = ic.chain_len == 0 && (inherited || !opt_has_retained(self.h, ic));
     bool exact = inherited && self.cur_fn == 0 && self.w.op != Opcode.GETTHISC && opt_settled_shape(self.h, ic) != null && ic.chain.protos == null;
     // A string primitive's read is an own property of String.prototype by its shape.
     bool string = mono && !inherited && self.w.op != Opcode.GETTHISC && self.h.string_proto != null

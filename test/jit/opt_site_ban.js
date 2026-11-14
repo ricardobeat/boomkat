@@ -1,21 +1,22 @@
-// A field read the optimized body compiled for one receiver shape exits when other shapes arrive;
-// after repeated exits the next build lowers the site generically, and every phase keeps its result.
+// A field read the optimized body compiled for one receiver shape exits when other shapes arrive.
+// The rebuild learns the shapes its cache can hold; past that, after repeated exits, the next build
+// lowers the site generically, and every phase keeps its result.
 function read(o) {
     var s = 0;
     for (var i = 0; i < 4; i++) s += o.x + o.y;
     return s;
 }
+// Kind k is an object with k leading properties before x and y: a shape of its own.
 function mk(kind, i) {
     var o = {};
-    if (kind === 0) { o.x = i; o.y = 1; }
-    else if (kind === 1) { o.y = 2; o.x = i; }
-    else if (kind === 2) { o.z = 0; o.x = i; o.y = 3; }
-    else { o.w = 0; o.z = 0; o.y = 4; o.x = i; }
+    for (var k = 0; k < kind; k++) o["p" + k] = k;
+    o.x = i;
+    o.y = kind;
     return o;
 }
 var total = 0;
 for (var phase = 0; phase < 8; phase++) {
-    for (var i = 0; i < 3000; i++) total += read(mk(phase < 2 ? 0 : (phase & 3), i));
+    for (var i = 0; i < 3000; i++) total += read(mk(phase < 2 ? 0 : i % (phase + 1), i));
 }
 print(total);
 // The same through a method and a prototype read, which exits on other classes' instances.

@@ -1511,51 +1511,79 @@ fn void OptCg.finish_value(&self, uint i, OptNode* n) {
 }
 
 // select_chain_slot's result for the receivers whose cases the epoch entry `ic` settled: the one it
-// holds now and those it retained (hobject::ICProtoSet), when the heap's epoch is still theirs. Each
-// is its shape, first prototype and the owner's slot as constants, under that epoch. The jumps
-// taken, with the slot address in R0, go to `settled`; every other receiver, and a moved epoch,
-// continue after them with R1 kept, but another shape leaves from the exact node `i`. Nothing is
-// emitted for any other entry.
+// holds now and those it retained (retained_cases), when the heap's epoch is still theirs. The
+// jumps taken, with the slot address in R0, go to `settled`; every other receiver, and a moved
+// epoch, continue after them with R1 kept, but another shape leaves from the exact node `i`.
+// Nothing is emitted for any other entry.
 fn void OptCg.settled_chain_slots(&self, hobject::ICEntry* ic, uint i, Jumps* settled) {
-    void* c = self.a.c;
-    Asm* a = self.a;
-    Layout* l = a.lay;
     hobject::Shape* sh = opt_settled_shape(self.h, ic);
     if (sh == null) return;
     hobject::ICChainEpoch* e = &ic.chain.epoch;
     sh.pinned = true;
     hobject::ICProtoCase[1 + hobject::IC_PROTO_MAX] cases;
-    uint count = 0;
-    cases[count++] = { .shape = ic.shape_id, .idx = ic.prop_idx, .first = e.first, .owner = e.owner };
+    cases[0] = { .shape = ic.shape_id, .idx = ic.prop_idx, .first = e.first, .owner = e.owner };
     // An exact node has the one receiver shape.
     bool exact = self.g.nodes[i].exact;
-    hobject::ICProtoSet* set = ic.chain.protos;
-    if (!exact && set != null && set.epoch == e.value) {
-        for (uint k = 0; k < set.count; k++) {
-            hobject::Shape* other = self.h.get_shape(set.cases[k].shape);
-            if (other == null || set.cases[k].first == null) continue;
-            other.pinned = true;
-            cases[count++] = set.cases[k];
-        }
+    uint count = 1 + (exact ? 0 : self.retained_cases(ic, e.value, cases[1..]));
+    sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, self.a.lay.obj_shape);
+    if (exact) self.exit_at(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)ic.shape_id), i, OptExit.RECEIVER);
+    self.case_slots(cases[:count], e.value, !exact, self.g.nodes[i].plain, settled);
+}
+
+// The cases of the prototype-read set of `ic` (hobject::ICProtoSet) the code can compare as
+// constants under the prototype epoch `epoch`, into `out`, their shapes pinned. Their count.
+fn uint OptCg.retained_cases(&self, hobject::ICEntry* ic, ulong epoch, hobject::ICProtoCase[] out) {
+    hobject::ICProtoSet* set = ic.chain == null ? null : ic.chain.protos;
+    if (set == null || set.epoch != epoch) return 0;
+    uint count = 0;
+    for (uint k = 0; k < set.count && count < out.len; k++) {
+        hobject::ICProtoCase* x = &set.cases[k];
+        hobject::Shape* sh = self.h.get_shape(x.shape);
+        if (sh == null || (x.owner != null && x.first == null)) continue;
+        sh.pinned = true;
+        out[count++] = *x;
     }
+    return count;
+}
+
+// The slot address in R0 of the receiver in R1, whose shape R3 holds, for each of `cases`, with a
+// jump to `settled`: an own case (no owner) by its shape alone, an inherited one by its shape
+// (unless not `shaped`) and first prototype, the receiver an ordinary object (known so when
+// `plain`) under the prototype epoch `epoch`, the owner's slot a constant. Every other receiver
+// continues after them with R1 and R3 kept.
+fn void OptCg.case_slots(&self, hobject::ICProtoCase[] cases, ulong epoch, bool shaped, bool plain, Jumps* settled) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    bool inherited = false;
+    foreach (&x : cases) {
+        if (x.owner != null) {
+            inherited = true;
+            continue;
+        }
+        void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)x.shape);
+        a.prop_base(R0, R1);
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)x.idx * 8);
+        settled.add(sljit_emit_jump(c, SLJIT_JUMP));
+        sljit_set_label(other, sljit_emit_label(c));
+    }
+    if (!inherited) return;
     Jumps rest;
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
-    if (exact) self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)ic.shape_id), i, OptExit.RECEIVER);
     // An ordinary object, no proxy among them; a plain one is known so (OptCg.guard_plain).
-    if (!self.g.nodes[i].plain) {
+    if (!plain) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
         sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
         rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
     }
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, l.heap_proto_epoch);
-    rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)e.value));
+    rest.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)epoch));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
-    for (uint k = 0; k < count; k++) {
-        hobject::ICProtoCase* pc = &cases[k];
-        void* shape = exact ? null : sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)pc.shape);
-        void* first = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(usz)pc.first);
+    foreach (&x : cases) {
+        if (x.owner == null) continue;
+        void* shape = shaped ? sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)x.shape) : null;
+        void* first = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(usz)x.first);
         // An observed object's values stay where they are while the epoch stands (HObject.layout_moved).
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)(usz)&pc.owner.prop_values()[pc.idx]);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)(usz)&x.owner.prop_values()[x.idx]);
         settled.add(sljit_emit_jump(c, SLJIT_JUMP));
         void* next = sljit_emit_label(c);
         if (shape != null) sljit_set_label(shape, next);
@@ -1662,8 +1690,11 @@ fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic, bool plain) {
             a.call.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, SLJIT_IMM, (long)k));
             void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.shape - (char*)&pcp));
             void* other2 = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.first - (char*)&pcp));
-            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.owner - (char*)&pcp));
+            // A case with no owner reads the receiver's own slot.
             sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.idx - (char*)&pcp));
+            sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.owner - (char*)&pcp));
+            hits.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
             hits.add(sljit_emit_jump(c, SLJIT_JUMP));
             void* next = sljit_emit_label(c);
             sljit_set_label(other, next);
@@ -1738,11 +1769,37 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
             }
             settled.bind(sljit_emit_label(c));
             known_slot = true;
-        } else if (poly.count > 1) {
-            self.select_slot(poly);
-            known_slot = true;
         } else {
-            self.guard_shape(R1, poly.shape[0]);
+            hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
+            hobject::ICProtoCase[hobject::IC_PROTO_MAX] cases;
+            uint count = self.retained_cases(ic, self.h.prototype_epoch, &cases);
+            // The misses of the receiver's shape, after those of its kind.
+            uint kind_misses = a.call.len;
+            if (poly.count > 1) {
+                self.select_slot(poly);
+                known_slot = true;
+            } else if (count != 0) {
+                self.guard_shape(R1, poly.shape[0]);
+                a.prop_base(R0, R1);
+                sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)poly.idx[0] * 8);
+                known_slot = true;
+            } else {
+                self.guard_shape(R1, poly.shape[0]);
+            }
+            if (count != 0) {
+                // A site that also meets receivers inheriting the property reads those it retained.
+                Jumps miss;
+                for (uint k = kind_misses; k < a.call.len; k++) miss.add(a.call.at[k]);
+                a.call.len = kind_misses;
+                void* done = sljit_emit_jump(c, SLJIT_JUMP);
+                miss.bind(sljit_emit_label(c));
+                sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, a.lay.obj_shape);
+                Jumps settled;
+                self.case_slots(cases[:count], self.h.prototype_epoch, true, n.plain, &settled);
+                a.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+                settled.bind(sljit_emit_label(c));
+                sljit_set_label(done, sljit_emit_label(c));
+            }
         }
     }
     if (n.folded) {

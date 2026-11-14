@@ -3741,9 +3741,11 @@ const uint IC_POLY_MAX = 5;
 
 // Earlier receivers of an inherited ordinary read (an epoch entry) whose entry has moved on to
 // another receiver shape: each case is the receiver shape, its first prototype, the owner and the
-// owner's slot, all under the one prototype epoch. Only the optimizing tier reads it (a
-// polymorphic inherited load); the baseline keeps one entry. The objects are rooted with the
-// entry's read owner. More distinct receivers than IC_PROTO_MAX make it `mega`.
+// owner's slot, all under the one prototype epoch. A site that also meets receivers holding the
+// property themselves keeps those too, with no owner: the slot is the receiver's own, which its
+// shape places. Only the optimizing tier reads it (a polymorphic inherited load); the baseline
+// keeps one entry. The objects are rooted with the entry's read owner. More distinct receivers
+// than IC_PROTO_MAX make it `mega`.
 const uint IC_PROTO_MAX = 4;
 
 struct ICProtoCase {

@@ -663,6 +663,12 @@ fn hobject::ICChainEpoch* opt_epoch_entry(Heap* h, hobject::ICEntry* ic) {
     return e;
 }
 
+// Whether the prototype-read set of the read entry `ic` holds cases of the prototype epoch as it
+// stands (OptCg.retained_cases): an own read then also reads other receivers.
+fn bool opt_has_retained(Heap* h, hobject::ICEntry* ic) {
+    return ic.chain != null && ic.chain.protos != null && ic.chain.protos.count != 0 && ic.chain.protos.epoch == h.prototype_epoch;
+}
+
 // The shape of the receiver that entry holds, when it is the one the entry saw and a shared one,
 // whose id can be pinned and compared as a constant. Else null.
 fn hobject::Shape* opt_settled_shape(Heap* h, hobject::ICEntry* ic) {
@@ -1142,27 +1148,40 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     if (oc.f.opt_code == oc && oc.f.ic_entries != null) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
         if (oc.f.code[at].op == Opcode.WIDE) at++;
-        // A receiver an inherited read's set lacked joins it: the rebuild reads it too, so the
-        // exit does not count towards leaving the site to the baseline.
-        bool learnt = (reason == OptExit.SHAPE.ordinal || reason == OptExit.RECEIVER.ordinal) && opt_note_proto_exit(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
-        if (learnt && reason == OptExit.RECEIVER.ordinal) {
+        // A receiver the read lacked that a rebuild reads (opt_learn_receiver) does not count towards
+        // leaving the site to the baseline.
+        bool learnt = (reason == OptExit.SHAPE.ordinal || reason == OptExit.RECEIVER.ordinal) && opt_learn_receiver(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
+        if (learnt) {
             opt_relearn(h, oc);
             return 0;
         }
-        if (!learnt) repeat = opt_note_site_exit(oc, oc.f, at, reason);
+        repeat = opt_note_site_exit(oc, oc.f, at, reason);
     }
     if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
     return 0;
 }
 
-// A shape exit at the inherited read at word `pc` of `f` (GETPROPC, GETPROPC_CACHED): the receiver's
-// case joins the read's prototype-read set (vm::ic_note_proto_read). True when it did.
-fn bool opt_note_proto_exit(Dispatch* ds, CompiledFunction* f, uint pc) {
+// A shape or receiver exit at the read at word `pc` of `f` (GETPROPC, GETPROPC_CACHED), whose
+// register 0 is register `base` of the frame: true when a rebuild reads the receiver. One that
+// inherits the property where the entry has it own, or has it own where the entry inherits it,
+// joins the entry's prototype-read set (vm::ic_note_proto_read); one with another own shape joins
+// the entry's own shapes when the baseline runs the read, while they have room.
+fn bool opt_learn_receiver(Dispatch* ds, CompiledFunction* f, uint pc, uint base = 0) {
+    if (f.ic_entries == null) return false;
     DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
     if (!d.valid || (d.insn.op != Opcode.GETPROPC && d.insn.op != Opcode.GETPROPC_CACHED)) return false;
-    TVal* recv = ds.regs_base + d.insn.b;
+    TVal* recv = ds.regs_base + base + d.insn.b;
     if (!recv.is_object()) return false;
-    return vm::ic_note_proto_read(ds.heap, &((hobject::ICEntry*)f.ic_entries)[d.payload_pc], (HObject*)recv.get_heapptr());
+    HObject* hobj = (HObject*)recv.get_heapptr();
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.payload_pc];
+    if (vm::ic_note_proto_read(ds.heap, ic, hobj)) return true;
+    void* key = (void*)ic.key.borrow();
+    if (key == null || ic.has_proto || (ic.chain_len != 0 && ic.chain_len != hobject::IC_CHAIN_POLY)) return false;
+    if (!hobject::plain_property_object(hobj) || hobj.in_dict_mode(ds.heap)) return false;
+    int idx = hobj.find_prop_idx(key, ds.heap);
+    if (idx < 0 || hobj.get_prop_flags((uint)idx, ds.heap).is_accessor) return false;
+    OptPoly p;
+    return field_shapes(ic, &p) && p.count < OPT_POLY_MAX;
 }
 
 // A slow path of the element read at word `pc` of `f` taken for a string receiver: the rebuild
@@ -1435,6 +1454,13 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         io::eprintfn("");
     }
     if (opt_exit_transient(h, reason)) return vm::jit_inline_materialize(ds, site);
+    // A receiver the callee's read lacked teaches its entry, which every caller shares, as at a
+    // site of the function's own (the exit stored the registers the callee's frame holds).
+    if ((reason == OptExit.SHAPE.ordinal || reason == OptExit.RECEIVER.ordinal)
+        && opt_learn_receiver(ds, callee, site.pc, site.frames[site.depth - 1].base)) {
+        opt_relearn(h, oc);
+        return vm::jit_inline_materialize(ds, site);
+    }
     oc.exits++;
     // A site of an inlined body cannot be lowered generically: the next build leaves the call it is
     // in a call (inline_body_ok), as it does a call site that exited.
