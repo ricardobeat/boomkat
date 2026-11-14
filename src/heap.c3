@@ -650,19 +650,9 @@ struct ValueRoot {
 }
 
 // Slot indices of the properties RegExp.prototype must still hold, in the order
-// `regexp_proto_pristine` checks them, valid while the prototype keeps this
-// shape. `epoch` is the heap's shape-recycle epoch when `shape_id` was read.
-// `values` holds the intrinsic each slot (a getter's function, for an
-// accessor) was last verified to hold, for the slots `verified` marks.
-// Intrinsics are lightfuncs or promoted builtins, which stay rooted for the
-// realm's life, so an equal value is the same intrinsic and never a new object
-// at a freed address.
+// `regexp_guard_arm` checks them, valid while Heap.regexp_pristine is set.
 struct RegExpGuard {
-    uint shape_id;
-    uint epoch;
     ushort[builtins::REGEXP_GUARD_SLOTS] slots;
-    TVal[builtins::REGEXP_GUARD_SLOTS] values;
-    uint verified;
 }
 
 const uint SLICE_CACHE_SIZE = 256;
@@ -831,6 +821,10 @@ struct RealmState {
     uint                fn_proto_shape;
     uint[5]             args_shapes;
     RegExpGuard         regexp_guard;
+    // Every guarded property of RegExp.prototype is still its intrinsic. Set
+    // by builtins::regexp_guard_arm, which marks the objects the guard reads as
+    // watched; a write to a watched object clears it.
+    bool                regexp_pristine;
     // The shape of a RegExp match array without `d`: index, input, groups and
     // length, whatever its capture count. The epoch is the shape-recycle epoch
     // it was read in; 0 until one has been built.
@@ -2104,6 +2098,7 @@ fn void Heap.init_shapes(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
+    self.regexp_pristine = false;
     self.match_shape = 0;
     self.regexp_shape = 0;
     self.slice_cache = {};
@@ -3133,6 +3128,7 @@ fn void Heap.reset(&self) {
     self.shape_recycle_epoch = 0;
     self.var_ic_filled = false;
     self.regexp_guard = {};
+    self.regexp_pristine = false;
     self.match_shape = 0;
     self.regexp_shape = 0;
     self.slice_cache = {};
@@ -4448,11 +4444,19 @@ fn void Heap.store_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVa
     *slot = (hobject::PropValue)*src;
 }
 
+// A watched object changed: every realm's guard over its intrinsics re-verifies,
+// since the object may belong to a realm other than the running one.
+fn void Heap.watched_write(&self) @noinline {
+    self.regexp_pristine = false;
+    for (Realm* r = self.realms; r != null; r = r.next) r.state.regexp_pristine = false;
+}
+
 /**
  * Shade a newly stored traced value while incremental marking is active.
  * Every pointer store, including construction stores, uses this barrier.
  */
 fn void Heap.write_barrier(&self, HObject* owner, TVal v) @inline {
+    if (owner != null && owner.gc.watched) self.watched_write();
     if (self.gc_phase == GcPhase.MARK) {
         if (v.is_traced()) self.shade_value(v);
     } else if (owner != null && owner.gc.old && self.is_young_value(v)) {

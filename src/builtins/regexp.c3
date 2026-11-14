@@ -1428,23 +1428,17 @@ fn HString* regexp_guard_key(Heap* heap, usz i) {
     }
 }
 
-// Resolves the guarded properties on RegExp.prototype and caches their slots
-// against its current shape. Fails when one is missing or has changed kind.
-fn bool regexp_guard_refresh(Heap* heap) {
+// Locates the guarded properties on RegExp.prototype. Fails when one is
+// missing or has changed kind.
+fn bool regexp_guard_locate(Heap* heap) {
     HObject* proto = heap.regexp_proto;
-    RegExpGuard* g = &heap.regexp_guard;
-    g.shape_id = (uint)-1;
-    g.verified = 0;
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
         HString* key = regexp_guard_key(heap, i);
         if (key == null) return false;
         int idx = proto.find_prop_idx((void*)key, heap);
-        bool is_getter = regexp_guard_is_getter(i);
-        if (idx < 0 || proto.get_prop_flags((uint)idx, heap).is_accessor != is_getter) return false;
-        g.slots[i] = (ushort)idx;
+        if (idx < 0 || proto.get_prop_flags((uint)idx, heap).is_accessor != regexp_guard_is_getter(i)) return false;
+        heap.regexp_guard.slots[i] = (ushort)idx;
     }
-    g.shape_id = proto.shape_id;
-    g.epoch = heap.shape_recycle_epoch;
     return true;
 }
 
@@ -1458,23 +1452,44 @@ fn bool regexp_is_builtin(TVal v, int builtin) @inline {
 }
 
 // True while every guarded property of RegExp.prototype is still its
-// intrinsic. A redefinition can swap a value or a getter without changing the
-// shape, so the slots are read on every call; each is compared with the value
-// last verified there, and only a changed one is checked again.
-fn bool regexp_proto_pristine(Heap* heap) {
+// intrinsic: one load while the guard is armed.
+fn bool regexp_proto_pristine(Heap* heap) @inline {
+    return heap.regexp_pristine || regexp_guard_arm(heap);
+}
+
+// Verifies every guarded property of RegExp.prototype and, when all hold their
+// intrinsics, sets Heap.regexp_pristine until the next write to the prototype or
+// to one of its guarded accessor pairs. Those objects are marked watched: the
+// write barrier, flag edits and deletes on a watched object clear the word, and
+// no store inline cache is filled for one. The guarded builtins are promoted to
+// objects, so replacing one, with any value, is a store of or over a heap value
+// and passes the barrier. The prototype moves to a fresh private shape, which no
+// store cache filled before it was watched describes.
+fn bool regexp_guard_arm(Heap* heap) @noinline {
     HObject* proto = heap.regexp_proto;
-    RegExpGuard* g = &heap.regexp_guard;
-    if ((proto.shape_id != g.shape_id || g.epoch != heap.shape_recycle_epoch)
-        && !regexp_guard_refresh(heap)) return false;
+    if (!regexp_guard_locate(heap)) return false;
     PropValue* values = proto.prop_values();
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
-        TVal v = values[g.slots[i]].get();
+        TVal v = values[heap.regexp_guard.slots[i]].get();
         if (regexp_guard_is_getter(i)) v = hobject::hobject_access_getter(v);
-        if ((g.verified & (1u << i)) != 0 && v.same_bits(&g.values[i])) continue;
         if (!regexp_is_builtin(v, REGEXP_GUARD_FNS[i])) return false;
-        g.values[i] = v;
-        g.verified |= 1u << i;
     }
+    for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
+        PropValue* slot = &values[heap.regexp_guard.slots[i]];
+        TVal v = slot.get();
+        if (regexp_guard_is_getter(i)) {
+            ((HObject*)v.get_heapptr()).gc.watched = true;
+        } else if (v.is_lightfunc()) {
+            if (!promote_lightfunc_tval(heap, &v)) return false;
+            heap.store_slot_ref(proto, slot, &v);
+        }
+    }
+    if (!proto.gc.watched) {
+        proto.gc.watched = true;
+        proto.make_shape_private(heap);
+        if (proto.gc.prototype_observed) heap.bump_prototype_epoch(proto);
+    }
+    heap.regexp_pristine = true;
     return true;
 }
 
@@ -2668,18 +2683,13 @@ fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
 //   - Sets ctx.should_throw on error; returns false in that case
 // Whether `rx` is a RegExp whose `exec` is the intrinsic, read without a lookup:
 // its only own property is lastIndex (the plain RegExp shape) and it inherits
-// RegExp.prototype, whose `exec` slot the guard has located. Get(R, "exec")
-// then reads a data property, which nothing can observe.
+// a pristine RegExp.prototype. Get(R, "exec") then reads a data property, which
+// nothing can observe.
 fn bool regexp_inherits_exec(Heap* heap, HObject* rx) @inline {
-    if (rx == null || rx.shape_id != heap.regexp_shape || heap.regexp_shape == 0
-        || heap.regexp_shape_epoch != heap.shape_recycle_epoch || rx.prototype != heap.regexp_proto
-        || rx.get_class() != hobject::ObjClass.REGEXP || rx.is_proxy()
-        || (*rx.extra_ptr()).regexp.regexp_data == null) return false;
-    HObject* proto = heap.regexp_proto;
-    RegExpGuard* g = &heap.regexp_guard;
-    if ((proto.shape_id != g.shape_id || g.epoch != heap.shape_recycle_epoch)
-        && !regexp_guard_refresh(heap)) return false;
-    return regexp_is_builtin(proto.prop_values()[g.slots[0]].get(), Builtin.REGEXP_PROTO_EXEC.ordinal);
+    return rx != null && rx.shape_id == heap.regexp_shape && heap.regexp_shape != 0
+        && heap.regexp_shape_epoch == heap.shape_recycle_epoch && rx.prototype == heap.regexp_proto
+        && rx.get_class() == hobject::ObjClass.REGEXP && !rx.is_proxy()
+        && (*rx.extra_ptr()).regexp.regexp_data != null && regexp_proto_pristine(heap);
 }
 
 fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
