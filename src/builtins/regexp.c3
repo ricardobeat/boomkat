@@ -1772,9 +1772,6 @@ fn char* regexp_put(char* dest, bool wide, HString* src, uint from, uint to) @in
     return dest + ((usz)n << (wide ? 1 : 0));
 }
 
-// The longest result, in bytes, regexp_replace_direct interns.
-const usz REPLACE_INTERN_MAX = 64;
-
 // String.prototype.replace, or replaceAll when `all`, on `s` with the plain
 // RegExp `rx` and the replacement string `rep`: the result @@replace computes,
 // without a builtin frame. The match bounds are found first, then one string of
@@ -1791,19 +1788,9 @@ fn HString* regexp_replace_direct(Heap* heap, HString* s, HObject* rx, HString* 
     if ((all || (jsf & 32) != 0) && !global) return null;
     int groups = re_bindings::re_captures(re_data);
     if (groups > REGEXP_SMALL_GROUPS) return null;
-    ReplacePiece[REPLACE_PIECES_MAX] piece_buf @noinit;
-    ReplacePiece[] pieces;
-    // Per match, the bounds of every group when a piece reads one, else the match's.
-    uint stride = 2;
-    if (regexp_has_dollar(rep)) {
-        int count = regexp_parse_template(rep, re_data, groups, re_bindings::re_has_group_names(re_data), &piece_buf);
-        if (count < 0) return null;
-        pieces = piece_buf[:count];
-        stride = 2 * (uint)groups;
-    } else {
-        piece_buf[0] = { .kind = TEXT, .a = 0, .b = rep.length };
-        pieces = piece_buf[:1];
-    }
+    // Per match, the bounds of every group when the template may read one, else the match's.
+    bool dollar = regexp_has_dollar(rep);
+    uint stride = dollar ? 2 * (uint)groups : 2;
     int[2 * REGEXP_SMALL_GROUPS] caps @noinit;
     int[64] span_buf @noinit;
     growvec::GrowVec{int} spans = { .heap = heap };
@@ -1838,6 +1825,16 @@ fn HString* regexp_replace_direct(Heap* heap, HString* s, HObject* rx, HString* 
         rx.prop_values()[0] = (hobject::PropValue)zero;
     }
     if (spans.len == 0) return s;
+    ReplacePiece[REPLACE_PIECES_MAX] piece_buf @noinit;
+    ReplacePiece[] pieces;
+    if (dollar) {
+        int count = regexp_parse_template(rep, re_data, groups, re_bindings::re_has_group_names(re_data), &piece_buf);
+        if (count < 0) return null;
+        pieces = piece_buf[:count];
+    } else {
+        piece_buf[0] = { .kind = TEXT, .a = 0, .b = rep.length };
+        pieces = piece_buf[:1];
+    }
     // The size and width of the result.
     ulong total = 0;
     bool wide = false;
@@ -1866,16 +1863,9 @@ fn HString* regexp_replace_direct(Heap* heap, HString* s, HObject* rx, HString* 
     wide |= regexp_range_wide(s, last, len);
     if (total == 0) return heap.str(heap::BuiltinStr.EMPTY);
     if (hstring::length_exceeds_max(total)) return null;
-    // A short result is interned, so a replace that repeats finds its string.
-    char[REPLACE_INTERN_MAX] short_buf @noinit;
-    HString* out = null;
-    char* dest = &short_buf;
-    bool interned = (total << (wide ? 1 : 0)) <= REPLACE_INTERN_MAX;
-    if (!interned) {
-        out = hstring::hstring_alloc_storage(heap, (uint)total, wide, hstring::HASH_DEFERRED, (uint)total) ?? null;
-        if (out == null) return null;
-        dest = out.data_ptr();
-    }
+    HString* out = hstring::hstring_alloc_storage(heap, (uint)total, wide, hstring::HASH_DEFERRED, (uint)total) ?? null;
+    if (out == null) return null;
+    char* dest = out.data_ptr();
     last = 0;
     for (usz at = 0; at < spans.len; at += stride) {
         int* m = &spans.items[at];
@@ -1893,7 +1883,6 @@ fn HString* regexp_replace_direct(Heap* heap, HString* s, HObject* rx, HString* 
         last = (uint)m[1];
     }
     regexp_put(dest, wide, s, last, len);
-    if (interned) return heap.str_intern_units({ .ptr = &short_buf, .len = (uint)total, .wide = wide });
     out.finish_data();
     heap.large_string_register(out);
     return out;

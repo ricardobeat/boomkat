@@ -1160,47 +1160,95 @@ fn long jit_call_regexp(Dispatch* ds, Instruction* next, long builtin) {
     return 0;
 }
 
-// A builtin CALL a baseline call site makes of String.prototype.replace or replaceAll
-// (`builtin`) on a string with a plain RegExp and a string replacement, which
-// builtins::regexp_replace_direct runs without the builtin's frame: 0 continues at `next`
-// with the result in the call's register; JIT_CALL_SLOW, having run nothing,
-// leaves the call to jit_call_builtin_native.
+// The String.prototype methods a direct path runs with a RegExp argument.
+enum StringRegexpKind : char {
+    REPLACE,
+    REPLACE_ALL,
+    SPLIT,
+    MATCH,
+    SEARCH,
+}
+
+// The StringRegexpKind of a call of builtin `builtin` with `argc` arguments, or -1: replace and
+// replaceAll with two, split, match and search with one.
+fn int string_regexp_kind(uint builtin, uint argc) {
+    switch (builtin) {
+        case builtins::Builtin.STRING_PROTO_REPLACE.ordinal: return argc == 2 ? StringRegexpKind.REPLACE.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal: return argc == 2 ? StringRegexpKind.REPLACE_ALL.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_SPLIT.ordinal: return argc == 1 ? StringRegexpKind.SPLIT.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_MATCH.ordinal: return argc == 1 ? StringRegexpKind.MATCH.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_SEARCH.ordinal: return argc == 1 ? StringRegexpKind.SEARCH.ordinal : -1;
+        default: return -1;
+    }
+}
+
+// The String.prototype method `kind` of the string args[0] with the RegExp args[1] (and for a
+// replace the string args[2]) into `result`, which holds no value yet; false, with nothing done,
+// for anything the builtin's direct path refuses. A replace takes regexp_replace_direct; split,
+// match and search the pristine paths their builtins take for a non-sticky RegExp whose prototype
+// and species are intact, with split's limit undefined. The allocations do not collect.
+fn bool string_regexp_direct(Dispatch* ds, TVal* args, StringRegexpKind kind, TVal* result) {
+    HString* s = builtins::regexp_plain_input(&args[0]);
+    if (s == null || !args[1].is_object() || args[1].get_heapptr() == null) return false;
+    Heap* heap = ds.heap;
+    HObject* rx = (HObject*)args[1].get_heapptr();
+    switch (kind) {
+        case REPLACE:
+        case REPLACE_ALL:
+            HString* rep = builtins::regexp_plain_input(&args[2]);
+            if (rep == null) return false;
+            HString* out = builtins::regexp_replace_direct(heap, s, rx, rep, kind == REPLACE_ALL);
+            if (out == null) return false;
+            result.set_string(out);
+            return true;
+        default:
+            if (rx.get_class() != hobject::ObjClass.REGEXP || !builtins::regexp_is_pristine(heap, rx)
+                || ((*rx.extra_ptr()).regexp.flags & 32) != 0) return false;
+            if (kind == SPLIT && !builtins::regexp_species_pristine(heap)) return false;
+            result.set_undefined();
+            BuiltinContext ctx = { .vm = ds.vm, .heap = heap, .result = builtins::result_slot(result) };
+            switch (kind) {
+                case SPLIT: builtins::regexp_split_pristine(&ctx, rx, s, 0xFFFFFFFF);
+                case MATCH: builtins::regexp_match_pristine(&ctx, rx, s);
+                default: builtins::regexp_search_pristine(&ctx, rx, s);
+            }
+            if (!ctx.should_throw) return true;
+            heap.decref_tval(&ctx.throw_value);
+            heap.decref_tval(result);
+            return false;
+    }
+}
+
+// A builtin CALL a baseline call site makes of a String.prototype method string_regexp_kind
+// names (`builtin`), which string_regexp_direct runs without the builtin's frame: 0 continues at
+// `next` with the result in the call's register; JIT_CALL_SLOW, having run nothing, leaves the
+// call to jit_call_builtin_native.
 fn long jit_call_string_regexp(Dispatch* ds, Instruction* next, long builtin) {
     Instruction* pc = next - 1;
+    if (pc.op != Opcode.CALL || ds.ic_base == null) return JIT_CALL_SLOW;
+    int kind = string_regexp_kind((uint)builtin, pc.c);
+    if (kind < 0 || ds.heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
     TVal* regs = ds.regs_base;
-    if (pc.op != Opcode.CALL || pc.c != 2 || ds.ic_base == null) return JIT_CALL_SLOW;
-    HString* s = builtins::regexp_plain_input(&regs[pc.b + 1]);
-    HString* rep = builtins::regexp_plain_input(&regs[pc.b + 3]);
-    TVal rx = regs[pc.b + 2];
-    if (s == null || rep == null || !rx.is_object() || rx.get_heapptr() == null) return JIT_CALL_SLOW;
-    Heap* heap = ds.heap;
-    if (heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
-    bool all = builtin == builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal;
-    HString* out = builtins::regexp_replace_direct(heap, s, (HObject*)rx.get_heapptr(), rep, all);
-    if (out == null) return JIT_CALL_SLOW;
-    hobject::ic_note_callee((hobject::ICEntry*)ds.ic_base + (pc - ds.code_base), hobject::IC_BUILTIN_TARGET | (uint)builtin);
+    // A result array is allocated with the frame's registers published, as jit_call_regexp does.
+    Vm* vm = ds.vm;
+    TVal* top = ds.act.bottom + vm.current_func.num_regs + FRAME_SCRATCH_SLOTS;
+    if (top > vm.valstack_top) vm.valstack_top = top;
     TVal result;
-    result.set_string(out);
-    heap.store_builtin_result(regs + pc.a, &result);
+    if (!string_regexp_direct(ds, &regs[pc.b + 1], (StringRegexpKind)kind, &result)) return JIT_CALL_SLOW;
+    hobject::ic_note_callee((hobject::ICEntry*)ds.ic_base + (pc - ds.code_base), hobject::IC_BUILTIN_TARGET | (uint)builtin);
+    ds.heap.store_builtin_result(regs + pc.a, &result);
+    track_heap_store(ds.act, regs + pc.a, pc.a);
     ds.curr_pc = next;
     return 0;
 }
 
-// STRING_REGEXP of optimized code: String.prototype.replace, or replaceAll when `all`, of the
-// boxed string args[0] by the plain RegExp args[1] with the string args[2], as
-// builtins::regexp_replace_direct computes it, stored into the window slot `dst`: 1, or 0 with
-// nothing done for anything that refuses, which the baseline code at the call then performs. The
-// allocation does not collect, so a due collection waits for the code's next poll.
-fn long jit_opt_string_regexp(Dispatch* ds, TVal* args, TVal* dst, long all) {
-    HString* s = builtins::regexp_plain_input(&args[0]);
-    HString* rep = builtins::regexp_plain_input(&args[2]);
-    if (s == null || rep == null || !args[1].is_object() || args[1].get_heapptr() == null) return 0;
-    Heap* heap = ds.heap;
-    HString* out = builtins::regexp_replace_direct(heap, s, (HObject*)args[1].get_heapptr(), rep, all != 0);
-    if (out == null) return 0;
+// STRING_REGEXP of optimized code: string_regexp_direct of `kind` over the boxed args, stored
+// into the window slot `dst`: 1, or 0 with nothing done, which the baseline code at the call then
+// performs. A due collection waits for the code's next poll.
+fn long jit_opt_string_regexp(Dispatch* ds, TVal* args, TVal* dst, long kind) {
     TVal result;
-    result.set_string(out);
-    heap.store_builtin_result(dst, &result);
+    if (!string_regexp_direct(ds, args, (StringRegexpKind)kind, &result)) return 0;
+    ds.heap.store_builtin_result(dst, &result);
     return 1;
 }
 

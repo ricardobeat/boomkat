@@ -62,7 +62,7 @@ struct OptSinkScratch {
 
 // The node field c names a node only for the element accesses (sinking reuses it elsewhere).
 fn uint OptNode.c_node(&self) @inline {
-    return (self.op == OptOp.LOAD_ELEM || self.op == OptOp.STORE_ELEM) ? self.c : NO_NODE;
+    return (self.op == OptOp.LOAD_ELEM || self.op == OptOp.STORE_ELEM || self.op == OptOp.STRING_REGEXP) ? self.c : NO_NODE;
 }
 
 fn bool OptGraph.sink_refs(&self, OptSinkScratch* s, OptNode* n) @inline {

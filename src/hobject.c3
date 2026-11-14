@@ -3845,6 +3845,9 @@ const char FB_CTOR = 64;
 // ICEntry.feedback bit of a call instruction: its callee forwarded to a second function
 // (ic_note_forward).
 const char FB_FWD_POLY = 128;
+// ICEntry.feedback bit of a call instruction: optimized code left at it for having no record of
+// a run (OptExit.UNPROFILED), so a site that records none still has run.
+const char FB_CALL_RAN = 8;
 
 // A call target that is the builtin function numbered by the rest of the word (builtins::Builtin)
 // rather than a func_index: vm::jit_call_builtin records the builtins the baseline code calls.

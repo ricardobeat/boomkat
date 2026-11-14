@@ -289,6 +289,9 @@ fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true, bool
                     if (ins.c != 0) moveelim_mark_range(uses, (uint)ins.b + 2, (uint)ins.b + 1 + (uint)ins.c);
                 }
                 return;
+            case NEWREGEXP: case CLOSURE:
+                // A is the new object; B names a constant or function.
+                return;
             case PUTPROPC:
                 uses.set((uint)ins.a);
                 uses.set((uint)ins.b);
@@ -365,6 +368,7 @@ fn void DecodedCfgNode.live_before(&self, RegSet* live, bool call_windows, bool 
         live.unset((uint)self.view.insn.a);
         live.unset((uint)self.view.insn.a + 1);
     }
+    if (exact && (self.view.insn.op == Opcode.NEWREGEXP || self.view.insn.op == Opcode.CLOSURE)) live.unset((uint)self.view.insn.a);
     self.reads(live, call_windows, exact);
 }
 

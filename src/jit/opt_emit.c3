@@ -3049,16 +3049,22 @@ fn void OptCg.emit_regexp_exec(&self, uint i, OptNode* n) {
     self.def_value(i, R0);
 }
 
-// STRING_REGEXP: vm::jit_opt_string_regexp over the call's receiver and arguments, copied from the
-// window to the frame's CALL_FRAME_BYTES, with the registers in use saved around it; what it
-// refuses leaves for the baseline code at the CALL.
+// STRING_REGEXP: vm::jit_opt_string_regexp of kind n.cc over the call's receiver and arguments,
+// from their nodes or the window, copied to the frame's CALL_FRAME_BYTES, with the registers in use
+// saved around it; what it refuses leaves for the baseline code at the CALL.
 fn void OptCg.emit_string_regexp(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
     self.decode(n);
     uint callee = a.w.b;
-    for (uint k = 1; k <= 3; k++) {
-        a.load(R0, callee + k);
+    uint[3] nodes = { n.a, n.b, n.c };
+    uint argc = a.w.c;
+    for (uint k = 1; k <= argc + 1; k++) {
+        if (nodes[k - 1] == NO_NODE) {
+            a.load(R0, callee + k);
+        } else {
+            self.value_to(nodes[k - 1], R0);
+        }
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), (long)k * 8, R0, 0);
     }
     self.spill_live(i, true);
@@ -3956,6 +3962,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
                 self.emit_inline_exit(n.fidx, n.pc, n.live_mask, OptExit.COLD.ordinal, false);
             } else if (n.cc == OPT_EXIT_LEAVE) {
                 self.a.emit_opt_leave(self.oc);
+            } else if (n.cc == OPT_EXIT_UNPROFILED) {
+                self.a.emit_opt_exit(self.oc, OptExit.UNPROFILED.ordinal, false);
             } else {
                 self.a.emit_opt_exit(self.oc, OptExit.COLD.ordinal, false);
             }
