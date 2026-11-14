@@ -33,6 +33,8 @@ import std::io;
 // Set by the CLI's --jit-dump-feedback: each compiled body's address range goes to stderr as a
 // `map re#N` line of the code map scripts/jit_profile.py reads (`w` marks a wide-subject body).
 bool print_code_map;
+// Set by --jit-dump-code: each body's bytes follow its map line as `ocode re#N <start> <hex>`.
+bool print_code_bytes;
 uint bodies_compiled;
 
 // A compiled body: RE_MATCH with the captures written, RE_NO_MATCH, or
@@ -44,19 +46,16 @@ alias ReJitFn = fn int(re_native::ReCall* call);
 // tens of bytes.
 const uint RE_JIT_MAX_INSNS = 2048;
 
-// Bitmap width: one bit per Latin-1 code unit.
-const int RE_JIT_BITS = 32;
-
 // One character class, in both forms the compiled code tests it with. The
-// bitmap answers a Latin-1 unit, where a unit is a code point, so the whole
-// membership test is one lookup; the descriptor answers a wide subject's code
-// point above that range with the same test the walk performs.
+// table, nonzero at each member, answers a Latin-1 unit, where a unit is a code
+// point, so the whole membership test is one load; the descriptor answers a wide
+// subject's code point above that range with the same test the walk performs.
 //
-// The bitmap is keyed by subject unit rather than by canonical code point, so
+// The table is keyed by subject unit rather than by canonical code point, so
 // the ignore-case form needs no canonicalization in generated code: the
 // pattern's own canonicalization is folded in when the table is built.
 struct ReJitClass {
-    char[RE_JIT_BITS] bits;
+    char[256] units;
     re_native::ReClass wide;
 }
 
@@ -64,7 +63,7 @@ struct ReJitClass {
 // predicate tables the assertions read, and one descriptor per class
 // instruction. Owned by the program and freed with it.
 struct ReJitData {
-    char[RE_JIT_BITS] space_bits;
+    char[256] space_units;
     // Nonzero at each Latin-1 word unit, for the inline word-boundary test.
     char[256] word_units;
     // Nonzero at each Latin-1 unit a match can begin with: the scan between
@@ -130,10 +129,12 @@ const long SLOT_FRAME = 8;
 const long SLOT_RUN_START = 16;
 const long SLOT_RUN_END = 24;
 const long SLOT_SCRATCH = 32;
+// Where the next attempt may start after this one fails (ReAsm.lead_star).
+const long SLOT_SKIP = 40;
 // The run state follows them in the body's frame: the ReExec, then the frame,
 // undo and register buffers it starts with (ReAsm.frame_layout). SLJIT places
 // its saved registers and what a call spills above that area.
-const long SLOT_EXEC = SLOT_SCRATCH + 8;
+const long SLOT_EXEC = SLOT_SKIP + 8;
 // The most quantifier registers a body keeps in its frame.
 const uint RE_JIT_MAX_REGS = 64;
 
@@ -148,6 +149,11 @@ struct ReAsm {
     bool unicode;
     bool scanning;
     uint first_pc;
+    // The greedy run every attempt of a Latin-1 scan opens with, or RE_NONE. Without a
+    // back reference, an attempt that fails from p after the run reached q fails from every
+    // start up to q as well: the run from there ends at q too and the rest of the pattern sees
+    // the same positions. The next attempt starts past q.
+    uint lead_star;
     int s_e;      // the ReExec being run
     int s_pos;    // the subject position
     int s_data;   // the subject base
@@ -180,15 +186,14 @@ struct ReAsm {
     uint sink_len;
     ReJitStub[] stubs;
     uint stub_len;
+    // The table a greedy run's loop keeps in t4, or 0.
+    usz loop_table;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers called from generated code
 // ---------------------------------------------------------------------------
 
-fn void re_jit_bit(char* bits, uint unit) @inline {
-    bits[unit >> 3] = bits[unit >> 3] | (char)(1 << (unit & 7));
-}
 
 // The first position at or after `from` where a match could begin, or -1.
 fn long re_jit_scan_first(re_native::ReNative* n, re_native::ReExec* e, long from) {
@@ -477,27 +482,40 @@ fn void ReAsm.emit_unit(&self, int dst, int at) @inline {
     }
 }
 
-// Bit `unit` of the bitmap at `bits` into `out`, as 0 or 1. The unit must be
-// below 256, which every caller establishes; t1 and t2 are scratch.
-fn void ReAsm.emit_bit(&self, int unit, usz bits, int out) {
-    self.mov(self.t1, 0, jit::SLJIT_IMM, (long)bits);
-    self.op2(jit::SLJIT_LSHR, self.t2, 0, unit, 0, jit::SLJIT_IMM, 3);
-    self.mov_u8(out, 0, jit::mem_index(self.t1, self.t2), 0);
-    self.op2(jit::SLJIT_AND, self.t2, 0, unit, 0, jit::SLJIT_IMM, 7);
-    self.op2(jit::SLJIT_MLSHR, out, 0, out, 0, self.t2, 0);
-    self.op2(jit::SLJIT_AND, out, 0, out, 0, jit::SLJIT_IMM, 1);
+// The entry for `unit` of the 256-unit table at `table` into `out`, zero for a
+// unit outside the set. The unit must be below 256, which every caller
+// establishes; t1 is scratch unless a greedy run keeps the table in t4.
+fn void ReAsm.emit_bit(&self, int unit, usz table, int out) {
+    int base = self.t4;
+    if (table != self.loop_table) {
+        self.mov(self.t1, 0, jit::SLJIT_IMM, (long)table);
+        base = self.t1;
+    }
+    self.mov_u8(out, 0, jit::mem_index(base, unit), 0);
+}
+
+// The unit table the single-character test `insn` at index `pc` reads, or 0.
+fn usz ReAsm.table_of(&self, re_native::ReInsn* insn, uint pc) {
+    switch (insn.op) {
+        case ReOp.SPACE: case ReOp.NOT_SPACE:
+            return (usz)&self.data.space_units[0];
+        case ReOp.RANGE: case ReOp.RANGE_I: case ReOp.RANGE32: case ReOp.RANGE32_I:
+            return (usz)&self.data.classes[self.data.class_at[pc]].units[0];
+        default:
+            return 0;
+    }
 }
 
 // Fail unless `unit` is in the class at `index` in the program's data.
 fn void ReAsm.emit_class(&self, int unit, uint index) {
     ReJitClass* cls = &self.data.classes[index];
     if (!self.wide) {
-        self.emit_bit(unit, (usz)&cls.bits[0], self.t3);
+        self.emit_bit(unit, (usz)&cls.units[0], self.t3);
         self.fail_if_equal(self.t3, 0);
         return;
     }
     void* above = self.cmp(jit::SLJIT_GREATER_EQUAL, unit, 0, jit::SLJIT_IMM, 256);
-    self.emit_bit(unit, (usz)&cls.bits[0], self.t3);
+    self.emit_bit(unit, (usz)&cls.units[0], self.t3);
     self.fail_if_equal(self.t3, 0);
     void* skip = self.jump();
     self.bind(above, self.label());
@@ -512,7 +530,7 @@ fn void ReAsm.emit_class(&self, int unit, uint index) {
 // Fail unless `unit` is a space, or fail if it is one when `invert`.
 fn void ReAsm.emit_space(&self, int unit, bool invert) {
     if (!self.wide) {
-        self.emit_bit(unit, (usz)&self.data.space_bits[0], self.t3);
+        self.emit_bit(unit, (usz)&self.data.space_units[0], self.t3);
         if (invert) {
             self.fail_if_not(self.t3, 0);
         } else {
@@ -521,7 +539,7 @@ fn void ReAsm.emit_space(&self, int unit, bool invert) {
         return;
     }
     void* above = self.cmp(jit::SLJIT_GREATER_EQUAL, unit, 0, jit::SLJIT_IMM, 256);
-    self.emit_bit(unit, (usz)&self.data.space_bits[0], self.t3);
+    self.emit_bit(unit, (usz)&self.data.space_units[0], self.t3);
     if (invert) {
         self.fail_if_not(self.t3, 0);
     } else {
@@ -930,11 +948,11 @@ fn void ReAsm.emit_peek(&self, re_native::ReInsn* insn, uint pc, uint dest) {
             self.add_fix(self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, '\n'), dest, FIX_INSN);
             self.add_fix(self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, '\r'), dest, FIX_INSN);
         case ReOp.SPACE: case ReOp.NOT_SPACE:
-            self.emit_bit(self.t0, (usz)&self.data.space_bits[0], self.t3);
+            self.emit_bit(self.t0, (usz)&self.data.space_units[0], self.t3);
             int cond = insn.op == ReOp.SPACE ? jit::SLJIT_EQUAL : jit::SLJIT_NOT_EQUAL;
             self.add_fix(self.cmp(cond, self.t3, 0, jit::SLJIT_IMM, 0), dest, FIX_INSN);
         default:
-            self.emit_bit(self.t0, (usz)&self.data.classes[self.data.class_at[pc]].bits[0], self.t3);
+            self.emit_bit(self.t0, (usz)&self.data.classes[self.data.class_at[pc]].units[0], self.t3);
             self.add_fix(self.cmp(jit::SLJIT_EQUAL, self.t3, 0, jit::SLJIT_IMM, 0), dest, FIX_INSN);
     }
     if (above != null) self.bind(above, self.label());
@@ -1011,11 +1029,14 @@ fn void ReAsm.emit_star(&self, uint pc) {
     void*[16] exits;
     self.sink = exits[..];
     self.sink_len = 0;
+    if (!self.wide) self.loop_table = self.table_of(body, insn.target);
+    if (self.loop_table != 0) self.mov(self.t4, 0, jit::SLJIT_IMM, (long)self.loop_table);
     void* loop = self.label();
     void* out_of_units = self.emit_bounds();
     self.emit_unit_read();
     self.emit_test(body, insn.target);
     self.go_label(loop);
+    self.loop_table = 0;
     uint exits_len = self.sink_len;
     self.sink = {};
     // A test that fails leaves the position past the code point it read; the
@@ -1034,6 +1055,10 @@ fn void ReAsm.emit_star(&self, uint pc) {
     }
     void* ran = self.label();
     self.bind(out_of_units, ran);
+    if (pc == self.lead_star) {
+        self.op2(jit::SLJIT_ADD, self.t0, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+        self.mov(jit::SLJIT_MEM | sp, SLOT_SKIP, self.t0, 0);
+    }
     // The run must cover the minimum the pattern requires.
     self.mov(self.t0, 0, jit::SLJIT_MEM | sp, SLOT_RUN_START);
     self.op2(jit::SLJIT_ADD, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, (long)min);
@@ -1335,6 +1360,11 @@ fn void ReAsm.emit_exhausted(&self) {
         self.go(0, FIX_ATTEMPT);
         self.bind(none, self.label());
         self.leave(re_native::RE_NO_MATCH);
+        return;
+    }
+    if (self.lead_star != re_native::RE_NONE) {
+        self.mov(self.s_pos, 0, jit::SLJIT_MEM | jit::reg_sp(), SLOT_SKIP);
+        self.emit_scan();
         return;
     }
     // A Latin-1 unit is a code point: the next candidate is one unit on.
@@ -1794,6 +1824,7 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
             if (insn.op == ReOp.STAR) target[insn.after] = true;
         }
     }
+    a.lead_star = a.scanning && !wide ? re_jit_lead_star(&n.prog, a.first_pc, target) : re_native::RE_NONE;
     for (uint pc = a.first_pc; pc < n.prog.insns.len;) {
         a.labels[pc] = a.label();
         uint writes = a.write_length(pc, target);
@@ -1832,9 +1863,38 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     void* code = jit::sljit_generate_code(c, 0, null);
     if (code != null && print_code_map) {
         usz end = (usz)code + jit::sljit_shim_code_size(c);
-        io::eprintfn("map re#%d%s n%d %x %x %x %x", bodies_compiled++, wide ? "w" : "", n.prog.insns.len, (usz)code, end, end, end);
+        io::eprintfn("map re#%d%s n%d %x %x %x %x", bodies_compiled, wide ? "w" : "", n.prog.insns.len, (usz)code, end, end, end);
+        if (print_code_bytes) {
+            DString out;
+            out.init(mem, 256);
+            defer out.free();
+            out.appendf("ocode re#%d%s %x ", bodies_compiled, wide ? "w" : "", (usz)code);
+            foreach (b : ((char*)code)[:end - (usz)code]) out.appendf("%02x", b);
+            io::eprintn(out.str_view());
+        }
+        bodies_compiled++;
     }
     return code;
+}
+
+// The greedy run at the start of every attempt from `pc` that nothing jumps back into
+// (ReAsm.lead_star), in a program with no back reference; else RE_NONE.
+fn uint re_jit_lead_star(re_native::ReProgram* prog, uint pc, bool[] target) {
+    foreach (insn : prog.insns) {
+        switch (insn.op) {
+            case ReOp.BACK_REFERENCE: case ReOp.BACK_REFERENCE_I:
+            case ReOp.BACKWARD_BACK_REFERENCE: case ReOp.BACKWARD_BACK_REFERENCE_I:
+                return re_native::RE_NONE;
+            default:
+        }
+    }
+    // The position loop enters the body at its first instruction.
+    for (uint first = pc; pc < prog.insns.len && (pc == first || !target[pc]); pc++) {
+        ReOp op = prog.insns[pc].op;
+        if (op == ReOp.STAR) return pc;
+        if (op != ReOp.SAVE_START && op != ReOp.SAVE_END) break;
+    }
+    return re_native::RE_NONE;
 }
 
 // ---------------------------------------------------------------------------
@@ -1908,7 +1968,7 @@ fn ReJitData* re_jit_data_build(re_native::ReNative* n) {
     re_native::ReProgram* prog = &n.prog;
     ReJitData* data = mem::new(ReJitData);
     for (uint unit = 0; unit < 256; unit++) {
-        if (re_bindings::re_is_space(unit)) re_jit_bit(&data.space_bits, unit);
+        if (re_bindings::re_is_space(unit)) data.space_units[unit] = 1;
         if (re_bindings::re_is_word_byte(unit)) data.word_units[unit] = 1;
         if (n.has_first_set && re_native::re_fs_test(n, unit)) data.first_units[unit] = 1;
     }
@@ -1929,7 +1989,7 @@ fn ReJitData* re_jit_data_build(re_native::ReNative* n) {
             .unbounded = insn.op == ReOp.RANGE || insn.op == ReOp.RANGE_I,
         };
         for (uint unit = 0; unit < 256; unit++) {
-            if (cls.wide.matches(unit)) re_jit_bit(&cls.bits, unit);
+            if (cls.wide.matches(unit)) cls.units[unit] = 1;
         }
         data.class_at[i] = next;
         next++;
