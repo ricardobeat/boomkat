@@ -1461,10 +1461,10 @@ fn bool regexp_proto_pristine(Heap* heap) @inline {
 // intrinsics, sets Heap.regexp_pristine until the next write to the prototype or
 // to one of its guarded accessor pairs. Those objects are marked watched: the
 // write barrier, flag edits and deletes on a watched object clear the word, and
-// no store inline cache is filled for one. The guarded builtins are promoted to
-// objects, so replacing one, with any value, is a store of or over a heap value
-// and passes the barrier. The prototype moves to a fresh private shape, which no
-// store cache filled before it was watched describes.
+// no store inline cache is filled for one. The prototype is watched from its
+// creation (register_regexp_constructor), so no cache filled earlier describes
+// it. The guarded builtins are promoted to objects, so replacing one, with any
+// value, is a store of or over a heap value and passes the barrier.
 fn bool regexp_guard_arm(Heap* heap) @noinline {
     HObject* proto = heap.regexp_proto;
     if (!regexp_guard_locate(heap)) return false;
@@ -1483,11 +1483,6 @@ fn bool regexp_guard_arm(Heap* heap) @noinline {
             if (!promote_lightfunc_tval(heap, &v)) return false;
             heap.store_slot_ref(proto, slot, &v);
         }
-    }
-    if (!proto.gc.watched) {
-        proto.gc.watched = true;
-        proto.make_shape_private(heap);
-        if (proto.gc.prototype_observed) heap.bump_prototype_epoch(proto);
     }
     heap.regexp_pristine = true;
     return true;
@@ -2686,10 +2681,8 @@ fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
 // a pristine RegExp.prototype. Get(R, "exec") then reads a data property, which
 // nothing can observe.
 fn bool regexp_inherits_exec(Heap* heap, HObject* rx) @inline {
-    return rx != null && rx.shape_id == heap.regexp_shape && heap.regexp_shape != 0
-        && heap.regexp_shape_epoch == heap.shape_recycle_epoch && rx.prototype == heap.regexp_proto
-        && rx.get_class() == hobject::ObjClass.REGEXP && !rx.is_proxy()
-        && (*rx.extra_ptr()).regexp.regexp_data != null && regexp_proto_pristine(heap);
+    return rx != null && regexp_plain_shape(heap, rx) && rx.prototype == heap.regexp_proto
+        && regexp_proto_pristine(heap);
 }
 
 fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
@@ -2818,11 +2811,15 @@ fn bool regexp_set_last_index(BuiltinContext* ctx, HObject* rx, HString* key,
 // `lastIndex` in slot 0 holding a small integer, so RegExpBuiltinExec reads
 // and writes nothing observable but that slot.
 fn bool regexp_plain(Heap* heap, HObject* rx) @inline {
+    return regexp_plain_shape(heap, rx) && rx.prop_values()[0].get().is_fastint();
+}
+
+// Whether `rx` is a live RegExp whose only own property is lastIndex.
+fn bool regexp_plain_shape(Heap* heap, HObject* rx) @inline {
     return rx.shape_id == heap.regexp_shape && heap.regexp_shape != 0
         && heap.regexp_shape_epoch == heap.shape_recycle_epoch
         && rx.get_class() == hobject::ObjClass.REGEXP && !rx.is_proxy()
-        && (*rx.extra_ptr()).regexp.regexp_data != null
-        && rx.prop_values()[0].get().is_fastint();
+        && (*rx.extra_ptr()).regexp.regexp_data != null;
 }
 
 // A string argument RegExpBuiltinExec takes as is, or null.
@@ -2832,9 +2829,33 @@ fn HString* regexp_plain_input(TVal* v) @inline {
     return s != null && !s.is_symbol() ? s : null;
 }
 
+// The string RegExpBuiltinExec matches for the argument `v` when its ToString
+// runs no script: a string as is, an undefined, null, boolean or number
+// converted; null for anything else.
+fn HString* regexp_exec_input(Heap* heap, TVal* v) @inline {
+    switch (v.get_tag()) {
+        case STRING: return regexp_plain_input(v);
+        case UNDEFINED: case NULL_VAL: case BOOLEAN: case FASTINT: case NUMBER: return builtin_to_string(heap, v);
+        default: return null;
+    }
+}
+
 // The match array for the group bounds in `caps`, as re_run reports them.
 fn HObject* regexp_match_array(Heap* heap, void* re_data, HString* s, int* caps, bool has_indices) {
     int num_caps = re_bindings::re_get_capture_count(re_data) - 1;
+    if (num_caps >= REGEXP_SMALL_GROUPS) return regexp_match_array_large(heap, re_data, s, caps, has_indices, num_caps);
+    int[REGEXP_SMALL_GROUPS] caps_start @noinit;
+    int[REGEXP_SMALL_GROUPS] caps_end @noinit;
+    for (int i = 0; i < num_caps; i++) {
+        caps_start[i] = caps[2 * i + 2];
+        caps_end[i] = caps[2 * i + 3];
+    }
+    BuiltinContext ctx = { .heap = heap };
+    return regexp_build_match_result(&ctx, re_data, s, caps[0], caps[1], &caps_start, &caps_end, num_caps, has_indices);
+}
+
+fn HObject* regexp_match_array_large(Heap* heap, void* re_data, HString* s, int* caps, bool has_indices,
+                                     int num_caps) @noinline {
     if (num_caps > re_bindings::RE_MAX_CAPTURES - 1) num_caps = re_bindings::RE_MAX_CAPTURES - 1;
     int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
     int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
@@ -2846,11 +2867,31 @@ fn HObject* regexp_match_array(Heap* heap, void* re_data, HString* s, int* caps,
     return regexp_build_match_result(&ctx, re_data, s, caps[0], caps[1], &caps_start, &caps_end, num_caps, has_indices);
 }
 
+// Groups, group 0 included, whose bounds fit the capture buffer of the common
+// RegExpBuiltinExec frame; a pattern with more takes regexp_exec_plain_large.
+const int REGEXP_SMALL_GROUPS = 16;
+
 // RegExpBuiltinExec (ECMA-262 §22.2.7.2) of a RegExp regexp_plain accepts over
 // the string `s`, into `result`, which holds no value yet: the match array or
 // null, or a Boolean when `boolean_result`. False, with nothing observable
 // done, when the run was interrupted, which the generic path then reports.
 fn bool regexp_exec_plain(Heap* heap, HObject* rx, HString* s, bool boolean_result, TVal* result) @inline {
+    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+    if (re_bindings::re_group_count(re_data) > REGEXP_SMALL_GROUPS) {
+        return regexp_exec_plain_large(heap, rx, s, boolean_result, result);
+    }
+    int[2 * REGEXP_SMALL_GROUPS] caps @noinit;
+    return regexp_exec_into(heap, rx, s, boolean_result, result, &caps, caps.len);
+}
+
+fn bool regexp_exec_plain_large(Heap* heap, HObject* rx, HString* s, bool boolean_result, TVal* result) @noinline {
+    int[2 * re_bindings::RE_MAX_CAPTURES] caps @noinit;
+    return regexp_exec_into(heap, rx, s, boolean_result, result, &caps, caps.len);
+}
+
+// regexp_exec_plain with `cap_slots` ints at `caps`, which hold every group.
+fn bool regexp_exec_into(Heap* heap, HObject* rx, HString* s, bool boolean_result, TVal* result,
+                         int* caps, int cap_slots) @inline {
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     int jsf = (*rx.extra_ptr()).regexp.flags;
     hobject::PropValue* last_index = &rx.prop_values()[0];
@@ -2871,10 +2912,9 @@ fn bool regexp_exec_plain(Heap* heap, HObject* rx, HString* s, bool boolean_resu
         }
         start = (int)li;
     }
-    int[2 * re_bindings::RE_MAX_CAPTURES] caps @noinit;
     re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, heap };
     int ret = re_bindings::re_run_direct(re_data, s.data_ptr(), s.unit_len(), s.is_wide(), (uint)start,
-                                         &caps, caps.len, &interrupt);
+                                         caps, cap_slots, &interrupt);
     if (@unlikely(heap.uncatchable_throw)) return false;
     if (ret != re_bindings::RE_MATCH) {
         if (advances) {
@@ -2896,7 +2936,7 @@ fn bool regexp_exec_plain(Heap* heap, HObject* rx, HString* s, bool boolean_resu
         result.set_boolean(true);
         return true;
     }
-    HObject* arr = regexp_match_array(heap, re_data, s, &caps, (jsf & 64) != 0);
+    HObject* arr = regexp_match_array(heap, re_data, s, caps, (jsf & 64) != 0);
     if (arr == null) {
         result.set_null();
         return true;
@@ -3429,6 +3469,8 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = proto_raw;
     heap.set_prototype(proto, heap.object_proto);
     heap.regexp_proto = proto;
+    // Before any store cache can describe it; see regexp_guard_arm.
+    proto.gc.watched = true;
 
     {
         const uint[*] METHODS = {

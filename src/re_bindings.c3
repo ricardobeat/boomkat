@@ -27,6 +27,13 @@ fn int re_run_direct(void* re, char* data, uint len, bool wide, uint start, int*
     return re_run(re, data, (int)len, (int)start, wide ? 1 : 0, caps, cap_slots, interrupt);
 }
 
+// The groups of `re`, group 0 included, as its native program counts them; the
+// most a pattern can have when it has none.
+fn int re_group_count(void* re) @inline {
+    re_native::ReNative* n = *(re_native::ReNative**)re;
+    return n == null ? RE_MAX_CAPTURES : (int)n.prog.capture_count;
+}
+
 /* The literal checks every run passes first: the offset a match can begin at,
  * RE_PREFILTER_NONE, or RE_PREFILTER_MATCH with the bounds in caps[0..1]. */
 extern fn int re_prefilter(void* re, void* input, int input_len, int start_offset,
