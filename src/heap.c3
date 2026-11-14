@@ -2742,19 +2742,7 @@ fn void Heap.destroy(&self) {
     esm::free_defined_modules(self);
 
     // Releases every pool page back to libc.
-    self.obj_pool_plain.free();
-    self.obj_pool_compact.free();
-    foreach (&pool : self.obj_pool_shaped) pool.free();
-    self.obj_pool_array.free();
-    self.obj_pool_dense_array.free();
-    foreach (&pool : self.obj_pool_inline_arrays) pool.free();
-    self.obj_pool_gs.free();
-    self.obj_pool_small.free();
-    self.obj_pool_func.free();
-    self.obj_pool_big.free();
-    for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-        self.small_pools[i].free();
-    }
+    self.@each_pool(; pagepool::PagePool* pool) { pool.free(); };
 
     self.gc_roots.free();
 
@@ -5735,6 +5723,21 @@ $endif
 // ============================================================================
 // GC sweep
 // ============================================================================
+
+// Every page pool of the heap.
+macro void Heap.@each_pool(&self; @body(pagepool::PagePool* pool)) {
+    @body(&self.obj_pool_plain);
+    @body(&self.obj_pool_compact);
+    foreach (&pool : self.obj_pool_shaped) @body(pool);
+    @body(&self.obj_pool_array);
+    @body(&self.obj_pool_dense_array);
+    foreach (&pool : self.obj_pool_inline_arrays) @body(pool);
+    @body(&self.obj_pool_gs);
+    @body(&self.obj_pool_small);
+    @body(&self.obj_pool_func);
+    @body(&self.obj_pool_big);
+    foreach (&pool : self.small_pools) @body(pool);
+}
 
 // Explicit callers can finish a scheduled sweep at a quiescent boundary.
 fn void Heap.finish_sweep(&self, bool strings_safe) {

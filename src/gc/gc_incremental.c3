@@ -3,6 +3,7 @@ module boomkat::heap;
 import boomkat::gcprofile;
 import boomkat::hobject;
 import boomkat::hstring;
+import boomkat::pagepool;
 import boomkat::types;
 import std::time;
 import std::io;
@@ -211,6 +212,7 @@ fn void Heap.gc_finish_cycle(&self) {
     // RSS includes memory the collector cannot reclaim, so the check is coarse.
     // One read is cheap next to a cycle. Checking minor cycles too keeps the
     // overshoot small while a growing heap spaces its majors out.
+    self.@each_pool(; pagepool::PagePool* pool) { pool.trim(); };
     self.check_mem_limit(0);
     if (self.accounting) self.plan_limit_gc();
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;
