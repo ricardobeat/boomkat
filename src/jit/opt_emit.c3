@@ -1300,6 +1300,18 @@ fn void OptCg.guard_plain(&self, int obj) {
     self.a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.class_object));
 }
 
+// guard_plain for a store, which a RegExp takes as ordinarily as a plain object: its lastIndex is
+// an own data property. Uses R2 and R3.
+fn void OptCg.guard_ordinary(&self, int obj) {
+    Layout* l = self.a.lay;
+    void* c = self.a.c;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | obj, 0);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask | l.module_ns_mask | l.deferred_ns_mask);
+    void* plain = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, l.class_object);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.class_regexp));
+    sljit_set_label(plain, sljit_emit_label(c));
+}
+
 // The receiver of field node `n`, boxed in `rr`, unboxed into R1: an object, which is tested
 // unless the node knows it plain.
 fn void OptCg.field_receiver(&self, OptNode* n, int rr) {
@@ -1853,7 +1865,7 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, k_obj_op(), k_obj_w());
     } else {
         self.field_receiver(n, rr);
-        if (!n.plain) self.guard_plain(R1);
+        if (!n.plain) self.guard_ordinary(R1);
         if (poly.count > 1) {
             self.select_slot(poly);
             known_slot = true;
@@ -2795,6 +2807,33 @@ fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
     self.def_int(i, R0);
 }
 
+// REGEXP_EXEC: vm::jit_opt_regexp with the registers in use saved around the call; what it refuses
+// leaves for the baseline code at the CALL.
+fn void OptCg.emit_regexp_exec(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    self.decode(n);
+    uint callee = a.w.b;
+    if (n.a == NO_NODE) {
+        a.load(R2, callee + 2);
+    } else {
+        self.value_to(n.a, R2);
+    }
+    if (n.b == NO_NODE) {
+        a.load(R1, callee + 1);
+    } else {
+        int r = self.value_reg(n.b, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    }
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)n.cc);
+    self.a.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_regexp);
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
+    self.def_value(i, R0);
+}
+
 // Array.prototype.push of the boxed `value` onto `obj` for ARRAY_PUSH, as the builtin's dense fast
 // path appends it, growing the storage (which allocates without collecting); the new length, or -1
 // with nothing done for any other receiver or value.
@@ -3355,7 +3394,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.GUARD_BINDING || n.op == OptOp.GUARD_CAPTURE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.GUARD_BINDING || n.op == OptOp.GUARD_CAPTURE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH || n.op == OptOp.REGEXP_EXEC) {
         if (self.force_here(n)) {
             self.forced_done = true;
             // The hook falls through once its count is spent: an allocation for the exit must not run then.
@@ -3493,6 +3532,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_check_builtin(i, n);
         case ARRAY_PUSH:
             self.emit_array_push(i, n);
+        case REGEXP_EXEC:
+            self.emit_regexp_exec(i, n);
         case MOVE_WINDOW:
             self.emit_move_window(n);
         case EXIT:

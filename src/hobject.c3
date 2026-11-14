@@ -1839,6 +1839,7 @@ fn bool HObject.retransition_flags(&self, uint idx, PropFlags new_flags, heap::H
 // Replay small immutable chains through the transition table so identical
 // descriptor edits share a shape. Other edits use a private shape.
 fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap* h) {
+    if (self.gc.watched) h.watched_write();
     if (new_flags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
     // Matching flags need no shape mutation.
     hobject::Shape* sh = self.get_shape(h);
@@ -2458,6 +2459,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     if (idx < 0) {
         return false;
     }
+    if (self.gc.watched) h.watched_write();
 
     uint ui = (uint)idx;
     uint new_count = self.prop_count - 1;
@@ -3947,6 +3949,8 @@ fn bool ic_poly_add(ICEntry* ic, uint shape_id, uint prop_idx, heap::Heap* h) {
 // entry cached the same key for another shape keeps that shape in its polymorphic set, which only
 // the optimizing tier reads: the entry itself, as every store hit path matches it, holds one shape.
 fn void ic_fill_put_own(ICEntry* ic, HObject* hobj, uint idx, PropFlags flags, HString* key, heap::Heap* h) {
+    // A store into a watched object must reach a path that clears what it guards.
+    if (hobj.gc.watched) return;
     bool own_same = ic.key.borrow() == (void*)key && ic.shape_id != heap::SHAPE_NONE && !ic.has_proto
         && ic.prop_idx != IC_PROP_ABSENT && ic.prop_idx != IC_PROP_MISSING
         && !ic.prop_flags.is_accessor && ic.prop_flags.writable

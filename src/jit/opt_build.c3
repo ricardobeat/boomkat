@@ -2008,6 +2008,46 @@ fn bool OptBuild.push_call(&self) {
     return true;
 }
 
+// A CALL of RegExp.prototype.exec or test with one argument that the site has always made
+// (hobject::IC_BUILTIN_TARGET): a CHECK_BUILTIN of the callee, then a REGEXP_EXEC of the receiver
+// over the argument, which may write the receiver's lastIndex.
+fn bool OptBuild.regexp_call(&self) {
+    if (self.w.op != Opcode.CALL || self.wide || self.w.c != 1) return false;
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
+    bool test = builtin == builtins::Builtin.REGEXP_PROTO_TEST.ordinal;
+    if (!test && builtin != builtins::Builtin.REGEXP_PROTO_EXEC.ordinal) return false;
+    if (opt_site_banned(self.f, f, self.next_pc - 1)) return false;
+    uint callee = self.w.b;
+    uint ra = self.w.a;
+    if (callee + 2 >= self.nregs || ra >= self.nregs) return false;
+    uint[3] nodes;
+    for (uint k = 0; k < 3; k++) {
+        uint r = callee + k;
+        nodes[k] = NO_NODE;
+        if (self.cur[r].node != NO_NODE && (k == 2 || self.holds_value(r))) {
+            nodes[k] = self.cur[r].node;
+        } else if (self.cur_fn != 0 && r >= self.caller_regs) {
+            if (!self.call_operand(r, &nodes[k])) return self.cur_fn == 0 ? false : self.generic();
+        } else if (!self.in_window(r)) {
+            return self.cur_fn == 0 ? false : self.generic();
+        }
+    }
+    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, nodes[0], NO_NODE, (long)builtin);
+    self.g.nodes[chk].home = callee;
+    self.snapshot(chk);
+    uint n = self.add(OptOp.REGEXP_EXEC, OptRep.VALUE, nodes[2], nodes[1], (long)self.pc);
+    self.g.nodes[n].cc = test ? 1 : 0;
+    self.snapshot(n);
+    self.set(ra, n);
+    self.forget_facts();
+    self.builtin_calls++;
+    return true;
+}
+
 // The Math function of builtin number `builtin`.
 fn bool opt_math_of(uint builtin, OptMath* m) {
     if (builtin >= builtins::Builtin::values.len) return false;
@@ -4430,6 +4470,7 @@ fn bool OptBuild.lower_op(&self) {
         case APPLY_ARGS:
             if (self.push_call()) return true;
             if (self.math_call()) return true;
+            if (self.regexp_call()) return true;
             if (self.try_inline()) return true;
             return self.generic();
         case CALL_S:

@@ -227,6 +227,12 @@ enum OptOp : char {
     // length as an INT32. Exits (SLOW_PATH) before any effect for anything but an extensible plain
     // array with a writable length on the built-in prototype chain.
     ARRAY_PUSH,
+    // A CALL (pc) of RegExp.prototype.exec (cc 0) or test (cc 1) with one argument, after the
+    // CHECK_BUILTIN of its callee: RegExpBuiltinExec of the RegExp b (a VALUE node, or the
+    // receiver's window slot) over the string a (a node, or the window slot after the receiver),
+    // as a VALUE: the match array or null, or a boolean for test. Exits (SLOW_PATH) before any
+    // effect for any other receiver or argument (vm::jit_opt_regexp).
+    REGEXP_EXEC,
     // A call of a Math function (OptMath imm) on the numbers a and b (b: NO_NODE but for two
     // arguments), after the CHECK_BUILTIN of its callee. INT32 for ABS, MIN and MAX of INT32
     // operands, where ABS exits (OVERFLOW) at -2^31; FLOAT64 otherwise.

@@ -1180,7 +1180,7 @@ fn long jit_call_regexp(Dispatch* ds, Instruction* next, long builtin) {
     if (rx == null || !builtins::regexp_plain(heap, rx)) return JIT_CALL_SLOW;
     // test runs RegExpExec, whose Get(R, "exec") must find the intrinsic.
     bool test = builtin == builtins::Builtin.REGEXP_PROTO_TEST.ordinal;
-    if (test && !builtins::regexp_inherits_exec(heap, rx)) return JIT_CALL_SLOW;
+    if (test && (rx.prototype != heap.regexp_proto || !builtins::regexp_proto_pristine(heap))) return JIT_CALL_SLOW;
     if (heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
     hobject::ic_note_callee((hobject::ICEntry*)ds.ic_base + (pc - ds.code_base), hobject::IC_BUILTIN_TARGET | (uint)builtin);
     // The match array is allocated with the frame's registers published (the
@@ -1199,6 +1199,32 @@ fn long jit_call_regexp(Dispatch* ds, Instruction* next, long builtin) {
     }
     ds.curr_pc = next;
     return 0;
+}
+
+// REGEXP_EXEC of optimized code: RegExpBuiltinExec of the boxed `recv` over the boxed `arg`, as
+// jit_call_regexp runs it, for test when `test` is 1. The result boxed, or 0 with nothing done for
+// a receiver regexp_plain refuses, an argument whose ToString could run script or an interrupted
+// run, which the baseline code at the call then performs. The allocations do not collect, so a due collection
+// waits for the code's next poll.
+fn ulong jit_opt_regexp(Dispatch* ds, ulong recv, ulong arg, long test) {
+$if types::USE_NANBOX:
+    TVal r = { .bits = recv };
+    TVal a = { .bits = arg };
+    Heap* heap = ds.heap;
+    if (!r.is_object()) return 0;
+    HString* s = builtins::regexp_exec_input(heap, &a);
+    if (s == null) return 0;
+    HObject* rx = (HObject*)r.get_heapptr();
+    if (rx == null || !builtins::regexp_plain(heap, rx)) return 0;
+    // test runs RegExpExec, whose Get(R, "exec") must find the intrinsic.
+    if (test != 0 && (rx.prototype != heap.regexp_proto || !builtins::regexp_proto_pristine(heap))) return 0;
+    TVal result;
+    result.set_undefined();
+    if (!builtins::regexp_exec_plain(heap, rx, s, test != 0, &result)) return 0;
+    return result.bits;
+$else
+    return 0;
+$endif
 }
 
 // A CALL, CALL_UNDEF_THIS or CALL_GLOBAL whose callee is a builtin, through th_call_native

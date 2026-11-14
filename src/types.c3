@@ -886,6 +886,9 @@ bitstruct GcBits : uint {
     // An array with no holes below its length, so a dense `undefined` is an
     // element rather than a hole; see HObject.unpack.
     bool packed : 17;
+    // A store into this object's slots, or a change to its properties, clears
+    // Heap.regexp_pristine; see builtins::regexp_guard_arm.
+    bool watched : 18;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing
