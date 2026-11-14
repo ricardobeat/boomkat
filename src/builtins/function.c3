@@ -636,12 +636,10 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         inner_ctx.re_nargs = 0;
         inner_ctx.should_throw = false;
 
-        // Write extracted args onto stack.
-        // Also stamp this_arg into regs[base_reg - 1] so lightfunc callees
-        // that read their receiver from that slot see the correct value.
-        ctx.regs[ctx.base_reg - 1] = this_arg;
+        // Lightfunc callees read their receiver from regs[base_reg - 1].
+        ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 1], &this_arg);
         for (uint i = 0; i < actual_count; i++) {
-            ctx.regs[ctx.base_reg + i] = extracted_args[i];
+            ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg + i], &extracted_args[i]);
         }
 
         if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
