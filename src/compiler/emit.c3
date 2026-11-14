@@ -113,7 +113,31 @@ fn void CompilerContext.record_declared_global(&self, uint name_idx) {
 // unit itself hoisted (var/function), so a strict plain assignment to it is
 // statically resolvable and needs no RESOLVEVAR/THROW_REF guard.
 fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
-    return self.declared_global_name_idxs.is_initialized() && self.declared_global_name_idxs.contains(name_idx);
+    if (self.declared_global_name_idxs.is_initialized() && self.declared_global_name_idxs.contains(name_idx)) return true;
+    return self.is_script_global(name_idx);
+}
+
+// True when a free global name of a function (is_free_global_name) is a `var` or function the
+// script around it declares: the script's global declaration instantiation made it a property of
+// the global object before any of its code ran, just as for the script's own assignments. An
+// Annex B block function's var binding is conditional, so it does not count.
+fn bool CompilerContext.is_script_global(&self, uint name_idx) {
+    if (self.is_global || self.func_ast_scope == 0) return false;
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use) return false;
+    HString* name = (HString*)self.constants[name_idx].get_heapptr();
+    uint atom = idx.tree.atoms.find(self.name_text(name));
+    if (atom == 0) return false;
+    if (idx.unknown_outer) {
+        return idx.reparsed != null && idx.reparsed.lazy_outer_known && (idx.outer.data[atom] & ast::OUTER_SCRIPT) != 0;
+    }
+    uint s = self.func_ast_scope;
+    while (s != 0 && idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL) s = idx.res.scopes.data[s].parent;
+    if (s == 0) return false;
+    uint b = idx.res.lookup(s, atom);
+    if (b == 0) return false;
+    ast::DeclKind kind = idx.res.bindings.data[b].kind;
+    return kind == ast::DeclKind.VAR || kind == ast::DeclKind.FUNC;
 }
 
 // True when a bare identifier inside a function can only name a property of

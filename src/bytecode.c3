@@ -1881,8 +1881,9 @@ struct CompiledFunction {
 
     // One plus the source offset of an eval body awaiting first-call compilation.
     uint lazy_paren;
-    // On such a template: its constants are exactly the names it mentions that a
-    // function around it binds, so any other free name is a global.
+    // On such a template: its constants are the names it mentions that a function
+    // around it binds or the script declares, each with ast::OUTER_ flags in
+    // lazy_name_flags, so any other free name is a global nothing declares.
     bool lazy_outer_known;
     // On such a template: a `with` statement encloses the function.
     bool lazy_outer_with;
@@ -2460,3 +2461,6 @@ macro bool Opcode.is_enabled(self) {
     if (!features::REGEXP && (self == NEWREGEXP || self == RETEST)) return false;
     return true;
 }
+
+// The ast::OUTER_ flags of each constant of a template with lazy_outer_known.
+fn char* CompiledFunction.lazy_name_flags(&self) @inline => (char*)&self.constants[self.const_count];

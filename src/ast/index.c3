@@ -30,7 +30,7 @@ struct AstIndex {
     // The template being compiled from its own source slice, which carries
     // what its defining compile learned about those declarations.
     bytecode::CompiledFunction* reparsed;
-    // By atom, what that template records of a name: OUTER_BOUND, OUTER_CELL.
+    // By atom, what that template records of a name, as OUTER_ flags.
     Vec{char} outer;
     // The unit's ParseOptions.defer_functions: the parser recorded ordinary
     // bodies, so the compiler must turn them into templates.
@@ -46,6 +46,8 @@ struct AstIndex {
 const char OUTER_BOUND = 1;
 // The enclosing function keeps the name's binding in a cell.
 const char OUTER_CELL = 2;
+// No function binds the name and the script declares it with `var` or `function`.
+const char OUTER_SCRIPT = 4;
 
 tlocal AstIndex* index_state;
 
