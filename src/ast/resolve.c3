@@ -310,10 +310,6 @@ fn void Resolver.recorded_body(&self, uint block) {
 fn void Resolver.ref(&self, uint node, char mode = REF_READ) {
     uint name = self.ast.lhs.data[node];
     self.refs.push({ .node = node, .atom = name, .scope = self.cur, .mode = mode });
-    if (name == self.atom_eval) {
-        self.scopes.data[self.var_scope()].flags |= SCOPE_HAS_EVAL;
-        if (self.in_params) self.scopes.data[self.var_scope()].flags |= SCOPE_EVAL_PARAMS;
-    }
 }
 
 // ---- traversal ----
