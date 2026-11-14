@@ -10,3 +10,5 @@ fn void re_free(void* re) { }
 fn void re_ref(void* re) { }
 fn char* re_get_groupnames(void* re) { return null; }
 fn int re_get_capture_count(void* re) { return 0; }
+fn int re_captures(void* re) { return 0; }
+fn bool re_has_group_names(void* re) { return false; }

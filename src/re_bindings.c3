@@ -34,6 +34,18 @@ fn int re_group_count(void* re) @inline {
     return n == null ? RE_MAX_CAPTURES : (int)n.prog.capture_count;
 }
 
+// The groups of `re`, group 0 included.
+fn int re_captures(void* re) @inline {
+    re_native::ReNative* n = *(re_native::ReNative**)re;
+    return n == null ? re_get_capture_count(re) : (int)n.prog.capture_count;
+}
+
+// Whether `re` names a group.
+fn bool re_has_group_names(void* re) @inline {
+    re_native::ReNative* n = *(re_native::ReNative**)re;
+    return n == null ? re_get_groupnames(re) != null : n.named;
+}
+
 // The pattern behind `re` when it is one ASCII literal that may match
 // anywhere, so that finding its matches is a substring search; else empty.
 // Known once a run has prepared the pattern.
