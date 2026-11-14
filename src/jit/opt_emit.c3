@@ -1716,7 +1716,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         a.prop_base(R0, R1);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)poly.idx[0] * 8);
     }
-    if (chain) self.chain_miss(n);
+    if (chain && n.fidx != 0) self.chain_miss(n);
     self.exit_calls(i, OptExit.SHAPE);
     if (n.rep == OptRep.NONE) {
         self.publish(i, a.w.a);
@@ -1727,10 +1727,10 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     }
 }
 
-// The read of an inherited property when the entry's chain does not hold: the megamorphic cache,
-// then vm::jit_get_missed, read a data property of a plain chain, with the value in R0. A site that
-// meets more receivers than the entry keeps (a stream method read from every stream class), and an
-// inlined body's, whose entry every caller shares, would otherwise keep leaving. What neither
+// The read of an inherited property in an inlined body when the entry's chain does not hold: the
+// megamorphic cache, then vm::jit_get_missed, read a data property of a plain chain, with the value
+// in R0. The entry is the callee's, which every caller shares (a forwarding constructor's
+// `this.initialize` sees every class), while each inline site sees its own receivers. What neither
 // answers leaves for the baseline code (the jumps in a.call). No code runs and nothing is allocated
 // for the collector.
 fn void OptCg.chain_miss(&self, OptNode* n) {
@@ -1748,8 +1748,6 @@ fn void OptCg.chain_miss(&self, OptNode* n) {
     int rr = R0;
     if (n.b != NO_NODE) {
         rr = self.value_reg(n.b, R0);
-    } else if (a.w.op == Opcode.GETTHISC && n.fidx == 0) {
-        a.load_this(R0);
     } else if (a.w.op == Opcode.GETTHISC) {
         a.load(R0, self.g.fns[n.fidx].reg_base - 1);
     } else {
