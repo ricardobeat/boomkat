@@ -918,7 +918,9 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, Activation* act, uint osr_
     f.opt_code = oc;
     f.opt_state = OPT_ACTIVE;
     f.jit_code = code;
+    uint first_watch = p.watch_count;
     foreach (&x : g.bindings) if (x.watch) opt_watch(h, g.holders[x.holder].obj, x.slot, x.value);
+    opt_watch_disarm_stores(h, first_watch);
     if (p.log) {
         io::eprintf("opt compile ");
         opt_log_fn(f);
@@ -1257,26 +1259,41 @@ fn bool opt_watching(Heap* h, HObject* holder, uint idx) {
     return false;
 }
 
-// Watch the binding at `slot` of `holder` (opt_watch_holder), which holds `value`: the variable
-// caches naming the slot lose their store fast paths. The build reserved the room.
+// Watch the binding at `slot` of `holder` (opt_watch_holder), which holds `value`. The variable
+// caches naming the slot keep their store fast paths until opt_watch_disarm_stores runs for the
+// watches the compile added. The build reserved the room.
 fn void opt_watch(Heap* h, HObject* holder, hobject::PropValue* slot, ulong value) {
     OptPolicy* p = &h.opt;
     uint idx = (uint)(slot - holder.prop_values());
     if (opt_watching(h, holder, idx)) return;
     p.watches[p.watch_count++] = { .holder = holder, .idx = idx, .value = value };
+    // Code stores the value to frames the collector may have scanned already.
+    TVal v = { .bits = value };
+    if (h.gc_phase == heap::GcPhase.MARK) h.shade_value(v);
+}
+
+// Take the store fast paths from the variable caches filled before watches `first`.. were added
+// (a fill after checks Heap.binding_watched): a store then takes the full path, which fires the
+// watch. One pass over every cache serves all the watches of a compile.
+fn void opt_watch_disarm_stores(Heap* h, uint first) {
+    OptPolicy* p = &h.opt;
+    if (first >= p.watch_count) return;
     for (uint fi = 0; fi < h.compiled_func_count; fi++) {
         CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
         if (cf == null || cf.var_ic_entries == null) continue;
         hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
         for (uint i = 0; i < cf.var_ic_count; i++) {
-            if (vics[i].slot_ptr != slot) continue;
-            vics[i].varref_store_ok = false;
-            vics[i].prop_flags.writable = false;
+            hobject::PropValue* slot = vics[i].slot_ptr;
+            if (slot == null || (!vics[i].varref_store_ok && !vics[i].prop_flags.writable)) continue;
+            for (uint w = first; w < p.watch_count; w++) {
+                OptWatch* x = &p.watches[w];
+                if (slot != &x.holder.prop_values()[x.idx]) continue;
+                vics[i].varref_store_ok = false;
+                vics[i].prop_flags.writable = false;
+                break;
+            }
         }
     }
-    // Code stores the value to frames the collector may have scanned already.
-    TVal v = { .bits = value };
-    if (h.gc_phase == heap::GcPhase.MARK) h.shade_value(v);
 }
 
 fn void opt_watch_fire(Heap* h, uint w) {
