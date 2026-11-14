@@ -1450,6 +1450,28 @@ fn Val? CompilerContext.gen_closure(&self, uint n, uint object_home = uint::max)
     return { reg, false, 0 };
 }
 
+// Whether the source bytes [from, to) may refer to `name`: they hold it as a whole word, a direct
+// `eval`, or an escape, which may spell either. Bytes above ASCII count as word boundaries, so a
+// name after a non-ASCII space is found.
+fn bool source_may_name(char[] source, uint from, uint to, char[] name) {
+    if (to > (uint)source.len || from >= to || name.len == 0) return true;
+    char[] span = source[from..to - 1];
+    foreach (i, c : span) {
+        if (c == '\\') return true;
+        if (i > 0 && source_word_char(span[i - 1])) continue;
+        if (source_word_at(span, i, name) || source_word_at(span, i, "eval")) return true;
+    }
+    return false;
+}
+
+fn bool source_word_char(char c) @inline => c.is_alnum() || c == '_' || c == '$';
+
+fn bool source_word_at(char[] span, sz i, char[] word) @inline {
+    sz end = i + word.len;
+    if (end > span.len || span[i:word.len] != word) return false;
+    return end == span.len || !source_word_char(span[end]);
+}
+
 fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint object_home = 0xFFFFFFFF) {
     ast::Ast* tree = &ast::index_state.tree;
     uint rec = tree.rhs.data[n];
@@ -1461,6 +1483,9 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         : self.has_inferred_name ? self.inferred_name : "";
     self.has_inferred_name = false;
     self.inferred_name = {};
+    // A named function expression binds its name only when its parameters or body may read it.
+    bool named_expr = name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR
+        && source_may_name(self.lexer.source, tree.field(rec, ast::FN_PAREN), tree.field(rec, ast::FN_SRC_END), name);
     bool saved_constructable = self.is_constructable;
     bool saved_gen = self.is_generator;
     bool saved_user_gen = self.is_user_generator;
@@ -1480,12 +1505,12 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         && (n != self.eager_function || tree.body_was_recorded(n))) {
         CompiledFunction* stub = self.defer_function(scope, name)!;
         // A named function expression: the VM binds the name at call time.
-        stub.flags.is_namebinding = name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR;
+        stub.flags.is_namebinding = named_expr;
         return stub;
     }
     CompiledFunction* inner = tree.tags.data[n] == NodeTag.ARROW
         ? self.compile_arrow_ast(scope, name)!
-        : self.compile_inner_function(name, name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR,
+        : self.compile_inner_function(name, named_expr,
             tree.field(rec, ast::FN_SRC_START), true, is_method_body: method,
             ast_scope: scope, object_home: object_home)!;
     return inner;
