@@ -2655,7 +2655,7 @@ fn bool OptBuild.generic(&self) {
             case RET: case RETUNDEF: case SETALEN: case INITPROP: case INITELEM: case CHKOBJ: case REQUIRE_OBJ:
             case NOP: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL: case CHKGLOBALVAR:
             case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW: case THROW_UNRESOLVED:
-            case SETCELL:
+            case SETCELL: case DECLVAR: case DECLVAR_HOIST:
                 break;
             default:
                 return self.refuse_op(op);
