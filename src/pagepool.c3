@@ -19,7 +19,10 @@ import std::core::mem::allocator;
 // SMALL_VM shrinks pages to fit in microcontroller RAM.
 const sz PAGE_SIZE = $feat(SMALL_VM) ? 4 * 1024 : 64 * 1024;
 // Empty pages kept per pool so a pool hovering at a page boundary does not
-// return and fetch the same page over and over.
+// return and fetch the same page over and over. Between trims a pool keeps
+// every page it empties, which never holds more pages than it had in use at
+// once; a trim keeps as many as the pool took since the last one, which the
+// next stretch of allocation is likely to take again.
 const uint EMPTY_RESERVE = 4;
 
 struct PoolPage {
@@ -45,6 +48,7 @@ struct PagePool {
     uint capacity;        // blocks per page
     uint empty_count;
     uint page_count;
+    uint taken;           // pages added since the last trim
 }
 
 fn void PagePool.init(&self, sz block_size) {
@@ -117,6 +121,7 @@ fn PoolPage* PagePool.add_page(&self) {
         p = alloc::calloc_aligned(&allocators::LIBC_ALLOCATOR, PAGE_SIZE, PAGE_SIZE)!!;
         p.zeroed = true;
     }
+    self.taken++;
     p.bump = (void*)p + PAGE_HEADER;
     p.freelist = null;
     p.used = 0;
@@ -138,14 +143,23 @@ fn void PagePool.retire_page(&self, PoolPage* p) {
     }
     if (p.next) p.next.prev = p.prev;
     self.page_count--;
-    if (self.empty_count < EMPTY_RESERVE) {
-        p.zeroed = false;
-        p.next = self.empty;
-        self.empty = p;
-        self.empty_count++;
-        return;
+    p.zeroed = false;
+    p.next = self.empty;
+    self.empty = p;
+    self.empty_count++;
+}
+
+// Release the empty pages beyond the reserve and the pages taken since the
+// last trim.
+fn void PagePool.trim(&self) {
+    uint keep = max(self.taken, EMPTY_RESERVE);
+    while (self.empty_count > keep) {
+        PoolPage* p = self.empty;
+        self.empty = p.next;
+        self.empty_count--;
+        release_page(p);
     }
-    release_page(p);
+    self.taken = 0;
 }
 
 fn void PagePool.avail_append(&self, PoolPage* p) {

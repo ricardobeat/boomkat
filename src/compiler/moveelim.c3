@@ -276,6 +276,7 @@ fn void moveelim_init_roles() {
             case Opcode.INIT_SLOT:
             case Opcode.STRJOIN:
             case Opcode.STRJOIN_LENGTH:
+            case Opcode.NEWARR_FILL:
                 r.general = true;
             default:
                 // Record the general reader's answer for an instruction whose
@@ -521,11 +522,11 @@ fn void moveelim_add_decoded_uses_general(DecodedInsn ins, RegSet* live, bool ma
         live.set((uint)ins.c);
         return;
     }
-    // STRJOIN reads the parts in consecutive registers B .. B+C-1; C is a count,
-    // not a register. Marking only B and C would make the other part slots look
-    // dead and let move elimination drop their fills. This applies to both
+    // STRJOIN and NEWARR_FILL read consecutive registers B .. B+C-1; C is a
+    // count, not a register. Marking only B and C would make the other slots
+    // look dead and let move elimination drop their fills. This applies to both
     // liveness analyses, so it is outside the call-window gate.
-    if (op == Opcode.STRJOIN || op == Opcode.STRJOIN_LENGTH) {
+    if (op == Opcode.STRJOIN || op == Opcode.STRJOIN_LENGTH || op == Opcode.NEWARR_FILL) {
         if (ins.c > 0) {
             moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + (uint)ins.c - 1);
         }

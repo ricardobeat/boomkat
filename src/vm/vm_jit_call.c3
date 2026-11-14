@@ -844,7 +844,7 @@ fn bool jit_put_site(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) 
     return key != null && put_by_lookup(h, hobj, key, value, ic, false);
 }
 
-// NEWARR, NEWARR_CONST, NEWOBJ and NEWOBJ_SHAPE as their threaded handlers
+// NEWARR, NEWARR_CONST, NEWARR_FILL, NEWOBJ and NEWOBJ_SHAPE as their threaded handlers
 // run them, without the handler's table call and bias setup: true when the
 // result register is written, false when the allocation failed and the
 // instruction is left to the thunk.
@@ -855,6 +855,7 @@ fn bool jit_alloc(Dispatch* ds, Instruction* next) {
     switch (pc.op) {
         case NEWARR: return alloc_newarr(vm, ds.act, ds.regs_base, *pc);
         case NEWARR_CONST: return alloc_newarr_const(vm, ds.act, ds.regs_base, *pc);
+        case NEWARR_FILL: return alloc_newarr_fill(vm, ds.act, ds.regs_base, *pc);
         default: return alloc_newobj(ds.heap, ds.act, ds.regs_base, *pc);
     }
 }

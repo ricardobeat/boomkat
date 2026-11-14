@@ -2538,6 +2538,7 @@ macro bool @relayed(Opcode $op) @const {
         $case Opcode.NEWOBJ_SHAPE:
         $case Opcode.NEWARR:
         $case Opcode.NEWARR_CONST:
+        $case Opcode.NEWARR_FILL:
         $case Opcode.INIT_SLOT:
             return true;
         $default:
@@ -2661,6 +2662,7 @@ macro OpStatus @run_op(Opcode $op, Dispatch* ds, DecodedInsn insn) {
         $case Opcode.NEWOBJ:
         $case Opcode.NEWARR:
         $case Opcode.NEWARR_CONST:
+        $case Opcode.NEWARR_FILL:
         $case Opcode.NEWREGEXP:
         $case Opcode.SETALEN:
         $case Opcode.FREEZEOBJ:

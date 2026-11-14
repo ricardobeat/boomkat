@@ -1166,6 +1166,9 @@ enum Opcode : char {
     // A=result, A+1=eligible; B=source; C=key constant or 255 for array length.
     SPREAD_PROJECTION,
 
+    // A = fresh array whose elements are the C registers from B on.
+    NEWARR_FILL,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

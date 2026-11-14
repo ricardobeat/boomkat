@@ -135,6 +135,12 @@ struct Layout {
     long heap_young_size;
     long heap_young_cap;
     long heap_young_entries;
+    long heap_gc_requested;
+    long heap_gray_items;
+    long heap_gray_len;
+    long heap_gray_cap;
+    long heap_gray_count;
+    long heap_marked_count;
     long heap_object_proto;
     long heap_array_proto;
     long heap_realms;
@@ -261,6 +267,12 @@ fn Layout* layout() {
     l.heap_young_size = (char*)&h.objects_young.len - base;
     l.heap_young_cap = (char*)&h.objects_young.cap - base;
     l.heap_young_entries = (char*)&h.objects_young.data - base;
+    l.heap_gc_requested = (char*)&h.gc_requested - base;
+    l.heap_gray_items = (char*)&h.gc_gray.items - base;
+    l.heap_gray_len = (char*)&h.gc_gray.len - base;
+    l.heap_gray_cap = (char*)&h.gc_gray.cap - base;
+    l.heap_gray_count = (char*)&h.gray_count - base;
+    l.heap_marked_count = (char*)&h.marked_obj_count - base;
     l.heap_object_proto = (char*)&h.object_proto - base;
     l.heap_array_proto = (char*)&h.array_proto - base;
     l.heap_realms = (char*)&h.realms - base;

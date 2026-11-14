@@ -3,6 +3,7 @@ module boomkat::heap;
 import boomkat::gcprofile;
 import boomkat::hobject;
 import boomkat::hstring;
+import boomkat::pagepool;
 import boomkat::types;
 import std::time;
 import std::io;
@@ -142,10 +143,11 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
         if (self.live_obj_count > 0) self.live_obj_count--;
         if (cur.is_object()) {
             HObject* obj = (HObject*)cur;
-            // Freeing costs one unit per slot, as hobject_free_step charges.
+            // Freeing costs one unit per slot, as hobject_free_step charges. An
+            // object whose slots are all in its header block is freed whole.
             uint slots = obj.prop_count + obj.array_size;
-            if (slots < budget && hobject::hobject_free_inline(obj, self)) {
-                budget -= slots;
+            if (hobject::hobject_free_inline(obj, self)) {
+                budget = slots >= budget ? 0 : budget - slots;
                 continue;
             }
             self.gc_free_object = obj;
@@ -211,6 +213,7 @@ fn void Heap.gc_finish_cycle(&self) {
     // RSS includes memory the collector cannot reclaim, so the check is coarse.
     // One read is cheap next to a cycle. Checking minor cycles too keeps the
     // overshoot small while a growing heap spaces its majors out.
+    self.@each_pool(; pagepool::PagePool* pool) { pool.trim(); };
     self.check_mem_limit(0);
     if (self.accounting) self.plan_limit_gc();
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;

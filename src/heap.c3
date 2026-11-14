@@ -2738,19 +2738,7 @@ fn void Heap.destroy(&self) {
     esm::free_defined_modules(self);
 
     // Releases every pool page back to libc.
-    self.obj_pool_plain.free();
-    self.obj_pool_compact.free();
-    foreach (&pool : self.obj_pool_shaped) pool.free();
-    self.obj_pool_array.free();
-    self.obj_pool_dense_array.free();
-    foreach (&pool : self.obj_pool_inline_arrays) pool.free();
-    self.obj_pool_gs.free();
-    self.obj_pool_small.free();
-    self.obj_pool_func.free();
-    self.obj_pool_big.free();
-    for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-        self.small_pools[i].free();
-    }
+    self.@each_pool(; pagepool::PagePool* pool) { pool.free(); };
 
     self.gc_roots.free();
 
@@ -3762,6 +3750,43 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     return obj;
 }
 
+// A fresh array of `count` elements and that length, in its header block when
+// they fit. The caller writes every element slot before anything else can
+// allocate or observe the array, an `undefined` one only in a packed array.
+fn HObject*? Heap.alloc_dense_array(&self, uint count) {
+    HObject* obj;
+    if (count > 0 && count <= hobject::ARRAY_INLINE_MAX_CAPACITY) {
+        obj = self.alloc_inline_array_uninit(0, count)!;
+    } else {
+        obj = self.alloc_object(hobject::ObjClass.ARRAY)!;
+        if (!obj.reserve_array_storage(0, count, self)) return HEAP_ALLOC_FAULT~;
+    }
+    obj.prototype = self.array_proto;
+    obj.array_used = count;
+    obj.array_len_ptr()[0] = count;
+    return obj;
+}
+
+// A fresh array holding `values[:count]` as its elements, each slot written
+// once and counted. An `undefined` value is an element, which makes the array
+// packed.
+fn HObject*? Heap.alloc_array_of(&self, TVal* values, uint count) {
+    HObject* obj = self.alloc_dense_array(count)!;
+    hobject::PropValue* part = obj.array_part();
+    uint holes = 0;
+    for (uint i = 0; i < count; i++) {
+        if (values[i].is_undefined()) {
+            part[i].set_untraced(values[i]);
+            holes++;
+        } else {
+            self.init_slot_ref(obj, &part[i], &values[i]);
+        }
+    }
+    obj.array_used = count - holes;
+    obj.gc.packed = holes != 0;
+    return obj;
+}
+
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
@@ -3992,14 +4017,17 @@ fn void Heap.free_string(&self, hstring::HString* s) {
  * collector alone, so a release of one of those does nothing.
  */
 fn void Heap.decref(&self, HeapHeader* hdr) {
-    // Pinned headers, meaning builtin strings, well-known symbols, and the
-    // small-int cache, keep a fixed refcount. See HeapHeader.set_pinned.
-    if (!hdr.is_string() || hdr.is_pinned()) {
-        return;
-    }
-    hstring::HString* s = (hstring::HString*)hdr;
+    if (!hdr.is_string()) return;
+    self.release_string((hstring::HString*)hdr);
+}
+
+// Drop a counted reference to a string. Pinned headers, meaning builtin
+// strings, well-known symbols, and the small-int cache, keep a fixed refcount.
+// See HeapHeader.set_pinned.
+fn void Heap.release_string(&self, hstring::HString* s) @inline {
+    if (s.refcount == types::STRING_PINNED_REFCOUNT) return;
     uint table_reference = s.flags.is_interned ? 1u : 0u;
-    if (--hdr.refcount <= table_reference) self.zct_push(s);
+    if (--s.refcount <= table_reference && !s.flags.zct_queued) self.zct_push(s);
 }
 
 // ============================================================================
@@ -4288,7 +4316,7 @@ fn void Heap.move_tval_ref(&self, TVal* dst, TVal* src) @inline {
     TVal value = *src;
     *dst = value;
     src.set_undefined();
-    if (src_counted && !dst_counted) self.decref_tval(&value);
+    if (src_counted && !dst_counted && value.is_refcounted()) self.release_string((HString*)value.get_heapptr());
 }
 
 fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
@@ -5703,6 +5731,21 @@ $endif
 // ============================================================================
 // GC sweep
 // ============================================================================
+
+// Every page pool of the heap.
+macro void Heap.@each_pool(&self; @body(pagepool::PagePool* pool)) {
+    @body(&self.obj_pool_plain);
+    @body(&self.obj_pool_compact);
+    foreach (&pool : self.obj_pool_shaped) @body(pool);
+    @body(&self.obj_pool_array);
+    @body(&self.obj_pool_dense_array);
+    foreach (&pool : self.obj_pool_inline_arrays) @body(pool);
+    @body(&self.obj_pool_gs);
+    @body(&self.obj_pool_small);
+    @body(&self.obj_pool_func);
+    @body(&self.obj_pool_big);
+    foreach (&pool : self.small_pools) @body(pool);
+}
 
 // Explicit callers can finish a scheduled sweep at a quiescent boundary.
 fn void Heap.finish_sweep(&self, bool strings_safe) {
