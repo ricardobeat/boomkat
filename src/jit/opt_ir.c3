@@ -245,11 +245,12 @@ enum OptOp : char {
     // as a VALUE: the match array or null, or a boolean for test. Exits (SLOW_PATH) before any
     // effect for any other receiver or argument (vm::jit_opt_regexp).
     REGEXP_EXEC,
-    // A CALL (pc) in the function's own body of String.prototype.replace or replaceAll with two
-    // arguments (OptStringRegexp cc), after the CHECK_BUILTIN of its callee, its receiver and
-    // arguments read from the window: the result stored into the call's window slot, as the
-    // builtin computes it for a string receiver, a plain RegExp and a replacement string.
-    // Exits (SLOW_PATH) before any effect for anything else (vm::jit_opt_string_regexp).
+    // A CALL (pc) in the function's own body of String.prototype.replace, replaceAll, split,
+    // match or search (vm::StringRegexpKind cc), after the CHECK_BUILTIN of its callee, its
+    // receiver and arguments from the nodes a, b and c or the window: the result stored into the
+    // call's window slot, as the builtin computes it for a string receiver, a pristine RegExp and a
+    // replacement string. Exits (SLOW_PATH) before any effect for anything else
+    // (vm::jit_opt_string_regexp).
     STRING_REGEXP,
     // A CALL or CALL_UNDEF_THIS (pc) in the function's own body of a builtin with a leaf entry
     // (builtins::leaf_of), after the CHECK_BUILTIN of its callee, with the dirty registers stored

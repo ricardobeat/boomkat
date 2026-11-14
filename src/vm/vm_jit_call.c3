@@ -1153,20 +1153,53 @@ fn long jit_call_string_regexp(Dispatch* ds, Instruction* next, long builtin) {
     return 0;
 }
 
-// STRING_REGEXP of optimized code: String.prototype.replace, or replaceAll when `all`, of the
-// boxed string args[0] by the plain RegExp args[1] with the string args[2], as
-// builtins::regexp_replace_direct computes it, stored into the window slot `dst`: 1, or 0 with
-// nothing done for anything that refuses, which the baseline code at the call then performs. The
-// allocation does not collect, so a due collection waits for the code's next poll.
-fn long jit_opt_string_regexp(Dispatch* ds, TVal* args, TVal* dst, long all) {
+// The String.prototype methods STRING_REGEXP runs (jit::opt_string_regexp_kind).
+enum StringRegexpKind : char {
+    REPLACE,
+    REPLACE_ALL,
+    SPLIT,
+    MATCH,
+    SEARCH,
+}
+
+// STRING_REGEXP of optimized code: the String.prototype method `kind` of the boxed string args[0]
+// with the RegExp args[1] (and for a replace the string args[2]), stored into the window slot
+// `dst`: 1, or 0 with nothing done for anything the builtin's direct path refuses, which the
+// baseline code at the call then performs. A replace takes regexp_replace_direct; split, match
+// and search the pristine paths their builtins take for a non-sticky RegExp whose prototype and
+// species are intact, with split's limit undefined. The allocations do not collect, so a due
+// collection waits for the code's next poll.
+fn long jit_opt_string_regexp(Dispatch* ds, TVal* args, TVal* dst, long kind) {
     HString* s = builtins::regexp_plain_input(&args[0]);
-    HString* rep = builtins::regexp_plain_input(&args[2]);
-    if (s == null || rep == null || !args[1].is_object() || args[1].get_heapptr() == null) return 0;
+    if (s == null || !args[1].is_object() || args[1].get_heapptr() == null) return 0;
     Heap* heap = ds.heap;
-    HString* out = builtins::regexp_replace_direct(heap, s, (HObject*)args[1].get_heapptr(), rep, all != 0);
-    if (out == null) return 0;
+    HObject* rx = (HObject*)args[1].get_heapptr();
     TVal result;
-    result.set_string(out);
+    switch ((StringRegexpKind)kind) {
+        case REPLACE:
+        case REPLACE_ALL:
+            HString* rep = builtins::regexp_plain_input(&args[2]);
+            if (rep == null) return 0;
+            HString* out = builtins::regexp_replace_direct(heap, s, rx, rep, kind == StringRegexpKind.REPLACE_ALL.ordinal);
+            if (out == null) return 0;
+            result.set_string(out);
+        default:
+            if (rx.get_class() != hobject::ObjClass.REGEXP || !builtins::regexp_is_pristine(heap, rx)
+                || ((*rx.extra_ptr()).regexp.flags & 32) != 0) return 0;
+            if (kind == StringRegexpKind.SPLIT.ordinal && !builtins::regexp_species_pristine(heap)) return 0;
+            result.set_undefined();
+            BuiltinContext ctx = { .vm = ds.vm, .heap = heap, .result = builtins::result_slot(&result) };
+            switch ((StringRegexpKind)kind) {
+                case SPLIT: builtins::regexp_split_pristine(&ctx, rx, s, 0xFFFFFFFF);
+                case MATCH: builtins::regexp_match_pristine(&ctx, rx, s);
+                default: builtins::regexp_search_pristine(&ctx, rx, s);
+            }
+            if (ctx.should_throw) {
+                heap.decref_tval(&ctx.throw_value);
+                heap.decref_tval(&result);
+                return 0;
+            }
+    }
     heap.store_builtin_result(dst, &result);
     return 1;
 }

@@ -3022,16 +3022,17 @@ fn void OptCg.emit_regexp_exec(&self, uint i, OptNode* n) {
     self.def_value(i, R0);
 }
 
-// STRING_REGEXP: vm::jit_opt_string_regexp over the call's receiver and arguments, from their nodes
-// or the window, copied to the frame's CALL_FRAME_BYTES, with the registers in use saved around it;
-// what it refuses leaves for the baseline code at the CALL.
+// STRING_REGEXP: vm::jit_opt_string_regexp of kind n.cc over the call's receiver and arguments,
+// from their nodes or the window, copied to the frame's CALL_FRAME_BYTES, with the registers in use
+// saved around it; what it refuses leaves for the baseline code at the CALL.
 fn void OptCg.emit_string_regexp(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
     self.decode(n);
     uint callee = a.w.b;
     uint[3] nodes = { n.a, n.b, n.c };
-    for (uint k = 1; k <= 3; k++) {
+    uint argc = a.w.c;
+    for (uint k = 1; k <= argc + 1; k++) {
         if (nodes[k - 1] == NO_NODE) {
             a.load(R0, callee + k);
         } else {

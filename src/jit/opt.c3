@@ -424,9 +424,40 @@ fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     for (uint i = 0; i < f.code_count; i++) {
         OptCallees set;
         if ((ic[i].feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0 && (opt_inline_plausible(h, f, i) || opt_direct_targets(h, f, i, &set))) return true;
-        if (opt_node_call_site(h, f, i)) return true;
+        if (opt_node_call_site(h, f, i) || opt_string_regexp_site(f, i)) return true;
     }
     return false;
+}
+
+// The last word of `f` whose cache records a run: a filled key, feedback or a call target.
+fn uint opt_ran_end(CompiledFunction* f) {
+    hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
+    for (uint i = f.code_count; i > 0; i--) {
+        if (ic[i - 1].feedback != 0 || (void*)ic[i - 1].key.borrow() != null) return i - 1;
+    }
+    return 0;
+}
+
+// The STRING_REGEXP kind (vm::StringRegexpKind) of a call of builtin `builtin` with `argc`
+// arguments, or -1: replace and replaceAll with two, split, match and search with one.
+fn int opt_string_regexp_kind(uint builtin, uint argc) {
+    switch (builtin) {
+        case builtins::Builtin.STRING_PROTO_REPLACE.ordinal: return argc == 2 ? vm::StringRegexpKind.REPLACE.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal: return argc == 2 ? vm::StringRegexpKind.REPLACE_ALL.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_SPLIT.ordinal: return argc == 1 ? vm::StringRegexpKind.SPLIT.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_MATCH.ordinal: return argc == 1 ? vm::StringRegexpKind.MATCH.ordinal : -1;
+        case builtins::Builtin.STRING_PROTO_SEARCH.ordinal: return argc == 1 ? vm::StringRegexpKind.SEARCH.ordinal : -1;
+        default: return -1;
+    }
+}
+
+// Whether the CALL at word `i` of `f` has always called a String.prototype method the tier builds
+// as a STRING_REGEXP (OptBuild.string_regexp_call).
+fn bool opt_string_regexp_site(CompiledFunction* f, uint i) {
+    if (f.code[i].op != Opcode.CALL) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    return opt_string_regexp_kind(ic.prop_idx & ~hobject::IC_BUILTIN_TARGET, f.code[i].c) >= 0;
 }
 
 // Whether `f` is mostly integer work the baseline runs boxed: at least OPT_INT_WORK arithmetic,
@@ -518,15 +549,6 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 
         if ((depth >= OPT_INLINE_DEPTH || !opt_inline_plausible(h, cf, k, depth + 1)) && !opt_direct_targets(h, cf, k, &set)) return false;
     }
     return true;
-}
-
-// The last word of `f` whose cache records a run: a filled key, feedback or a call target.
-fn uint opt_ran_end(CompiledFunction* f) {
-    hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
-    for (uint i = f.code_count; i > 0; i--) {
-        if (ic[i - 1].feedback != 0 || (void*)ic[i - 1].key.borrow() != null) return i - 1;
-    }
-    return 0;
 }
 
 // Whether the CALL at word `i` of `f` is one the optimizer builds as a node rather than a call:

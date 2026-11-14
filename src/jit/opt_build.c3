@@ -2161,23 +2161,25 @@ fn bool OptBuild.regexp_call(&self) {
     return true;
 }
 
-// A CALL of String.prototype.replace or replaceAll with two arguments that the site has always
-// made (hobject::IC_BUILTIN_TARGET), in the function's own body: a CHECK_BUILTIN of the callee,
-// then a STRING_REGEXP of the receiver and arguments, from their nodes (a, b, c) or the window.
+// A CALL of String.prototype.replace, replaceAll, split, match or search (opt_string_regexp_kind)
+// that the site has always made (hobject::IC_BUILTIN_TARGET), in the function's own body: a
+// CHECK_BUILTIN of the callee, then a STRING_REGEXP of the receiver and arguments, from their nodes
+// (a, b, c) or the window.
 fn bool OptBuild.string_regexp_call(&self) {
-    if (self.w.op != Opcode.CALL || self.wide || self.cur_fn != 0 || self.w.c != 2) return false;
+    if (self.w.op != Opcode.CALL || self.wide || self.cur_fn != 0) return false;
     CompiledFunction* f = self.cur_f();
     if (f.ic_entries == null) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
     uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
-    if (builtin != builtins::Builtin.STRING_PROTO_REPLACE.ordinal && builtin != builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal) return false;
-    if (opt_site_banned(self.f, f, self.next_pc - 1)) return false;
+    int kind = opt_string_regexp_kind(builtin, self.w.c);
+    if (kind < 0 || opt_site_banned(self.f, f, self.next_pc - 1)) return false;
     uint callee = self.w.b;
     uint ra = self.w.a;
-    if (callee + 3 >= self.nregs || ra >= self.nregs) return false;
-    uint[4] nodes;
-    for (uint k = 0; k < 4; k++) {
+    uint argc = self.w.c;
+    if (callee + 1 + argc >= self.nregs || ra >= self.nregs) return false;
+    uint[4] nodes = { NO_NODE, NO_NODE, NO_NODE, NO_NODE };
+    for (uint k = 0; k <= argc + 1; k++) {
         uint r = callee + k;
         nodes[k] = self.cur[r].node;
         if (nodes[k] != NO_NODE && (k != 0 || self.holds_value(r))) continue;
@@ -2189,7 +2191,7 @@ fn bool OptBuild.string_regexp_call(&self) {
     self.snapshot(chk);
     uint n = self.add(OptOp.STRING_REGEXP, OptRep.NONE, nodes[1], nodes[2], (long)self.pc);
     self.g.nodes[n].c = nodes[3];
-    self.g.nodes[n].cc = builtin == builtins::Builtin.STRING_PROTO_REPLACEALL.ordinal ? 1 : 0;
+    self.g.nodes[n].cc = (char)kind;
     self.snapshot(n);
     self.kill(ra);
     // The pattern's lastIndex may have been written.
