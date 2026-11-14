@@ -3830,6 +3830,9 @@ const char FB_POLY = 32;
 // on the receiver and arguments it shifted down (`X.call(this, a)`): the optimizer inlines X behind
 // a guard on the builtin. Such a site keeps one target: any other makes it FB_POLY.
 const char FB_DOTCALL = 128;
+// ICEntry.feedback bit of a GETPROP or PUTPROP whose key was no int32 where optimized code took it
+// for an element index.
+const char FB_KEY = FB_STR;
 // The bits an arithmetic, bitwise or compare instruction records.
 const char FB_OPERANDS = 15;
 // ICEntry.feedback bit of a NEW_OBJ, whose entry caches the constructor's `prototype` read:

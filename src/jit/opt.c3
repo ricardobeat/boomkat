@@ -470,6 +470,45 @@ fn bool opt_has_field_feedback(CompiledFunction* f) {
     return false;
 }
 
+fn bool opt_call_op(Opcode op) {
+    switch (op) {
+        case CALL: case CALL_PROP: case CALL_UNDEF_THIS: case NEW_OBJ: case CALL_S: case NEW_OBJ_S:
+        case CALL_VAR: case CALL_GLOBAL:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Why the call at word `i` of `f` is not one opt_direct_targets proves, for --opt-log.
+fn String opt_generic_reason(Heap* h, CompiledFunction* f, uint i) {
+    Instruction w = f.code[i];
+    bool var_call = w.op == Opcode.CALL_VAR || w.op == Opcode.CALL_GLOBAL;
+    if (w.op != Opcode.CALL && w.op != Opcode.CALL_UNDEF_THIS && !var_call) return "opcode";
+    if (opt_site_banned(f, f, i, own: true)) return "banned";
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
+    if ((ic.feedback & hobject::FB_CALL) == 0) return "no-feedback";
+    if ((ic.feedback & hobject::FB_POLY) != 0) return "megamorphic";
+    if ((ic.feedback & hobject::FB_DOTCALL) != 0) return "dotcall";
+    uint count = hobject::ic_call_count(ic);
+    uint nargs = var_call ? w.b : w.c;
+    for (uint k = 0; k < count; k++) {
+        uint index = hobject::ic_call_target(ic, k);
+        if ((index & hobject::IC_BUILTIN_TARGET) != 0) {
+            uint b = index & ~hobject::IC_BUILTIN_TARGET;
+            if (b >= builtins::Builtin::values.len) return "builtin";
+            return string::tformat("builtin%s:%s", builtins::leaf_of(b) == null ? "" : "-leaf", (builtins::Builtin)b);
+        }
+        if (index >= h.compiled_func_count) return "target-index";
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[index];
+        if (cf == null) return "target-gone";
+        if (cf.realm != f.realm) return "realm";
+        if (!call_entry_eligible(cf)) return "no-call-entry";
+        if (!entry_takes(cf, nargs, w.op != Opcode.CALL)) return "entry-refuses-args";
+    }
+    return "operands";
+}
+
 // The functions optimized code enters the call at word `i` of `f` into directly
 // (OptBuild.direct_callee): every one its feedback names, each with a call entry that takes the
 // call (entry_takes). Several only with register calls, which enter the function the callee holds.
@@ -614,13 +653,14 @@ fn hobject::Shape* opt_settled_shape(Heap* h, hobject::ICEntry* ic) {
 
 // Whether the instruction at word `pc` of `cf` (the function `root` is optimizing, or a callee
 // inlined into it) exited from optimized code often enough that it is no longer speculated on.
-// `fold` asks about folding a GETGLOBAL there, which a ban of its fold alone stops too.
-fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc, bool fold = false) {
+// `fold` asks about folding a GETGLOBAL there, which a ban of its fold alone stops too. With `own`
+// only a ban of that site counts: a call's guard is its own feedback, not a neighbour's cache.
+fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc, bool fold = false, bool own = false) {
     OptBans* bans = root.opt_bans;
     if (bans == null) return false;
     for (uint i = 0; i < bans.count; i++) {
         OptBan* b = &bans.items[i];
-        if (b.cf == cf && (b.pc == pc || b.pc == OPT_BAN_ALL) && (fold || !b.fold)) return true;
+        if (b.cf == cf && (b.pc == pc || (b.pc == OPT_BAN_ALL && !own)) && (fold || !b.fold)) return true;
     }
     return false;
 }
@@ -877,6 +917,14 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, Activation* act, uint osr_
             }
         }
         io::eprintfn(" calls reg %d direct %d generic %d", calls[0], calls[1], calls[2]);
+        foreach (&nd : g.nodes) {
+            if (nd.op != OptOp.GENERIC || nd.key != null || nd.fidx != 0) continue;
+            Instruction w = f.code[(uint)nd.imm];
+            if (!opt_call_op(w.op)) continue;
+            io::eprintf("opt generic-call ");
+            opt_log_fn(f);
+            io::eprintfn(" +%d %s %s", nd.imm, w.op, opt_generic_reason(h, f, (uint)nd.imm));
+        }
     }
     return true;
 }
@@ -1100,13 +1148,16 @@ fn bool opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reaso
     if (!d.valid) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.payload_pc];
     char before = ic.feedback;
+    TVal* regs = ds.regs_base;
     if (!vm::has_feedback(d.insn.op)) {
-        // A typed load (an element, field, closure or global read) found a value its int32 node
-        // cannot hold: the rebuild reads it as a double (OptBuild.typed_load).
-        if (reason == OptExit.NOT_INT32.ordinal) ic.feedback |= hobject::FB_DBL;
+        if (reason != OptExit.NOT_INT32.ordinal) return false;
+        // An element access whose key was no int32: the rebuild reads it by key (OptBuild.index_ok).
+        // Else a typed load (an element, field, closure or global read) found a value its int32
+        // node cannot hold, which the rebuild reads as a double (OptBuild.typed_load).
+        TVal* key = d.insn.op == Opcode.GETPROP ? regs + d.insn.c : (d.insn.op == Opcode.PUTPROP ? regs + d.insn.b : null);
+        ic.feedback |= key != null && !key.is_fastint() ? hobject::FB_KEY : hobject::FB_DBL;
         return ic.feedback != before;
     }
-    TVal* regs = ds.regs_base;
     TVal imm;
     char bits;
     switch (d.insn.op) {

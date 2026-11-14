@@ -45,6 +45,7 @@ pats = {
     'exit': re.compile(r'^opt exit ' + FN + r' \+(\d+) (\S+) (\S+)(?: inlined in ' + FN + ')?'),
     'discard': re.compile(r'^opt discard ' + FN + r' exits (\d+)'),
     'refuse': re.compile(r'^opt refuse ' + FN + r' (.+?) (\S+) words (\d+) registers (\d+)$'),
+    'generic': re.compile(r'^opt generic-call ' + FN + r' \+(\d+) (\S+) (\S+)$'),
     'reject': re.compile(r'^opt inline-reject ' + FN + r' \+(\d+)(?: -> ' + FN + r')? (.+)$'),
 }
 
@@ -60,6 +61,7 @@ class Fn:
         self.discards = 0
         self.refused = None
         self.rejects = collections.Counter()    # (pc, callee, why) -> count
+        self.generic = []                       # (pc, op, why) of the latest build's generic calls
 
 fns = {}
 def fn(name):
@@ -75,6 +77,11 @@ for line in log:
         f.region = f.region or m[6] is not None
         if m[7] is not None:
             f.calls = [int(m[7]), int(m[8]), int(m[9])]
+        f.generic = []
+        continue
+    m = pats['generic'].match(line)
+    if m:
+        fn(m[1]).generic.append((int(m[2]), m[3], m[4]))
         continue
     m = pats['exit'].match(line)
     if m:
@@ -127,6 +134,10 @@ def section(title, rows):
         print('\n' + title)
         for r in rows:
             print('  ' + r)
+
+gr = collections.Counter(why for f in allf for (_, _, why) in f.generic)
+section('Generic calls of the latest builds by reason (no-feedback: the site never ran):',
+        ['%6d  %s' % (n, why) for why, n in gr.most_common()])
 
 ex = collections.Counter()
 for f in allf:

@@ -1663,11 +1663,12 @@ fn bool OptBuild.window_copy(&self, uint ra, char cc, uint* node = null) {
     return true;
 }
 
-// Whether the instruction being lowered has been cached for a string key.
+// Whether the instruction being lowered has been cached for a string key, or met a key no int32.
 fn bool OptBuild.string_keyed(&self) {
     CompiledFunction* f = self.cur_f();
     if (f.ic_entries == null) return true;
-    return ((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1].key.borrow() != null;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+    return ic.key.borrow() != null || (ic.feedback & hobject::FB_KEY) != 0;
 }
 
 // Whether register `r` can be an element index: an INT32 node, or the window while the
@@ -2209,7 +2210,7 @@ fn bool OptBuild.leaf_call(&self) {
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
     uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
-    if (builtins::leaf_of(builtin) == null || opt_site_banned(self.f, f, self.next_pc - 1)) return false;
+    if (builtins::leaf_of(builtin) == null || opt_site_banned(self.f, f, self.next_pc - 1, own: true)) return false;
     uint callee = self.w.b;
     uint ra = self.w.a;
     if (callee + 1 + self.w.c >= self.nregs || ra >= self.nregs) return false;
@@ -2272,7 +2273,7 @@ fn bool OptBuild.math_call(&self) {
     uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
     OptMath m;
     if (!opt_math_of(builtin, &m) || self.w.c != m.args) return false;
-    if (opt_site_banned(self.f, f, self.next_pc - 1)) return false;
+    if (opt_site_banned(self.f, f, self.next_pc - 1, own: true)) return false;
     uint callee = self.w.b;
     uint ra = self.w.a;
     if (callee + 1 + m.args >= self.nregs || ra >= self.nregs) return false;
@@ -2758,7 +2759,7 @@ fn bool OptBuild.direct_callee(&self, CompiledFunction** one) {
     if (var_call && f.var_ic_entries == null) return false;
     uint at = self.next_pc - 1;
     OptCallees set;
-    if (opt_site_banned(self.f, f, at) || !opt_direct_targets(self.h, f, at, &set)) return false;
+    if (opt_site_banned(self.f, f, at, own: true) || !opt_direct_targets(self.h, f, at, &set)) return false;
     bool method = op == Opcode.CALL;
     CompiledFunction* cf = set.count == 1 ? set.fns[0] : null;
     uint callee_reg = var_call ? self.w.a : self.w.b;
