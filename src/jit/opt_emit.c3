@@ -859,7 +859,9 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
         creg = self.g.fns[n.fidx].reg_base - 2;
         closure = n.b != NO_NODE ? self.value_reg(n.b, R3) : -1;
     }
+    void* retry = sljit_emit_label(self.a.c);
     a.var_slot(vic, n.cc != 0, creg, closure);
+    if (n.cc == 0) self.refresh_global(i, vic, retry);
     if (n.cc != 0) {
         sljit_emit_op1(self.a.c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, a.lay.vic_flags);
         sljit_emit_op2(self.a.c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, a.lay.accessor_mask);
@@ -878,6 +880,31 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     }
 }
 
+// The misses in Asm.call of the GETGLOBAL-family entry `vic` of node `i`, whose tests start at
+// `retry`: vm::jit_global_refresh brings an entry a moved recycle epoch retired up to date, and
+// the tests run again; what it cannot refresh, a current entry included, leaves for the baseline
+// code. A collection that recycles shape ids would otherwise make every such node exit once.
+fn void OptCg.refresh_global(&self, uint i, long vic, void* retry) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    CompiledFunction* f = a.f;
+    // CALL_GLOBAL names its callee by C; the rest of the family by BC.
+    uint k = a.w.op == Opcode.CALL_GLOBAL ? a.w.c : a.w.get_bc();
+    if (a.call.len == 0 || k >= f.const_count || !f.constants[k].is_string()) return;
+    void* hit = sljit_emit_jump(c, SLJIT_JUMP);
+    a.call.bind(sljit_emit_label(c));
+    a.call.len = 0;
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, vic);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)f.constants[k].get_heapptr());
+    a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_global_refresh);
+    self.spill_live(i, false);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), retry);
+    sljit_set_label(hit, sljit_emit_label(c));
+}
+
 // STORE_GLOBAL and STEP_GLOBAL: the baseline's global store path (Asm.global_store_slot), its
 // misses exits, then the store of the value or of the stepped fastint.
 fn void OptCg.emit_store_global(&self, uint i, OptNode* n) {
@@ -885,7 +912,10 @@ fn void OptCg.emit_store_global(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     a.decode((uint)n.imm);
     a.call.len = 0;
-    a.global_store_slot((long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1]);
+    long vic = (long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1];
+    void* retry = sljit_emit_label(c);
+    a.global_store_slot(vic);
+    self.refresh_global(i, vic, retry);
     if (n.op == OptOp.STORE_GLOBAL) {
         self.exit_calls(i, OptExit.SLOW_PATH);
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R2, a.lay.vic_bindings);
@@ -2570,7 +2600,9 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
             closure = n.b != NO_NODE ? self.value_reg(n.b, R3) : -1;
         }
     }
+    void* retry = sljit_emit_label(self.a.c);
     a.var_slot(vic, n.cc != 0, creg, closure);
+    if (n.cc == 0) self.refresh_global(i, vic, retry);
     if (n.cc != 0) {
         sljit_emit_op1(self.a.c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, a.lay.vic_flags);
         sljit_emit_op2(self.a.c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, a.lay.accessor_mask);

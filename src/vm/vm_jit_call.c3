@@ -746,6 +746,34 @@ fn HObject* jit_ic_owner(hobject::ICEntry* ic, HObject* hobj) {
     return owner;
 }
 
+// The slot of the binding `key` the GETGLOBAL-family entry `vic` names, after a moved recycle
+// epoch (Heap.shape_recycle_epoch) retired it: when the name still resolves, through the global
+// lexical record and then the global object's, to the entry's own data slot, the entry is
+// refreshed under the current epoch as var_ic_fill would leave it, store fast paths only ever
+// narrowed. Null for a current entry and for any other resolution, which takes the slow path.
+// Nothing runs and nothing is allocated.
+fn hobject::PropValue* jit_global_refresh(Dispatch* ds, hobject::VarICEntry* vic, void* key) {
+    Heap* h = ds.heap;
+    if (vic.recycle_epoch == h.shape_recycle_epoch || vic.slot_ptr == null || vic.prop_flags.is_accessor) return null;
+    for (EnvRecord* cur = ds.vm.global_lex_env; cur != null; cur = cur.parent) {
+        if (cur.flags.is_with) return null;
+        int idx = cur.bindings.find_prop_idx(key, h);
+        if (idx < 0) continue;
+        if ((void*)cur != vic.env || (void*)cur.bindings != vic.bindings || (uint)idx != vic.prop_idx) return null;
+        hobject::PropFlags flags = cur.bindings.get_prop_flags((uint)idx, h);
+        if (flags.is_accessor) return null;
+        vic.prop_flags.writable = vic.prop_flags.writable && flags.writable;
+        vic.varref_store_ok = vic.varref_store_ok && flags.writable;
+        vic.shape_id = cur.bindings.shape_id;
+        vic.slot_ptr = vic.slot();
+        vic.recycle_epoch = h.shape_recycle_epoch;
+        // A later eval that may shadow the binding retires the entry again.
+        h.var_ic_filled = true;
+        return vic.slot_ptr;
+    }
+    return null;
+}
+
 // The slot of the data property `key`, an interned name, on the
 // plain object `hobj` or on a plain prototype within JIT_WALK_DEPTH links of
 // it, or a slot holding undefined when the key is on none of the chain, after
