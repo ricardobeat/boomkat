@@ -1697,9 +1697,8 @@ fn void OptBuild.ask_value(&self, uint reg) {
     if ((key & 0xFFFFFF) >= kf.code_count) return;
     Opcode o = kf.code[key & 0xFFFFFF].op;
     // A global read is a load only in an inlined body (the function's own is a GENERIC).
-    // An element read is a load only in an inlined body (the function's own is a GENERIC).
     if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC && o != Opcode.GETCAP
-        && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR && o != Opcode.GETPROP) || si1 == 0)) return;
+        && o != Opcode.GETPROP && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR) || si1 == 0)) return;
     foreach (&c : self.load_reps) if (c.block == key) return;
     self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.VALUE });
     self.load_changed = true;
@@ -4531,11 +4530,6 @@ fn void OptBuild.begin_block(&self, uint pos) {
     self.context(first_insn);
     OptBlock blk = { .first = (uint)self.g.nodes.len(), .pc = self.pc };
     self.fresh_n = 0;
-    for (uint r = 0; r < self.nregs; r++) {
-        self.cur[r] = { .node = NO_NODE, .dirty = false };
-        self.load_def[r] = NO_NODE;
-        self.const_def[r] = NO_NODE;
-    }
     uint fwd = 0;
     uint back = 0;
     uint single = 0;
@@ -4545,6 +4539,13 @@ fn void OptBuild.begin_block(&self, uint pos) {
         } else {
             back++;
         }
+    }
+    // The block just built is the only way in: the loads that wrote its window registers still did.
+    bool follows = fwd == 1 && back == 0 && single + 1 == pos;
+    for (uint r = 0; r < self.nregs; r++) {
+        self.cur[r] = { .node = NO_NODE, .dirty = false };
+        if (!follows) self.load_def[r] = NO_NODE;
+        self.const_def[r] = NO_NODE;
     }
     // Facts cross a block start as what every built way in agrees on. A loop header keeps those
     // its back edges bring as well (head_facts); else a back edge may come from any GENERIC. An

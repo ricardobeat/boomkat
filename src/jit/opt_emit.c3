@@ -3166,7 +3166,7 @@ fn void OptCg.truth_test(&self, OptNode* n, Jumps* truthy, Jumps* falsy) {
         self.a.load(R0, (uint)n.imm);
     }
     self.a.call.len = 0;
-    self.a.truth_test_r0(truthy, falsy);
+    self.a.truth_test_r0(truthy, falsy, true);
 }
 
 fn void OptCg.emit_bitop(&self, uint i, OptNode* n) {
