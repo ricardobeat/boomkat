@@ -99,10 +99,11 @@ fn void check_descendant_cell_uses(CompiledFunction* inner,
                 reject_all_cells(candidates, count);
                 continue;
             }
-            void* key = function_name_key(inner, inner.capture_names[capture_idx]);
-            // A matching resolved capture is the only nested access form that
-            // can be redirected by capture_cells.
-            if (find_cell_candidate(candidates, count, key) >= 0) continue;
+            // A matching resolved capture of a child is the only nested access form that
+            // can be redirected by capture_cells; a deeper one resolves the environment binding.
+            int candidate_idx = find_cell_candidate(candidates, count,
+                function_name_key(inner, inner.capture_names[capture_idx]));
+            if (!immediate && candidate_idx >= 0) candidates[candidate_idx].selected = false;
             continue;
         }
 

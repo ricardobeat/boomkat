@@ -56,6 +56,7 @@ fn bool capture_resolve_late(Activation* act, CaptureRef* ref, uint index, Heap*
         resolved = resolve_capture_ref(vm, fields.var_env, key, &found);
     }
     if (resolved <= 0 || found.owner == null) return false;
+    if (index < 64 && (template.capture_fixed & (1UL << index)) != 0) found.guard_shadow = false;
     found.owner.as_header().incref();
     h.shade_root_object(found.owner);
     *ref = found;

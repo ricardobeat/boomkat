@@ -2529,6 +2529,30 @@ fn void OptCg.emit_typeof(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
+// An INSTANCEOF of an inlined body: the baseline's inline path on the window, its misses exits.
+fn void OptCg.emit_instanceof(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    self.decode(n);
+    if (n.a != NO_NODE) {
+        int r = self.value_reg(n.a, R4);
+        if (r != R4) sljit_emit_op1(c, SLJIT_MOV, R4, 0, r, 0);
+    } else {
+        self.a.load(R4, self.a.w.b);
+    }
+    if (n.b != NO_NODE) {
+        int r = self.value_reg(n.b, R0);
+        if (r != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, r, 0);
+    } else {
+        self.a.load(R0, self.a.w.c);
+    }
+    Jumps miss;
+    Jumps done;
+    self.a.instanceof_inline(&miss, &done, true);
+    miss.bind(sljit_emit_label(self.a.c));
+    self.exit_at(sljit_emit_jump(self.a.c, SLJIT_JUMP), i, OptExit.SLOW_PATH);
+    done.bind(sljit_emit_label(self.a.c));
+}
+
 // The object an inlined body allocates, built inline as the baseline emitter builds it and stored
 // boxed to its slot. The allocation adopts the object as a temporary root, so the slot needs no
 // scan extent until an exit publishes the frame (see the header of opt_ir.c3); a case the inline
@@ -3392,6 +3416,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.a.store(n.home, SLJIT_IMM, n.imm);
         case TYPEOF:
             self.emit_typeof(i, n);
+        case INSTANCEOF:
+            self.emit_instanceof(i, n);
         case ALLOC:
             self.emit_alloc(i, n);
         case INIT_SLOT:
@@ -3577,11 +3603,11 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     // The exit stubs of inlined bodies leave the emitter on a callee; the call entry, its
     // subroutines and the code after a native call's return belong to the function being compiled.
     cg.use_fn(0);
-    // A direct call enters at the first block, which holds no values in registers unless the
-    // function starts with a loop.
+    // A direct call enters at the first block, through its OSR entry when the function starts with
+    // a loop, whose values that entry loads from the window. A region's code has no function start.
     void* call_entry = null;
-    if (call_entry_eligible(f) && !g.blocks[0].osr) {
-        a.labels[0] = cg.labels[0];
+    if (call_entry_eligible(f) && g.region.end == 0) {
+        a.labels[0] = g.blocks[0].osr ? cg.osr_labels[0] : cg.labels[0];
         call_entry = a.emit_call_entry(bc, touch: true);
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);

@@ -377,6 +377,41 @@ fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out)
     return 0;
 }
 
+// resolve_capture_ref for capture `index` of `template`, one that no scope between can gain
+// (CompiledFunction.capture_fixed), so it takes no shadowing guard. Closures created at one site
+// find the binding the same number of records up, in a bindings object of the same shape, which
+// the template's hint records: a match skips the name lookups.
+fn int resolve_fixed_capture(Vm* vm, CompiledFunction* template, uint index, EnvRecord* start, void* key, CaptureRef* out) {
+    Heap* h = vm.heap;
+    CaptureHint* hint = template.capture_hints != null ? &template.capture_hints[index] : null;
+    if (hint != null && hint.epoch == h.shape_recycle_epoch) {
+        EnvRecord* e = start;
+        for (uint k = 0; k < hint.hops && e != null; k++) e = e.parent;
+        if (e != null && !e.is_with() && e.bindings != null && e.bindings.shape_id == hint.shape
+            && hint.prop_idx < e.bindings.prop_count) {
+            out.owner = e.bindings;
+            out.prop_idx = hint.prop_idx;
+            return 1;
+        }
+    }
+    int resolved = resolve_capture_ref(vm, start, key, out);
+    if (resolved <= 0) return resolved;
+    out.guard_shadow = false;
+    if (template.capture_hints == null) {
+        usz bytes = (usz)template.capture_count * CaptureHint::size;
+        template.capture_hints = h.alloc_func(h.heap_udata, bytes);
+        if (template.capture_hints == null) return resolved;
+        mem::clear(template.capture_hints, (sz)bytes);
+    }
+    HObject* b = out.owner;
+    uint hops = 0;
+    for (EnvRecord* e = start; e != null && e.bindings != b; e = e.parent) hops++;
+    hint = &template.capture_hints[index];
+    *hint = { .shape = rearm_shape_ok(h, b) ? b.shape_id : heap::SHAPE_NONE, .prop_idx = out.prop_idx,
+              .epoch = h.shape_recycle_epoch, .hops = hops };
+    return resolved;
+}
+
 // Builds the transition shapes every function object and `.prototype` object
 // share, so instantiate_closure can fill their slots directly.
 fn bool ensure_fn_shapes(Heap* h) {
@@ -447,6 +482,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     func_obj.flags.callable = true;
     func_obj.flags.constructable = template.is_constructable();
     (*func_obj.extra_ptr()).func.comp_func = template;
+    if (template.closures_made < 2) template.closures_made++;
     // ECMA-262 with statement: a closure created inside `with` captures the with-env on
     // its PARENT chain, so calls made after WITH_END popped it still walk the
     // object (S12.10_A1.8_T4: `var f = function(){...}; new f()` inside with
@@ -519,7 +555,9 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                 TVal name = template.constants[name_idx];
                 if (!name.is_string()) continue;
                 void* key = name.get_heapptr();
-                int resolved = resolve_capture_ref(vm, cap_lex_env, key, &refs[i]);
+                int resolved = i < 64 && (template.capture_fixed & (1UL << i)) != 0
+                    ? resolve_fixed_capture(vm, template, i, cap_lex_env, key, &refs[i])
+                    : resolve_capture_ref(vm, cap_lex_env, key, &refs[i]);
                 if (resolved != 0) {
                     if (resolved > 0) refs[i].owner.as_header().incref();
                     vm.heap.shade_root_object(refs[i].owner);

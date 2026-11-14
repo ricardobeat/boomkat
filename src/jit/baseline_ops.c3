@@ -100,68 +100,9 @@ fn void Asm.typeof_const(&self, BuiltinStr s, uint dst) {
 // vm::jit_instanceof, then the thunk when it declines.
 fn bool Asm.emit_instanceof(&self) {
     void* c = self.c;
-    Layout* l = self.lay;
     Jumps miss;
     Jumps done;
-    if (!self.wide && self.f.ic_entries != null) {
-        long ic = (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1];
-        hobject::ObjFlags callable = { .callable = true };
-        hobject::ObjFlags bound = { .is_bound = true };
-        long mask = (long)(uint)callable | (long)(uint)bound | l.proxy_mask;
-        self.load(R0, self.w.c);
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
-        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
-        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
-        sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, mask);
-        miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, (long)(uint)callable));
-        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
-        miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
-        // live_shape_generation: heap.shapes[shape_id].generation.
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.heap, l.heap_shapes);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, l.shape_gen);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_gen);
-        miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R0, 0));
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
-        sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.heap, l.heap_function_proto);
-        miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
-        // The `prototype` slot, which an assignment changes without a new shape: an object.
-        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
-        self.prop_base(R0, R1);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
-        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, k_obj_op(), k_obj_w());
-        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
-        self.load(R1, self.w.b);
-        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, k_obj_op(), k_obj_w());
-        void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w());
-        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, SLJIT_IMM, K_LIGHTFUNC);
-        miss.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w()));
-        Jumps no;
-        no.add(sljit_emit_jump(c, SLJIT_JUMP));
-        // The walk starts at the left operand's [[GetPrototypeOf]]: it is tested for a proxy,
-        // never compared with the prototype.
-        sljit_set_label(object, sljit_emit_label(c));
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, R2, 0);
-        // MAX_PROTO_DEPTH hops, as th_instanceof counts them: a longer chain takes the helper.
-        sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_IMM, (long)hobject::MAX_PROTO_DEPTH);
-        void* loop = sljit_emit_label(c);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
-        sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.proxy_mask);
-        miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.obj_proto);
-        no.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-        void* found = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, R3, 0);
-        sljit_emit_op2(c, SLJIT_SUB, R4, 0, R4, 0, SLJIT_IMM, 1);
-        sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0), loop);
-        miss.add(sljit_emit_jump(c, SLJIT_JUMP));
-        sljit_set_label(found, sljit_emit_label(c));
-        self.store(self.w.a, SLJIT_IMM, K_BOOL | 1);
-        done.add(sljit_emit_jump(c, SLJIT_JUMP));
-        no.bind(sljit_emit_label(c));
-        self.store(self.w.a, SLJIT_IMM, K_BOOL);
-        done.add(sljit_emit_jump(c, SLJIT_JUMP));
-    }
+    if (!self.wide && self.f.ic_entries != null) self.instanceof_inline(&miss, &done);
     miss.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
@@ -170,6 +111,75 @@ fn bool Asm.emit_instanceof(&self) {
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     done.bind(sljit_emit_label(c));
     return true;
+}
+
+// The inline path of INSTANCEOF (see emit_instanceof), for an instruction with a cache entry: the
+// boolean into A and a jump to `done`, or a jump to `miss` for every case it does not answer.
+// `loaded`: the constructor is in R0 and the object in R4 already, rather than in B and C.
+fn void Asm.instanceof_inline(&self, Jumps* miss, Jumps* done, bool loaded = false) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    long ic = (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1];
+    hobject::ObjFlags callable = { .callable = true };
+    hobject::ObjFlags bound = { .is_bound = true };
+    long mask = (long)(uint)callable | (long)(uint)bound | l.proxy_mask;
+    if (!loaded) self.load(R0, self.w.c);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, (long)(uint)callable));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
+    // live_shape_generation: heap.shapes[shape_id].generation.
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.heap, l.heap_shapes);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, l.shape_gen);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_gen);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R0, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.heap, l.heap_function_proto);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
+    // The `prototype` slot, which an assignment changes without a new shape: an object.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
+    self.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, span_op(), span_w()));
+    if (loaded) {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, R4, 0);
+    } else {
+        self.load(R1, self.w.b);
+    }
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, k_obj_op(), k_obj_w());
+    void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w());
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, SLJIT_IMM, K_LIGHTFUNC);
+    miss.add(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, span_op(), span_w()));
+    Jumps no;
+    no.add(sljit_emit_jump(c, SLJIT_JUMP));
+    // The walk starts at the left operand's [[GetPrototypeOf]]: it is tested for a proxy,
+    // never compared with the prototype.
+    sljit_set_label(object, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R2, 0);
+    // MAX_PROTO_DEPTH hops, as th_instanceof counts them: a longer chain takes the helper.
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_IMM, (long)hobject::MAX_PROTO_DEPTH);
+    void* loop = sljit_emit_label(c);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.proxy_mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.obj_proto);
+    no.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    void* found = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, R3, 0);
+    sljit_emit_op2(c, SLJIT_SUB, R4, 0, R4, 0, SLJIT_IMM, 1);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0), loop);
+    miss.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(found, sljit_emit_label(c));
+    self.store(self.w.a, SLJIT_IMM, K_BOOL | 1);
+    done.add(sljit_emit_jump(c, SLJIT_JUMP));
+    no.bind(sljit_emit_label(c));
+    self.store(self.w.a, SLJIT_IMM, K_BOOL);
+    done.add(sljit_emit_jump(c, SLJIT_JUMP));
 }
 
 // The start of an instruction's out-of-line path: the helper of vm_jit_ops.c3

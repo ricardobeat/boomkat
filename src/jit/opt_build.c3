@@ -420,7 +420,7 @@ fn uint inline_reg_mask(Opcode op) {
         // INIT_SLOT, whose A is the object and C the value (B is the slot index).
         case NEWOBJ: case NEWOBJ_SHAPE: case NEWARR: case NEWARR_CONST: return 1;
         case INIT_SLOT: return 5;
-        case GETPROP: case PUTPROP:
+        case GETPROP: case PUTPROP: case INSTANCEOF:
             return 7;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -487,7 +487,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
         case NEWOBJ: case NEWOBJ_SHAPE: case NEWARR: case NEWARR_CONST: *writes = 1u << w.a;
         case INIT_SLOT:
             *reads = (1u << w.a) | (1u << w.c);
-        case GETPROP:
+        case GETPROP: case INSTANCEOF:
             *reads = (1u << w.b) | (1u << w.c);
             *writes = 1u << w.a;
         case PUTPROP:
@@ -883,7 +883,7 @@ fn bool keeps_fresh(OptOp op) {
         case SHL_I32: case SAR_I32: case SHR_I32: case MOD_I32: case I32_TO_F64: case F64_TO_I32:
         case ADD_F64: case SUB_F64: case MUL_F64: case DIV_F64: case NEG_F64: case MATH:
         case CHECK_CALLEE: case LOAD_VAR: case LOAD_GLOBAL: case GUARD_BINDING: case GUARD_CAPTURE:
-        case COPY_WINDOW: case STORE_CONST: case TYPEOF: case COMPARE: case LNOT: case NEW_OBJECT:
+        case COPY_WINDOW: case STORE_CONST: case TYPEOF: case INSTANCEOF: case COMPARE: case LNOT: case NEW_OBJECT:
         case CHECK_BUILTIN: case MOVE_WINDOW: case ADD_FIELD:
             return true;
         default:
@@ -1404,12 +1404,12 @@ fn bool OptBuild.fold_global(&self) {
     return true;
 }
 
-// GETCAP of the function being optimized, of a binding the code can fold through the capture
-// record of the closure that was running it (OptBuild.refs): a declared binding of the scope or cell
+// GETCAP of the function being optimized, made into one closure only, of a binding the code can
+// fold through the capture record of that closure (OptBuild.refs): a declared binding of the scope or cell
 // that holds it, or a value snapshot. A GUARD_CAPTURE proves the record once in a frame.
 fn bool OptBuild.fold_capture(&self) {
     uint index = self.w.get_bc();
-    if (self.cur_fn != 0 || index >= self.f.capture_count || index >= 64 || opt_site_banned(self.f, self.f, self.next_pc - 1, true)) return false;
+    if (self.cur_fn != 0 || self.f.closures_made > 1 || index >= self.f.capture_count || index >= 64 || opt_site_banned(self.f, self.f, self.next_pc - 1, true)) return false;
     CaptureRef* refs = self.frame_refs();
     if (refs == null) return false;
     CaptureRef* ref = &refs[index];
@@ -2404,6 +2404,21 @@ fn bool OptBuild.typeof_value(&self) {
     return true;
 }
 
+// INSTANCEOF in an inlined body: the baseline's inline path on the VALUE nodes the operand
+// registers hold, or on their window slots. The function's own stays a GENERIC.
+fn bool OptBuild.instance_of(&self) {
+    if (self.cur_fn == 0) return self.generic();
+    uint ra = self.w.a;
+    if (ra >= self.nregs || self.w.b >= self.nregs || self.w.c >= self.nregs || self.wide || self.cur_f().ic_entries == null) return self.generic();
+    foreach (r : (uint[2]){ self.w.b, self.w.c }) {
+        if (self.cur[r].node != NO_NODE && !self.holds_value(r)) return self.generic();
+    }
+    uint n = self.add(OptOp.INSTANCEOF, OptRep.NONE, self.cur[self.w.b].node, self.cur[self.w.c].node, (long)self.pc);
+    self.snapshot(n);
+    self.kill(ra);
+    return true;
+}
+
 // NEWOBJ, NEWOBJ_SHAPE, NEWARR or NEWARR_CONST in an inlined body: the object the baseline emitter
 // allocates inline, into the body's slot. A case the inline allocator does not cover keeps the call.
 fn bool OptBuild.alloc_value(&self) {
@@ -2655,7 +2670,7 @@ fn bool OptBuild.generic(&self) {
             case RET: case RETUNDEF: case SETALEN: case INITPROP: case INITELEM: case CHKOBJ: case REQUIRE_OBJ:
             case NOP: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL: case CHKGLOBALVAR:
             case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW: case THROW_UNRESOLVED:
-            case SETCELL:
+            case SETCELL: case DECLVAR: case DECLVAR_HOIST:
                 break;
             default:
                 return self.refuse_op(op);
@@ -4398,6 +4413,8 @@ fn bool OptBuild.lower_op(&self) {
             return self.throw_exit();
         case TYPEOF:
             return self.typeof_value();
+        case INSTANCEOF:
+            return self.instance_of();
         case NEWOBJ:
         case NEWOBJ_SHAPE:
         case NEWARR:

@@ -203,6 +203,9 @@ fn void? materialize_function(CompiledFunction* f, Heap* h, char[] why = {}) @no
     f.realm = saved.realm;
     // The stub's place in Heap.compiled_funcs, which call feedback names it by.
     f.func_index = saved.func_index;
+    // The capture layout is the stub's, so what closures learned about it holds.
+    f.capture_hints = saved.capture_hints;
+    f.closures_made = saved.closures_made;
     f.name_ptr = saved.name_ptr;
     f.name_len = saved.name_len;
     f.closure_name = saved.closure_name;

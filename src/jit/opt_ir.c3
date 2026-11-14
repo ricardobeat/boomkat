@@ -194,6 +194,10 @@ enum OptOp : char {
     // numeric operand, whose name is `number` with no test. The names are the heap's own strings,
     // which no collection reclaims, so slot home may lie beyond the caller's frame (see the header).
     TYPEOF,
+    // An INSTANCEOF (pc) of an inlined body, as the baseline's inline path answers it from the
+    // site's cache: the object in VALUE node a and the constructor in b, or in the window when
+    // NO_NODE, the boolean to its A slot. Any case the cache does not answer leaves for the baseline code.
+    INSTANCEOF,
     // A NEWOBJ, NEWOBJ_SHAPE, NEWARR or NEWARR_CONST (pc) of an inlined body, allocated inline as the
     // baseline emitter allocates it and stored boxed to the window slot home. The allocator adopts
     // the object as a temporary root, and the only points that can collect are exits, which publish
