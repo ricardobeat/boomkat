@@ -551,63 +551,44 @@ fn void regexp_fill_groups(BuiltinContext* ctx, HObject* groups, void* re_data, 
 }
 
 // Build a RegExp exec/match result array with .groups and optional .indices.
+// Its elements are dense, a non-participating capture an `undefined` element
+// of a packed array.
 fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HString* input_str,
                                       int out_start, int out_end,
                                       int* caps_start, int* caps_end, int num_caps,
                                       bool with_indices) {
-    HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    Heap* heap = ctx.heap;
+    uint elements = (uint)(1 + num_caps);
+
+    // Without `d` the named properties are index, input, groups and length,
+    // whatever the capture count. Once one array has settled that shape, the
+    // next is allocated with it and each slot written once.
+    bool cacheable = !with_indices;
+    if (cacheable && heap.match_shape != 0 && heap.match_shape_epoch == heap.shape_recycle_epoch) {
+        HObject*? arr_raw;
+        if (4 + elements <= hobject::ARRAY_INLINE_MAX_CAPACITY) {
+            arr_raw = heap.alloc_inline_array_uninit(4, elements);
+        } else {
+            arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+            if (try a = arr_raw) {
+                if (!a.reserve_array_storage(hobject::PROPS_INITIAL_CAPACITY, elements, heap)) return null;
+            }
+        }
+        if (catch err = arr_raw) return null;
+        HObject* arr = arr_raw;
+        heap.set_prototype(arr, heap.array_proto);
+        regexp_fill_match_result(ctx, arr, heap.match_shape, re_data, input_str, out_start, out_end,
+                                 caps_start, caps_end, num_caps);
+        return arr;
+    }
+
+    HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) return null;
     HObject* arr = arr_raw;
-    int unmatched_captures = 0;
-    for (int i = 0; i < num_caps; i++) {
-        if (caps_start[i] < 0 || caps_end[i] < 0) unmatched_captures++;
-    }
-    uint named_capacity = hobject::PROPS_INITIAL_CAPACITY;
-    uint needed_named = (uint)(4 + unmatched_captures + (with_indices ? 1 : 0));
-    if (needed_named > named_capacity) named_capacity = needed_named;
-    arr.reserve_array_storage(named_capacity, (uint)(1 + num_caps), ctx.heap);
-    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
-
-    // Without `d`, the array's named properties are the unmatched index keys,
-    // then index, input, groups and length. Once one array has settled that
-    // shape, the next with the same unmatched set gets it in a single step.
-    ulong unmatched_mask = 0;
-    MatchShape* cached = null;
-    if (!with_indices && num_caps <= 60 && arr.prop_capacity >= needed_named) {
-        for (int i = 0; i < num_caps; i++) {
-            if (caps_start[i] < 0 || caps_end[i] < 0) unmatched_mask |= 1UL << (ulong)i;
-        }
-        cached = match_shape_slot(ctx.heap, (uint)num_caps, unmatched_mask);
-        if (cached.shape_id != 0 && cached.ncaps == (uint)num_caps && cached.unmatched == unmatched_mask
-            && cached.epoch == ctx.heap.shape_recycle_epoch) {
-            regexp_fill_match_result(ctx, arr, cached.shape_id, re_data, input_str, out_start, out_end,
-                                     caps_start, caps_end, num_caps, unmatched_captures);
-            return arr;
-        }
-    }
-
-    // Element 0: full match string
-    HString* match_str = regexp_slice(ctx.heap, input_str, (uint)out_start, (uint)out_end);
-    // Elements go straight into the dense part: the index is already known, so
-    // put_prop's int -> key string -> array_index round-trip buys nothing. A
-    // non-participating capture is `undefined`, which the dense part cannot
-    // tell from a hole, so those keep the named-table path that records
-    // presence (`n in m` must hold for every index below `length`).
-    TVal elem; elem.set_string_borrowed(match_str);
-    arr.set_array_idx(0, elem, ctx.heap);
-
-    // Capture groups 1..N
+    if (!arr.reserve_array_storage(hobject::PROPS_INITIAL_CAPACITY, elements, heap)) return null;
+    heap.set_prototype(arr, heap.array_proto);
+    bool packed = regexp_fill_match_elements(heap, arr, input_str, out_start, out_end, caps_start, caps_end, num_caps);
     int total_captures = 1 + num_caps;
-    for (int i = 0; i < num_caps; i++) {
-        if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-            TVal cap_elem;
-            cap_elem.set_string_borrowed(regexp_slice(ctx.heap, input_str, (uint)caps_start[i], (uint)caps_end[i]));
-            arr.set_array_idx((uint)(i + 1), cap_elem, ctx.heap);
-        } else {
-            TVal cap_elem; cap_elem.set_undefined();
-            arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC, ctx.heap);
-        }
-    }
 
     TVal idx_tv; idx_tv.set_fastint((long)out_start);
     arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -722,36 +703,22 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     TVal len_tv; len_tv.set_fastint((long)total_captures);
     arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
+    arr.gc.packed = packed;
+
     // Remember the shape when every property above was added, in order, on a
     // shape shared through the transition table.
-    if (cached != null && arr.prop_count == (uint)(unmatched_captures + 4)) {
-        hobject::Shape* shape = ctx.heap.get_shape(arr.shape_id);
+    if (cacheable && arr.prop_count == 4) {
+        hobject::Shape* shape = heap.get_shape(arr.shape_id);
         if (shape != null && shape.parent != hobject::PRIVATE_SHAPE_PARENT && !shape.dict) {
             // Later arrays reach this shape without a transition lookup, which is
             // what marks a shape as shared; without it each would build its own
             // property hash.
             shape.shared = true;
-            cached.unmatched = unmatched_mask;
-            cached.ncaps = (uint)num_caps;
-            cached.shape_id = arr.shape_id;
-            cached.epoch = ctx.heap.shape_recycle_epoch;
+            heap.match_shape = arr.shape_id;
+            heap.match_shape_epoch = heap.shape_recycle_epoch;
         }
     }
     return arr;
-}
-
-// The entry for one capture count and unmatched set: whichever of its two
-// candidate slots holds it, else an empty one, else the first, which the shape
-// built next replaces. Two candidates keep a pair of alternating shapes from
-// evicting each other.
-fn MatchShape* match_shape_slot(Heap* heap, uint ncaps, ulong unmatched) @inline {
-    ulong h = (unmatched + (ulong)ncaps * 0xD6E8_FEB8_6659_FD93) * 0x9E37_79B9_7F4A_7C15;
-    uint i = (uint)(h >> 60) & (heap::MATCH_SHAPES - 1);
-    MatchShape* a = &heap.match_shapes[i];
-    if (a.shape_id == 0 || (a.ncaps == ncaps && a.unmatched == unmatched)) return a;
-    MatchShape* b = &heap.match_shapes[(i + 1) & (heap::MATCH_SHAPES - 1)];
-    if (b.shape_id == 0 || (b.ncaps == ncaps && b.unmatched == unmatched)) return b;
-    return a;
 }
 
 // Gives a freshly allocated RegExp its one own property, lastIndex = 0
@@ -785,52 +752,61 @@ fn bool regexp_init_last_index(Heap* heap, HObject* rx) {
     return true;
 }
 
-// Fills a fresh array whose storage was reserved for the shape `shape_id`: its
-// elements, then the named slots in shape order. The result is the array the
-// property-by-property path builds, down to the flag bits that path leaves set.
-fn void regexp_fill_match_result(BuiltinContext* ctx, HObject* arr, uint shape_id, void* re_data,
-                                 HString* input_str, int out_start, int out_end,
-                                 int* caps_start, int* caps_end, int num_caps, int unmatched_captures) {
-    Heap* heap = ctx.heap;
+// Writes the elements of a match array whose dense slots hold nothing yet:
+// the match, then each capture or `undefined`. Returns whether a capture did
+// not participate, which makes the array packed.
+fn bool regexp_fill_match_elements(Heap* heap, HObject* arr, HString* input_str, int out_start, int out_end,
+                                   int* caps_start, int* caps_end, int num_caps) {
     hobject::PropValue* part = arr.array_part();
-    TVal undef; undef.set_undefined();
     TVal elem;
     elem.set_string_borrowed(regexp_slice(heap, input_str, (uint)out_start, (uint)out_end));
-    heap.store_slot_ref(arr, &part[0], &elem);
+    heap.init_slot_ref(arr, &part[0], &elem);
+    uint unmatched = 0;
     for (int i = 0; i < num_caps; i++) {
-        if (caps_start[i] < 0 || caps_end[i] < 0) continue;
+        if (caps_start[i] < 0 || caps_end[i] < 0) {
+            part[i + 1].set_untraced(types::make_undefined());
+            unmatched++;
+            continue;
+        }
         elem.set_string_borrowed(regexp_slice(heap, input_str, (uint)caps_start[i], (uint)caps_end[i]));
-        heap.store_slot_ref(arr, &part[i + 1], &elem);
+        heap.init_slot_ref(arr, &part[i + 1], &elem);
     }
-    arr.array_used = (uint)(1 + num_caps - unmatched_captures);
+    arr.array_used = (uint)(1 + num_caps) - unmatched;
+    *arr.array_len_ptr() = (uint)(1 + num_caps);
+    return unmatched != 0;
+}
 
+// Fills a fresh array whose storage was laid out for the shape `shape_id`,
+// writing each slot once: its elements, then the named slots in shape order.
+// The result is the array the property-by-property path builds, down to the
+// flag bits that path leaves set.
+fn void regexp_fill_match_result(BuiltinContext* ctx, HObject* arr, uint shape_id, void* re_data,
+                                 HString* input_str, int out_start, int out_end,
+                                 int* caps_start, int* caps_end, int num_caps) {
+    Heap* heap = ctx.heap;
+    arr.gc.packed = regexp_fill_match_elements(heap, arr, input_str, out_start, out_end, caps_start, caps_end, num_caps);
     hobject::PropValue* slots = arr.prop_values();
-    uint k = 0;
-    for (; k < (uint)unmatched_captures; k++) slots[k] = (hobject::PropValue)undef;
     TVal tv;
     tv.set_fastint((long)out_start);
-    slots[k++] = (hobject::PropValue)tv;
+    slots[0] = (hobject::PropValue)tv;
     tv.set_string_borrowed(input_str);
-    heap.store_slot_ref(arr, &slots[k++], &tv);
+    heap.init_slot_ref(arr, &slots[1], &tv);
     // `groups` is undefined unless the pattern names a group.
-    char* group_names = re_bindings::re_get_groupnames(re_data);
-    TVal groups = undef;
-    if (group_names != null) {
+    TVal groups;
+    groups.set_undefined();
+    if (re_bindings::re_get_groupnames(re_data) != null) {
         HObject*? groups_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try g = groups_raw) {
             regexp_fill_groups(ctx, g, re_data, input_str, caps_start, caps_end, num_caps);
             groups.set_object(g);
         }
     }
-    heap.store_slot_ref(arr, &slots[k++], &groups);
+    heap.init_slot_ref(arr, &slots[2], &groups);
     tv.set_fastint((long)(1 + num_caps));
-    slots[k++] = (hobject::PropValue)tv;
-
-    arr.prop_count = k;
+    slots[3] = (hobject::PropValue)tv;
+    arr.prop_count = 4;
     arr.shape_id = shape_id;
     arr.flags.has_nondefault_flags = true;
-    if (unmatched_captures > 0) arr.flags.has_indexed_named_prop = true;
-    *arr.array_len_ptr() = (uint)(1 + num_caps);
 }
 
 // RegExp.prototype.exec(string), ECMA-262 §15.10.6.2

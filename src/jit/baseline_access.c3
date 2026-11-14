@@ -75,6 +75,7 @@ struct Layout {
     long plain_exotic_mask;
     long extensible_mask;
     long indexed_named_mask;
+    long packed_mask;
     long proto_observed_mask;
     long vic_bindings;
     long vic_epoch;
@@ -309,6 +310,8 @@ fn Layout* layout() {
     f = {};
     f.has_indexed_named_prop = true;
     l.indexed_named_mask = (long)(uint)f;
+    types::GcBits packed = { .packed = true };
+    l.packed_mask = (long)(uint)packed;
     f = {};
     f.obj_class = hobject::ObjClass.OBJECT;
     l.class_object = (long)(uint)f;
@@ -1335,7 +1338,7 @@ fn void Asm.emit_get_elem(&self, uint ra, uint rb) {
     void* other = self.array_or_typed(0);
     self.array_slot();
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
+    self.packed_or_hole();
     self.publish(ra);
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
@@ -1349,6 +1352,22 @@ fn void Asm.emit_get_elem(&self, uint ra, uint rb) {
     $else
         self.call.add(other);
     $endif
+}
+
+// After array_slot and the element's load into R0, with the array in R1 and the index times eight in
+// R3: the slow path for an `undefined` that is a hole rather than an element of a packed array.
+// Uses R2.
+fn void Asm.packed_or_hole(&self) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    void* value = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_gc);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.packed_mask);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_array_len);
+    sljit_emit_op2(c, SLJIT_SHL, R2, 0, R2, 0, SLJIT_IMM, 3);
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R2, 0));
+    sljit_set_label(value, sljit_emit_label(c));
 }
 
 // Record the class flags array_or_typed left in R2, of a receiver that is not an array, in the

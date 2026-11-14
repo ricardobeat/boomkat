@@ -1100,6 +1100,8 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
 // ============================================================================
 
 fn bool ordinary_define_own(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* desc, bool* res) {
+    // An index's attributes are read from the named table.
+    if (key.is_arridx()) obj.unpack(heap);
     // ArraySetLength (ES2024 §10.4.2.4): defining "length" on an Array runs
     // its own exotic algorithm instead of ValidateAndApplyPropertyDescriptor.
     if (obj.get_class() == hobject::ObjClass.ARRAY && key.equals("length")) {
