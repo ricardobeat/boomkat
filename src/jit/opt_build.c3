@@ -2210,7 +2210,7 @@ fn bool OptBuild.leaf_call(&self) {
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
     uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
-    if (builtins::leaf_of(builtin) == null || opt_site_banned(self.f, f, self.next_pc - 1, own: true)) return false;
+    if (builtins::leaf_of(builtin) == null || opt_site_banned(self.f, f, self.next_pc - 1)) return false;
     uint callee = self.w.b;
     uint ra = self.w.a;
     if (callee + 1 + self.w.c >= self.nregs || ra >= self.nregs) return false;
@@ -2273,7 +2273,7 @@ fn bool OptBuild.math_call(&self) {
     uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
     OptMath m;
     if (!opt_math_of(builtin, &m) || self.w.c != m.args) return false;
-    if (opt_site_banned(self.f, f, self.next_pc - 1, own: true)) return false;
+    if (opt_site_banned(self.f, f, self.next_pc - 1)) return false;
     uint callee = self.w.b;
     uint ra = self.w.a;
     if (callee + 1 + m.args >= self.nregs || ra >= self.nregs) return false;
@@ -2398,7 +2398,13 @@ fn void OptBuild.elem_fact(&self, uint r, uint n, bool store) {
     if (r >= self.nregs) return;
     char need = store ? ELEM_ARRAY_STORE : ELEM_ARRAY;
     if (self.fact_elem[r] >= need) self.g.nodes[n].cc |= ELEM_KNOWN;
-    if (opt_elem_arrays_only(self.cur_f(), self.next_pc - 1)) self.fact_elem[r] = max(self.fact_elem[r], need);
+    // A read that has met a string proves nothing of its receiver.
+    CompiledFunction* f = self.cur_f();
+    if (!store && f.ic_entries != null && (((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1].feedback & hobject::FB_STRING_RECV) != 0) {
+        if ((self.g.nodes[n].cc & ELEM_KNOWN) == 0) self.g.nodes[n].cc |= ELEM_STRING;
+        return;
+    }
+    if (opt_elem_arrays_only(f, self.next_pc - 1)) self.fact_elem[r] = max(self.fact_elem[r], need);
 }
 
 // GETPROP of an element at an integer index, from an object in the window.
@@ -2759,7 +2765,7 @@ fn bool OptBuild.direct_callee(&self, CompiledFunction** one) {
     if (var_call && f.var_ic_entries == null) return false;
     uint at = self.next_pc - 1;
     OptCallees set;
-    if (opt_site_banned(self.f, f, at, own: true) || !opt_direct_targets(self.h, f, at, &set)) return false;
+    if (opt_site_banned(self.f, f, at) || !opt_direct_targets(self.h, f, at, &set)) return false;
     bool method = op == Opcode.CALL;
     CompiledFunction* cf = set.count == 1 ? set.fns[0] : null;
     uint callee_reg = var_call ? self.w.a : self.w.b;

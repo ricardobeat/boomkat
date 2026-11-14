@@ -3833,6 +3833,9 @@ const char FB_DOTCALL = 128;
 // ICEntry.feedback bit of a GETPROP or PUTPROP whose key was no int32 where optimized code took it
 // for an element index.
 const char FB_KEY = FB_STR;
+// ICEntry.feedback bit of a GETPROP whose receiver was a string where optimized code took it for an
+// array's.
+const char FB_STRING_RECV = FB_OTHER;
 // The bits an arithmetic, bitwise or compare instruction records.
 const char FB_OPERANDS = 15;
 // ICEntry.feedback bit of a NEW_OBJ, whose entry caches the constructor's `prototype` read:

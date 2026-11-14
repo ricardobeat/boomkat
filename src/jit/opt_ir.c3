@@ -327,6 +327,8 @@ const char WINDOW_CONST_SHIFT = 3;
 // LOAD_ELEM and STORE_ELEM cc: an earlier access proved the receiver an array (OptBuild.elem_fact),
 // so no class is tested.
 const char ELEM_KNOWN = 1;
+// LOAD_ELEM cc: the read has met a string, whose unit it reads too (OptCg.string_elem).
+const char ELEM_STRING = 2;
 // What element accesses proved of a register's object (OptBuild.fact_elem): an array, and an
 // array without indexed named properties, which a store needs.
 const char ELEM_ARRAY = 1;

@@ -1101,6 +1101,7 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
             a.call.add(other);
         $endif
     }
+    if ((n.cc & ELEM_STRING) != 0) self.string_elem(i, n);
     self.exit_calls(i, OptExit.SLOW_PATH);
     if (n.rep == OptRep.NONE) {
         self.publish(i, a.w.a);
@@ -1111,6 +1112,32 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         return;
     }
     self.def_from_r0(i, n);
+}
+
+// The jumps in a.call of element read `n` (cc ELEM_STRING) leaving with no element: a string
+// receiver's unit (vm::jit_string_elem) into R0 where the value would be, else they leave.
+fn void OptCg.string_elem(&self, uint i, OptNode* n) {
+    Asm* a = self.a;
+    void* c = a.c;
+    if (a.call.len == 0) return;
+    Jumps miss = a.call;
+    a.call.len = 0;
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    miss.bind(sljit_emit_label(c));
+    self.spill_live(i, true);
+    int x = self.int_reg(n.a, R2);
+    if (x != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, x, 0);
+    if (n.c != NO_NODE) {
+        int rr = self.value_reg(n.c, R1);
+        if (rr != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, rr, 0);
+    } else {
+        a.load(R1, a.w.b);
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+    a.c_call_frameless(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_string_elem);
+    self.spill_live(i, false);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // The index into TYPED_KINDS of the typed array the element access being emitted has met, by the

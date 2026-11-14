@@ -485,7 +485,7 @@ fn String opt_generic_reason(Heap* h, CompiledFunction* f, uint i) {
     Instruction w = f.code[i];
     bool var_call = w.op == Opcode.CALL_VAR || w.op == Opcode.CALL_GLOBAL;
     if (w.op != Opcode.CALL && w.op != Opcode.CALL_UNDEF_THIS && !var_call) return "opcode";
-    if (opt_site_banned(f, f, i, own: true)) return "banned";
+    if (opt_site_banned(f, f, i)) return "banned";
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
     if ((ic.feedback & hobject::FB_CALL) == 0) return "no-feedback";
     if ((ic.feedback & hobject::FB_POLY) != 0) return "megamorphic";
@@ -653,14 +653,13 @@ fn hobject::Shape* opt_settled_shape(Heap* h, hobject::ICEntry* ic) {
 
 // Whether the instruction at word `pc` of `cf` (the function `root` is optimizing, or a callee
 // inlined into it) exited from optimized code often enough that it is no longer speculated on.
-// `fold` asks about folding a GETGLOBAL there, which a ban of its fold alone stops too. With `own`
-// only a ban of that site counts: a call's guard is its own feedback, not a neighbour's cache.
-fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc, bool fold = false, bool own = false) {
+// `fold` asks about folding a GETGLOBAL there, which a ban of its fold alone stops too.
+fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc, bool fold = false) {
     OptBans* bans = root.opt_bans;
     if (bans == null) return false;
     for (uint i = 0; i < bans.count; i++) {
         OptBan* b = &bans.items[i];
-        if (b.cf == cf && (b.pc == pc || (b.pc == OPT_BAN_ALL && !own)) && (fold || !b.fold)) return true;
+        if (b.cf == cf && (b.pc == pc || b.pc == OPT_BAN_ALL) && (fold || !b.fold)) return true;
     }
     return false;
 }
@@ -1099,6 +1098,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     // Feedback the build had not seen makes it rebuild at once, as an unprofiled site does.
     bool widened = (reason == OptExit.NOT_INT32.ordinal || reason == OptExit.NOT_NUMBER.ordinal) && oc.f.ic_entries != null
         && opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
+    if (reason == OptExit.SLOW_PATH.ordinal && oc.f.ic_entries != null) widened = widened || opt_note_string_elem(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
     if (reason == OptExit.UNPROFILED.ordinal || reason == OptExit.WATCH.ordinal || widened) {
         opt_relearn(h, oc);
@@ -1139,6 +1139,16 @@ fn bool opt_note_proto_exit(Dispatch* ds, CompiledFunction* f, uint pc) {
     TVal* recv = ds.regs_base + d.insn.b;
     if (!recv.is_object()) return false;
     return vm::ic_note_proto_read(ds.heap, &((hobject::ICEntry*)f.ic_entries)[d.payload_pc], (HObject*)recv.get_heapptr());
+}
+
+// A slow path of the element read at word `pc` of `f` taken for a string receiver: the rebuild
+// reads its units too (OptCg.string_elem). True when that is new.
+fn bool opt_note_string_elem(Dispatch* ds, CompiledFunction* f, uint pc) {
+    if (f.code[pc].op != Opcode.GETPROP || !ds.regs_base[f.code[pc].b].is_string()) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[pc];
+    if ((ic.feedback & hobject::FB_STRING_RECV) != 0) return false;
+    ic.feedback |= hobject::FB_STRING_RECV;
+    return true;
 }
 
 // OR the classes of the operands the instruction at word `pc` of `f` reads from the window into its
