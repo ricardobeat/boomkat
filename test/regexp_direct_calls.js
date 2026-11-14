@@ -166,4 +166,14 @@ function wideLoop(n) {
 }
 check("wide subject", wideLoop(N), N * 5);
 
+// A literal's test (RETEST) with a Symbol argument throws like any other.
+function literalSymbol(n) {
+    var thrown = 0;
+    for (var i = 0; i < n; i++) {
+        try { /a/.test(i % 100 === 7 ? Symbol() : "a"); } catch (e) { if (e instanceof TypeError) thrown++; }
+    }
+    return thrown;
+}
+check("literal test of a Symbol", literalSymbol(N), Math.floor((N + 92) / 100));
+
 if (failures === 0) console.log("regexp direct calls: ok");
