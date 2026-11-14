@@ -301,7 +301,8 @@ const uint CONCAT_ACCUM_MIN = 32;
 const uint CONCAT_RESERVE_SCAN = 3;
 
 // A two-owner accumulator may change only when the other owner is the
-// writable data binding that the immediately following instruction replaces.
+// writable data binding or compiler cell that the immediately following
+// instruction replaces.
 // Inspect the slot without invoking accessors or with/unscopables hooks: RHS
 // coercion can replace the binding and leave an unrelated alias as owner two.
 fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
@@ -312,6 +313,13 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
     uint name_idx;
     bool snapshot = false;
     switch (store.op) {
+        case Opcode.MOVECELL:
+            // The compiler's own cell object, slot C, which no accessor or proxy can reach.
+            if ((uint)store.b >= func.num_regs || !act.bottom[store.b].is_object()) return false;
+            HObject* cells = (HObject*)act.bottom[store.b].get_heapptr();
+            if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT || store.c >= cells.prop_count) return false;
+            TVal held = cells.prop_values()[store.c].get();
+            return held.is_string() && held.get_heapptr() == (void*)value;
         case Opcode.PUTVAR_SNAP:
             snapshot = true;
             if ((uint)store.b >= func.num_regs) return false;
