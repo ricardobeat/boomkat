@@ -221,6 +221,9 @@ optimizing tier landed.
   previous gate binary, on a machine with load average under about 2 and
   nothing else running. Binaries and gate scripts live in
   `boomkat-jit-experiments/` (`gate_r16.sh` is the pattern).
+- **Design reference:** `jsc --dumpDFGDisassembly=true` on the same code
+  shows what JSC's DFG emits. Work backwards from it when designing an
+  optimizing-tier change.
 - **Profiles:** `scripts/jit_profile.py` (needs the sandbox off). Optimized
   code is attributed to its function's `RET` ops. For a census of why
   something leaves a fast path, count in the helper behind an environment
