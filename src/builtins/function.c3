@@ -1103,6 +1103,42 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     }
 }
 
+// The bound target `c_val` of OrdinaryHasInstance step 2, which is InstanceofOperator(V, target):
+// a target whose @@hasInstance is not the intrinsic one answers through it. True when it did (the
+// result set, or an error raised); false leaves OrdinaryHasInstance(target, V) to the caller.
+fn bool bound_target_answers(BuiltinContext* ctx, TVal c_val) {
+    Heap* h = ctx.heap;
+    if (!c_val.is_object() || h.hasinstance_symbol == null || h.call_fn == null || ctx.vm == null) return false;
+    hobject::PropLookupResult hi = ((HObject*)c_val.get_heapptr()).get_prop_or_accessor_proto((void*)h.hasinstance_symbol, true, h);
+    TVal method;
+    switch (hi.kind) {
+        case PROP_NOT_FOUND:
+            return false;
+        case PROP_DATA:
+            if (hi.owner == h.function_proto) return false;
+            method = hi.data_val;
+        case PROP_ACCESSOR:
+            method = h.call_fn(ctx.vm, hi.acc.accessor_fn, null, 0, c_val);
+    }
+    if (!h.has_error) {
+        if (method.is_undefined() || method.is_null()) return false;
+        if (!method.is_lightfunc() && (!method.is_object() || !((HObject*)method.get_heapptr()).is_callable())) {
+            builtin_throw(ctx, h.type_err_proto, "Symbol.hasInstance value is not a function");
+            return true;
+        }
+        TVal v_val = ctx.argc > 0 ? builtin_arg(ctx, 0) : (TVal){};
+        TVal result = h.call_fn(ctx.vm, method, &v_val, 1, c_val);
+        if (!h.has_error) {
+            ctx.result_boolean(builtin_to_boolean(&result));
+            return true;
+        }
+    }
+    ctx.should_throw = true;
+    ctx.throw_value = h.error_value;
+    h.has_error = false;
+    return true;
+}
+
 // Function.prototype[Symbol.hasInstance](V), ES6 §19.2.3.6
 // Implements OrdinaryHasInstance(this, V): returns true iff V is an object
 // whose prototype chain contains this.prototype. `this` (the constructor C)
@@ -1131,6 +1167,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
         HObject* c_obj = (HObject*)c_val.get_heapptr();
         if (!c_obj.flags.is_bound) break;
         c_val = (*c_obj.extra_ptr()).func.bound.target;
+        if (bound_target_answers(ctx, c_val)) return;
     }
 
     // Step 3: If Type(V) is not Object, return false.
