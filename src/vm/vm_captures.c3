@@ -95,6 +95,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             if (count > cells.prop_capacity) {
                 cells.prop_alloc = vm.heap.pool_alloc((usz)count * hobject::PropValue::size)!;
                 cells.prop_capacity = count;
+                heap::needs_teardown(cells);
             }
             for (uint i = 0; i < count; i++) cells.prop_values()[i].set_undefined();
             cells.prop_count = count;

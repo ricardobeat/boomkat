@@ -271,13 +271,11 @@ enum CallableKind : ushort {
 // Bit-packed flags word for HObject.
 //
 // Bits 0 to 6 mirror HeapHeader's type and GC bits, so a raw cast from HObject*
-// to HeapHeader* reads the right htype and mark bits. Bits 7 and up carry
+// to HeapHeader* reads the right htype and GC flags. Bits 7 and up carry
 // object-specific metadata.
 bitstruct ObjFlags : uint {
     // HeapHeader-compatible type discriminator (always HType.OBJECT).
     HType htype            : 0..1;
-    // GC reachable flag.
-    bool  reachable        : 2;
     // GC temporary root flag.
     bool  temproot         : 3;
     // Finaliser present flag.
@@ -1351,7 +1349,7 @@ fn bool HObject.has_coll_hash(&self) @inline {
 // The pool an object class allocates from. Each pool's block is the largest
 // layout it serves. Dense arrays have a dedicated pool; arguments and
 // collections share the ARGUMENTS block size.
-fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
+fn pagepool::ObjectPool* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
     heap::Heap* h = (heap::Heap*)heap_ptr;
     switch (cls) {
         case ObjClass.OBJECT:
@@ -1558,6 +1556,7 @@ fn void HObject.seal(&self, heap::Heap* h, bool frozen = false) {
             mem::copy(new_raw, self.prop_alloc, (sz)((usz)self.prop_count * PropValue::size));
             h.pool_free(self.prop_alloc, old_size);
             self.prop_alloc = new_raw;
+            heap::needs_teardown(self);
             self.array_size = 0;
             self.layout_moved(h);
         }
@@ -1693,6 +1692,7 @@ fn void HObject.ensure_prop_hash(&self, heap::Heap* h) {
         phi.mask = new_mask;
         phi.count = self.prop_count;
         self.prop_hash = phi;
+        heap::needs_teardown(self);
     }
 }
 
@@ -1792,6 +1792,7 @@ fn void HObject.make_shape_private(&self, heap::Heap* h) {
     if (slot != heap::SHAPE_NONE) {
         h.store_new_shape(slot, ns);
         self.shape_id = slot;
+        heap::needs_teardown(self);
         self.layout_moved(h);
         // A shared shape stays for its other users; an owned one moved, and
         // its old id is retired so a long privatise loop does not leak ids.
@@ -2360,6 +2361,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
         return false;
     }
     self.shape_id = new_shape_id;
+    if (h.shapes[new_shape_id].parent == PRIVATE_SHAPE_PARENT) heap::needs_teardown(self);
 
     // Keep the per-object hash table in step with this growth, but only for a
     // single-user shape chain. A shared shape's one table already names this
@@ -2479,6 +2481,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
                             && old_shape.parent == PRIVATE_SHAPE_PARENT;
         h.store_new_shape(slot, ns);
         self.shape_id = slot;
+        heap::needs_teardown(self);
         self.layout_moved(h);
         if (old_was_private && old_slot != slot) {
             h.free_shape_slot(old_slot);
@@ -2658,6 +2661,7 @@ fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capa
     mem::clear(raw, (sz)total_bytes);
 
     self.prop_alloc = raw;
+    heap::needs_teardown(self);
     self.prop_capacity = prop_capacity;
     self.array_size = array_capacity;
     PropValue* slots = self.array_part();
@@ -2677,6 +2681,7 @@ fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
     if (raw == null) return;
     mem::clear(raw, (sz)bytes);
     self.prop_alloc = raw;
+    heap::needs_teardown(self);
     self.prop_capacity = cap;
 }
 
@@ -2725,6 +2730,7 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
     }
 
     self.prop_alloc = new_raw;
+    heap::needs_teardown(self);
     uint old_prop_capacity = self.prop_capacity;
     self.prop_capacity = new_cap;
 
@@ -2774,6 +2780,7 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     if (new_raw == null) return;
 
     self.prop_alloc = new_raw;
+    heap::needs_teardown(self);
     self.layout_moved(h);
     usz old_array_size = self.array_size;
     self.array_size = new_size;
@@ -2825,10 +2832,16 @@ fn void HObject.init_header(&self, ObjFlags flags, GcBits gc, uint prop_capacity
 
 // The pool for ordinary objects created with the compact, a sized or the
 // plain inline layout, as recorded in GcBits.
-fn pagepool::PagePool* plain_object_pool(heap::Heap* h, bool compact, uint shaped) @inline {
+fn pagepool::ObjectPool* plain_object_pool(heap::Heap* h, bool compact, uint shaped) @inline {
     if (compact) return &h.obj_pool_compact;
     if (shaped != 0) return &h.obj_pool_shaped[shaped - 1];
     return &h.obj_pool_plain;
+}
+
+// The object is a prototype a cache depends on; its death moves the epoch.
+fn void HObject.observe_prototype(&self) @inline {
+    self.gc.prototype_observed = true;
+    heap::needs_teardown(self);
 }
 
 // Allocate an object of any class but OBJECT and the inline literal arrays,
@@ -2850,11 +2863,8 @@ $if $feat(POOL_BYPASS):
     // offending read. This costs an allocator round-trip per object: asan and
     // gc-stress targets only.
 $else
-    void* pool = pool_for_class(heap_ptr, cls);
-    if (pool != null) {
-        raw = ((pagepool::PagePool*)pool).alloc();
-        from_pool = true;
-    }
+    raw = pool_for_class(heap_ptr, cls).alloc(h.gc_major_epoch);
+    from_pool = raw != null;
 $endif
 
     // Fall back to malloc when pool is exhausted or unavailable
@@ -2868,7 +2878,7 @@ $endif
     }
 
     // Other classes need their subtype payload and trailing storage cleared.
-    if (!from_pool) mem::clear(raw, (sz)alloc_sz);
+    mem::clear(raw, (sz)alloc_sz);
 
     HObject* obj = (HObject*)raw;
 
@@ -2902,6 +2912,8 @@ $endif
     }
 
     obj.shape_id = 0;
+    // A fresh array owns nothing yet; any other class has a payload to tear down.
+    if (cls != ObjClass.ARRAY) heap::needs_teardown(obj);
     return obj;
 }
 
@@ -2918,9 +2930,9 @@ fn void free_block(heap::Heap* hp, void* p) {
 // Free an HObject and everything it owns: the property table and the array
 // part. The caller controls its removal from the allocation registry.
 //
-// A pooled object (no flags.pool_fallback) goes back to its PagePool;
-// the rest are freed through the heap's allocator, or mem::free when no heap
-// is active.
+// A pooled object's block (no flags.pool_fallback) is reclaimed by its page's
+// sweep; the rest are freed through the heap's allocator, or mem::free when no
+// heap is active.
 fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool slots_released) {
     if (obj == null) { return; }
     // The owning heap, which every caller supplies. Its `tearing_down` flag,
@@ -3138,10 +3150,11 @@ fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget
     return true;
 }
 
-// Free an ordinary object or array whose storage is all in its header block:
-// it owns no out-of-line block, hash or private shape, and no cache holds its
-// identity. Returns false, having done nothing, for any other object.
-fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
+// Release a dead pooled ordinary object or array whose storage is all in its
+// header block: it owns no out-of-line block, hash or private shape, and no
+// cache holds its identity. Its block goes back with its page's sweep. Returns
+// false, having done nothing, for any other object.
+fn bool hobject_release_inline(HObject* obj, heap::Heap* h) @inline {
     ObjClass cls = obj.flags.obj_class;
     if ((cls != ObjClass.OBJECT && cls != ObjClass.ARRAY) || obj.flags.pool_fallback
         || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed
@@ -3157,11 +3170,31 @@ fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
         uint capacity = obj.array_inline_capacity();
         if (capacity == 0) return false;
         release_slots(h, (PropValue*)((char*)obj + OBJ_SIZE_ARRAY), obj.array_size);
-        h.obj_pool_inline_arrays[capacity - 1].dealloc(obj);
-        return true;
     }
     release_slots(h, obj.prop_values(), obj.prop_count);
-    plain_object_pool(h, obj.gc.compact_props, obj.gc.shaped_props).dealloc(obj);
+    return true;
+}
+
+// Whether a dead object's teardown would release nothing: a plain class with no
+// out-of-line storage, cache or weak interest, private shape or counted string
+// (a pinned one is not).
+fn bool owns_nothing(HObject* obj, heap::Heap* h) {
+    ObjClass cls = obj.flags.obj_class;
+    if ((cls != ObjClass.OBJECT && cls != ObjClass.ARRAY) || obj.flags.pool_fallback
+        || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed
+        || obj.gc.weak_target) return false;
+    if (obj.shape_id != 0 && h.get_shape(obj.shape_id).parent == PRIVATE_SHAPE_PARENT) return false;
+    PropValue* slots = obj.prop_values();
+    uint count = obj.prop_count;
+    if (cls == ObjClass.ARRAY) {
+        // Without prop_alloc an array has only the elements of its header block.
+        slots = (PropValue*)((char*)obj + OBJ_SIZE_ARRAY);
+        count = obj.array_inline_capacity() == 0 ? 0 : obj.array_size;
+    }
+    for (uint i = 0; i < count; i++) {
+        TVal v = slots[i].get();
+        if (v.is_refcounted() && !((HeapHeader*)v.get_heapptr()).is_pinned()) return false;
+    }
     return true;
 }
 
@@ -3177,34 +3210,14 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     hobject_free_impl(obj, heap_ptr, free_header, false);
 }
 
-// Release just the header's backing memory, whether a pool block or a malloc,
-// once hobject_free(obj, heap, false) has run the sub-allocation teardowns and
-// decrefs. Object edges carry no reference count, so teardown does not follow
-// another dying node that the sweep may already have released.
+// Release just the header's backing memory once hobject_free(obj, heap, false)
+// has run the sub-allocation teardowns and decrefs: a malloc is freed, and a
+// pool block is reclaimed with its page. Object edges carry no reference count,
+// so teardown does not follow another dying node that the sweep may already
+// have released.
 fn void hobject_free_header(HObject* obj, void* heap_ptr) {
-    if (obj == null) { return; }
-    heap::Heap* hp = (heap::Heap*)heap_ptr;
-    if (obj.flags.pool_fallback) {
-        free_block(hp, obj);
-    } else if (obj.flags.obj_class == ObjClass.OBJECT) {
-        plain_object_pool(hp, obj.gc.compact_props, obj.gc.shaped_props).dealloc(obj);
-    } else {
-        uint inline_capacity = obj.array_inline_capacity();
-        if (inline_capacity > 0) {
-            if (hp == null) {
-                mem::free(obj);
-            } else {
-                hp.obj_pool_inline_arrays[inline_capacity - 1].dealloc(obj);
-            }
-        } else {
-            void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
-            if (pool != null) {
-                ((pagepool::PagePool*)pool).dealloc(obj);
-            } else {
-                free_block(hp, obj);
-            }
-        }
-    }
+    if (obj == null || !obj.flags.pool_fallback) return;
+    free_block((heap::Heap*)heap_ptr, obj);
 }
 
 // ============================================================================

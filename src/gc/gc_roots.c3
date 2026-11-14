@@ -276,7 +276,7 @@ fn bool Heap.gc_prune_weak_step(&self, uint budget) {
             && hobject::env_record_is_allocated(vie.search_head)
             && hobject::env_record_get_epoch(vie.search_head) == self.env_mark_epoch) {
             HObject* b = (HObject*)vie.bindings;
-            if (b != null && ((HeapHeader*)b).is_reachable()
+            if (b != null && self.gc_is_marked((HeapHeader*)b)
                 && hobject::env_record_bindings(vie.env) == b) survive = true;
         }
         if (!survive) hobject::var_ic_clear(vie);

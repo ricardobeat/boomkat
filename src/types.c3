@@ -847,7 +847,7 @@ enum HType : char {
 // Bit-packed flags stored at the front of every heap header.
 //
 // Bits 0-1:  heap type (HType)
-// Bit  2:    reachable by the mark phase
+// Bit  2:    unused (traced nodes keep their mark in GcBits.mark)
 // Bit  3:    temporary root during incremental GC
 // Bit  4:    has a C finalizer attached
 // Bit  5:    the finalizer has already run
@@ -856,7 +856,6 @@ enum HType : char {
 //            and HString's HStringFlags, which reinterpret this same word)
 bitstruct HeapFlags : uint {
     HType htype        : 0..1;
-    bool  reachable    : 2;
     bool  temproot     : 3;
     bool  finalizable  : 4;
     bool  finalized    : 5;
@@ -881,6 +880,9 @@ bitstruct GcBits : uint {
     // Offset of an object's inline property slots, in eight-byte words; see
     // HObject.inline_props_ptr.
     uint inline_words : 11..15;
+    // The collection epoch (Heap.gc_epoch) of the cycle that last marked this
+    // node; see Heap.gc_is_marked.
+    char mark : 24..31;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing
@@ -923,9 +925,6 @@ fn void HeapHeader.incref(&self) @inline {
 // HeapHeader: flag accessors
 // ---------------------------------------------------------------------------
 
-fn void HeapHeader.set_reachable(&self)     { self.flags.reachable = true; }
-fn void HeapHeader.clear_reachable(&self)   { self.flags.reachable = false; }
-fn bool HeapHeader.is_reachable(&self)      { return self.flags.reachable; }
 fn void HeapHeader.set_temproot(&self)      { self.flags.temproot = true; }
 fn void HeapHeader.clear_temproot(&self)    { self.flags.temproot = false; }
 fn bool HeapHeader.is_temproot(&self)       { return self.flags.temproot; }

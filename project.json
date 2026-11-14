@@ -221,6 +221,25 @@
         "INTL_COLLATOR"
       ]
     },
+    "boomkat_gc_verify": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [
+        "GC_STRESS",
+        "GC_VERIFY",
+        "PRINT",
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
+      ]
+    },
     "boomkat_threaded_asan": {
       "type": "executable",
       "sources": [

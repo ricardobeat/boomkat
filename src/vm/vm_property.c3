@@ -131,7 +131,7 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
     if (epoch_chain) {
         for (uint i = 0; i < chain_len; i++) {
-            ((HObject*)chain_protos[i]).gc.prototype_observed = true;
+            ((HObject*)chain_protos[i]).observe_prototype();
         }
         ic.chain_len = hobject::IC_CHAIN_EPOCH;
         ic.chain.epoch.value = vm.heap.prototype_epoch;

@@ -155,13 +155,14 @@ fn void Heap.mark_traced_value(&self, TVal value) {
     $endif
 }
 
+// A major drops the remembered set, and its scan clears each owner's flag. An
+// old host object stays remembered, since its payload stores no barrier; so
+// does every old survivor of a cycle that keeps temporary roots, whose native
+// callers may store into objects they still treat as young.
 fn void Heap.gc_finish_object_scan(&self, HObject* obj) {
     self.gc_scan_object_fields(obj);
-    if (self.gc_kind == GcKind.MINOR && obj.gc.old) {
-        ((HeapHeader*)obj).clear_reachable();
-    } else {
-        obj.gc.remembered = false;
-    }
+    if (self.gc_kind == GcKind.MAJOR || !obj.gc.old) obj.gc.remembered = false;
+    if (obj.gc.old && !self.gc_oracle_running && (self.gc_keep_temproots || self.gc_has_host_edges(obj))) self.remember(obj);
 }
 
 fn void Heap.gc_scan_object_fields(&self, HObject* obj) {

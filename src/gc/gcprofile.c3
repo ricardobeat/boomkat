@@ -39,6 +39,8 @@ tlocal ulong gcprof_minor_cycles;
 tlocal ulong gcprof_major_cycles;
 tlocal ulong gcprof_young_swept;
 tlocal ulong gcprof_old_swept;
+tlocal ulong gcprof_pages_swept;
+tlocal ulong gcprof_pooled_dead;
 tlocal ulong gcprof_remembered_owners;
 
 macro void gcprof_generation(bool minor) @builtin {
@@ -52,6 +54,13 @@ macro void gcprof_sweep_node(bool old) @builtin {
     $if $feat(GC_PROFILE):
         if (old) { gcprof_old_swept++; }
         else { gcprof_young_swept++; }
+    $endif
+}
+
+macro void gcprof_sweep_page(uint dead) @builtin {
+    $if $feat(GC_PROFILE):
+        gcprof_pages_swept++;
+        gcprof_pooled_dead += dead;
     $endif
 }
 
@@ -215,9 +224,9 @@ $if $feat(GC_PROFILE):
     io::eprintfn("# GC_REGEXP_LASTINDEX fast_reads=%d fast_writes=%d",
                  gcprof_regexp_lastindex_fast_reads,
                  gcprof_regexp_lastindex_fast_writes);
-    io::eprintfn("# GC_GENERATIONS minors=%d majors=%d young_swept=%d old_swept=%d remembered_owners=%d",
+    io::eprintfn("# GC_GENERATIONS minors=%d majors=%d young_swept=%d old_swept=%d pages_swept=%d pooled_dead=%d remembered_owners=%d",
         gcprof_minor_cycles, gcprof_major_cycles, gcprof_young_swept,
-        gcprof_old_swept, gcprof_remembered_owners);
+        gcprof_old_swept, gcprof_pages_swept, gcprof_pooled_dead, gcprof_remembered_owners);
     io::eprint("#   major reasons");
     foreach (i, n : gcprof_major_reasons) if (n != 0) io::eprintf(" %s=%d", GCPROF_MAJOR_REASON_NAMES[i], n);
     io::eprintn();
