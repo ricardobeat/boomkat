@@ -1,4 +1,4 @@
-// Baseline tier allocation ops: NEWARR, NEWARR_CONST, NEWOBJ and NEWOBJ_SHAPE.
+// Baseline tier allocation ops: NEWARR, NEWARR_CONST, NEWOBJ, NEWOBJ_SHAPE and NEWREGEXP.
 //
 // A fresh ordinary object or short literal array is built inline. The pool pop
 // and the allocation accounting are one shared subroutine (ALLOC_SUB); the
@@ -19,6 +19,8 @@ import boomkat::hobject;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::pagepool;
+import boomkat::features;
+import boomkat::re_bindings;
 
 // Whether this build allocates through the plain pools this code mirrors.
 fn bool inline_alloc_ok() @inline {
@@ -249,6 +251,58 @@ fn void Asm.emit_alloc_body(&self) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
+// NEWREGEXP of a parsed literal site (vm::regexp_literal_site) into R0, unboxed: the RegExp object
+// vm::regexp_literal_new makes, holding a reference to the site's program and source, with lastIndex
+// 0 in the slot the shared RegExp shape gives it. An unparsed site, a program that did not compile
+// and a stale shared shape take the jumps in `slow`, which leave nothing changed. Uses R1 to R4.
+fn void Asm.emit_inline_regexp(&self, Jumps* slow) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    Heap* h = self.hp;
+    int m = SLJIT_MEM;
+    RegExpLiteral* lit = &self.f.regexp_cache[self.w.get_bc()];
+    long heap_shape = (char*)&h.regexp_shape - (char*)h;
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM, (long)(usz)&lit.program);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | self.heap, heap_shape);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | self.heap, (char*)&h.regexp_shape_epoch - (char*)h);
+    slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R0, 0, m | self.heap, l.heap_epoch));
+    hobject::ObjFlags flags = { .htype = HType.OBJECT, .extensible = true, .obj_class = hobject::ObjClass.REGEXP,
+                                .has_nondefault_flags = true, .temproot = true };
+    types::GcBits gc = { .inline_words = hobject::inline_words_for_class(hobject::ObjClass.REGEXP) };
+    InlineAlloc plan = { .pool = (char*)&h.obj_pool_small - (char*)h, .flags = (uint)flags, .gc = (uint)gc,
+                         .prop_capacity = hobject::INLINE_PROPS, .prop_count = 1,
+                         .proto_off = (char*)&h.regexp_proto - (char*)h };
+    self.emit_inline_alloc(&plan, slow);
+    HObject* o = (HObject*)(usz)4096;
+    hobject::HObjectExtra* x = o.extra_ptr();
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | self.heap, heap_shape);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_shape, R1, 0);
+    TVal zero;
+    zero.set_fastint(0);
+    sljit_emit_op1(c, SLJIT_MOV, m | R0, (long)gc.inline_words * 8, SLJIT_IMM, (long)zero.bits);
+    // The program and the source, each with a reference of the object's own.
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)lit);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, m | R1, (char*)&lit.program - (char*)lit);
+    sljit_emit_op1(c, SLJIT_MOV, m | R0, (char*)&x.regexp.regexp_data - (char*)o, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, m | R2, re_bindings::RE_REFCOUNT_OFFSET);
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, SLJIT_IMM, 1);
+    sljit_emit_op1(c, SLJIT_MOV_S32, m | R2, re_bindings::RE_REFCOUNT_OFFSET, R3, 0);
+    sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, m | R1, (char*)&lit.flags - (char*)lit);
+    sljit_emit_op1(c, SLJIT_MOV_S32, m | R0, (char*)&x.regexp.flags - (char*)o, R3, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, m | R1, (char*)&lit.source - (char*)lit);
+    HeapHeader* hh = (HeapHeader*)(usz)4096;
+    long refcount = (char*)&hh.refcount - (char*)hh;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, refcount);
+    void* pinned = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, types::STRING_PINNED_REFCOUNT);
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, SLJIT_IMM, 1);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R2, refcount, R3, 0);
+    sljit_set_label(pinned, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_OR, R2, 0, R2, 0, SLJIT_IMM, K_STRING_START);
+    sljit_emit_op1(c, SLJIT_MOV, m | R0, (char*)&x.prim.primitive_value - (char*)o, R2, 0);
+}
+
 // A direct call to vm::jit_alloc; a failed allocation takes the thunk, which
 // repeats it and reports the failure. With the inline path first, the call is
 // also that path's slow path.
@@ -261,6 +315,8 @@ fn bool Asm.emit_alloc(&self) {
         case NEWOBJ:
         case NEWOBJ_SHAPE:
             break;
+        case NEWREGEXP:
+            if (!features::REGEXP || self.f.regexp_cache == null || self.w.get_bc() >= self.f.regexp_cache_count) return false;
         default:
             return false;
     }
@@ -268,7 +324,15 @@ fn bool Asm.emit_alloc(&self) {
     void* done = null;
     InlineAlloc plan;
     uint ra = self.w.a;
-    if (inline_alloc_ok() && self.inline_alloc_plan(&plan)) {
+    bool inline_ok = inline_alloc_ok();
+    if (inline_ok && self.w.op == NEWREGEXP) {
+        self.emit_inline_regexp(&slow);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+        self.store(ra, R0);
+        self.track_heap_store(ra);
+        done = sljit_emit_jump(c, SLJIT_JUMP);
+        slow.bind(sljit_emit_label(c));
+    } else if (inline_ok && self.w.op != NEWREGEXP && self.inline_alloc_plan(&plan)) {
         self.emit_inline_alloc(&plan, &slow);
         // The boxed object into the result register, which holds no count to release.
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_obj_op(), k_obj_w());

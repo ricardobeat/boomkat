@@ -48,6 +48,9 @@ extern fn int re_literal(void* re, char* out, int* rare, int* where, int* whole)
 
 extern fn void re_free(void* re);
 
+// Where a compiled regexp keeps its reference count (re_wrapper.c's ReCompiled).
+const long RE_REFCOUNT_OFFSET = 24;
+
 extern fn void re_ref(void* re);
 
 extern fn char* re_get_groupnames(void* re);

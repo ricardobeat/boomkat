@@ -2,6 +2,7 @@
  * RegExp wrapper — implementation using QuickJS libregexp
  */
 #define _GNU_SOURCE /* memmem on glibc */
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include "libregexp.h"
@@ -56,6 +57,9 @@ struct ReCompiled {
     LREFirstSet first_set;
     int      native_tried;
 };
+
+/* re_bindings::RE_REFCOUNT_OFFSET: generated code takes references in place. */
+_Static_assert(offsetof(struct ReCompiled, refcount) == 24, "ReCompiled.refcount moved");
 
 /* The native matcher. It decodes the compiled program once and runs the
  * compiled body, or walks it where the compiler declines; a program neither
