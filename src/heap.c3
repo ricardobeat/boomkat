@@ -3622,6 +3622,46 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     return obj;
 }
 
+// A fresh array of `count` elements and that length, in its header block when
+// they fit. The caller writes its element slots before anything else can
+// observe the array; one it leaves alone is a hole.
+fn HObject*? Heap.alloc_dense_array(&self, uint count) {
+    HObject* obj;
+    if (count > 0 && count <= hobject::ARRAY_INLINE_MAX_CAPACITY) {
+        obj = self.alloc_inline_array(count)!;
+    } else {
+        obj = self.alloc_object(hobject::ObjClass.ARRAY)!;
+        if (!obj.reserve_array_storage(0, count, self)) return HEAP_ALLOC_FAULT~;
+    }
+    obj.prototype = self.array_proto;
+    obj.array_used = count;
+    obj.array_len_ptr()[0] = count;
+    return obj;
+}
+
+// A fresh array holding `values[:count]` as its elements, each slot written
+// once and counted. The dense part cannot tell `undefined` from a hole, so an
+// `undefined` element is a named property, as an indexed store makes it.
+fn HObject*? Heap.alloc_array_of(&self, TVal* values, uint count) {
+    HObject* obj = self.alloc_dense_array(count)!;
+    hobject::PropValue* part = obj.array_part();
+    uint absent = 0;
+    for (uint i = 0; i < count; i++) {
+        if (values[i].is_undefined()) {
+            absent++;
+        } else {
+            self.init_slot_ref(obj, &part[i], &values[i]);
+        }
+    }
+    obj.array_used = count - absent;
+    for (uint i = 0; absent != 0 && i < count; i++) {
+        if (!values[i].is_undefined()) continue;
+        if (!obj.put_prop(self.int_to_hstring(i), values[i], hobject::PROP_FLAGS_WEC, self)) return HEAP_ALLOC_FAULT~;
+        absent--;
+    }
+    return obj;
+}
+
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
@@ -4019,6 +4059,17 @@ fn void Heap.join_visited_pop(&self) {
 fn void Heap.store_slot(&self, HObject* owner, hobject::PropValue* slot, TVal v) @inline {
     *slot = (hobject::PropValue)v;
     self.write_barrier(owner, v);
+}
+
+// Store `src` into a slot of `owner` that holds no value yet, taking a
+// reference to it and passing the write barrier.
+fn void Heap.init_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVal* src) @inline {
+    if (src.is_refcounted()) {
+        void* ptr = src.get_heapptr();
+        if (ptr != null) ((HeapHeader*)ptr).incref();
+    }
+    self.write_barrier(owner, *src);
+    *slot = (hobject::PropValue)*src;
 }
 
 /**

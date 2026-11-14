@@ -198,6 +198,7 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.INITELEM.ordinal]        = &th_initelem;
     g_threaded_table.fns[Opcode.NEWARR.ordinal]          = &th_newarr;
     g_threaded_table.fns[Opcode.NEWARR_CONST.ordinal]    = &th_newarr_const;
+    g_threaded_table.fns[Opcode.NEWARR_FILL.ordinal]     = &th_newarr_fill;
     g_threaded_table.fns[Opcode.NEW_OBJ.ordinal] = &th_new_obj;
     g_threaded_table.fns[Opcode.NEWOBJ.ordinal]          = &th_newobj;
     g_threaded_table.fns[Opcode.NEWOBJ_SHAPE.ordinal]    = &th_newobj;
@@ -3129,6 +3130,18 @@ fn Instruction* th_newarr_const(Instruction* pc, HandlerTable* handlers, TVal* r
     TVal* dst = regs + insn.a;
     vm.heap.set_reg_undefined(dst);
     HObject* array = vm.heap.alloc_constant_array(vm.current_func.constants + insn.get_bc()) ?? null;
+    if (array == null) return pc;
+    vm.heap.set_reg_object(dst, array);
+    track_heap_store(cold.act, dst, (uint)insn.a);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+fn Instruction* th_newarr_fill(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Vm* vm = cold.vm;
+    Instruction insn = *pc;
+    TVal* dst = regs + insn.a;
+    vm.heap.set_reg_undefined(dst);
+    HObject* array = vm.heap.alloc_array_of(regs + insn.b, insn.c) ?? null;
     if (array == null) return pc;
     vm.heap.set_reg_object(dst, array);
     track_heap_store(cold.act, dst, (uint)insn.a);

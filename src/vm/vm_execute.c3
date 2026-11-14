@@ -4042,6 +4042,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.NEWOBJ:
     case Opcode.NEWARR:
     case Opcode.NEWARR_CONST:
+    case Opcode.NEWARR_FILL:
     case Opcode.NEWREGEXP:
     case Opcode.SETALEN:
     case Opcode.FREEZEOBJ:
