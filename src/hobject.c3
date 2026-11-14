@@ -4057,6 +4057,8 @@ fn bool ic_proto_add(ICEntry* ic, uint shape, HObject* first, HObject* owner, ui
     h.shade_root_object(first);
     h.shade_root_object(owner);
     set.cases[set.count] = { .shape = shape, .idx = idx, .first = first, .owner = owner };
+    h.root_store_object(first);
+    h.root_store_object(owner);
     set.count++;
     return true;
 }

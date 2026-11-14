@@ -132,7 +132,7 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(heap);
     ic.has_proto = !is_own;
-    if (!is_own) heap.shade_root_object(owner);
+    if (!is_own) heap.root_store_object(owner);
     ic.chain_len = (char)chain_len;
     for (uint i = 0; i < chain_len; i++) {
         ic.chain.snapshot.protos[i] = chain_protos[i];

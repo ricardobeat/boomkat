@@ -44,6 +44,8 @@ fn void Heap.gc_scan_new_compiled_step(&self, uint budget) {
 // Fixed intrinsic roots are a bounded group independent of heap size.
 fn void Heap.mark_fixed_roots(&self) {
     self.mark_intrinsics(&self.realm_state);
+    for (usz i = 0; i < self.gc_young_roots.len; i++) self.mark_header((HeapHeader*)self.gc_young_roots.items[i]);
+    self.gc_young_roots.len = 0;
     $if $feat(SLJIT): jit::opt_mark_watches(self); $endif
 }
 
@@ -151,7 +153,10 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                 }
                 self.gc_root_index++;
             case 12:
-                if (self.gc_root_index >= self.compiled_func_count) {
+                // Compiled-function slots hold old nodes and the young ones
+                // gc_young_roots recorded, which a minor marked in stage 0.
+                if (self.gc_root_index >= self.compiled_func_count
+                    || (self.gc_kind == GcKind.MINOR && !self.gc_oracle_running)) {
                     self.gc_root_index = 0;
                     self.gc_root_subindex = 0;
                     self.gc_root_stage++;

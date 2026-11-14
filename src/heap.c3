@@ -958,6 +958,10 @@ struct Heap {
     ObjStack gc_remembered;
     ObjStack gc_remembered_scan;
     usz gc_remembered_pos;
+    // Young nodes stored into a constant or an inline cache since the last
+    // cycle marked roots. A minor cycle marks these instead of scanning every
+    // compiled function, whose other slots hold only old nodes.
+    ObjStack gc_young_roots;
     GeneratorState* gc_root_generator_cursor;
     EnvSweepCursor gc_aux_env_cursor;
     bool gc_blocking;
@@ -2553,6 +2557,7 @@ fn void Heap.destroy(&self) {
     self.gc_gray.free();
     self.gc_remembered.free();
     self.gc_remembered_scan.free();
+    self.gc_young_roots.free();
     $if $feat(GC_PROFILE):
         ulong[5] refcounts;
         ulong retained_bytes;
@@ -3011,6 +3016,7 @@ fn void Heap.reset(&self) {
     self.gc_remembered.len = 0;
     self.gc_remembered_scan.len = 0;
     self.gc_remembered_pos = 0;
+    self.gc_young_roots.len = 0;
     self.gc_root_generator_cursor = null;
     self.gc_aux_env_cursor = {};
     self.gc_blocking      = false;
@@ -3487,6 +3493,10 @@ fn void Heap.track_compiled_func(&self, void* cf) {
         self.compiled_func_cap = new_cap;
     }
     uint index = self.compiled_func_count;
+    bytecode::CompiledFunction* f = (bytecode::CompiledFunction*)cf;
+    if (f.constants != null && self.gc_phase != GcPhase.MARK) {
+        for (uint i = 0; i < f.const_count; i++) self.root_store_tval(f.constants[i]);
+    }
     self.compiled_funcs[index] = cf;
     ((bytecode::CompiledFunction*)cf).func_index = index;
     if (self.gc_phase == GcPhase.MARK && !self.gc_new_compiled_pending) {
@@ -4603,6 +4613,27 @@ fn void Heap.shade_root_tval(&self, TVal value) @inline {
 
 fn void Heap.shade_root_object(&self, HObject* value) @inline {
     if (self.gc_phase == GcPhase.MARK && value != null) self.mark_hobject(value);
+}
+
+// A store into a slot only the compiled-function root scan reaches: a constant
+// or a prototype an inline cache retains. A minor cycle skips that scan, so a
+// young node is recorded for the next cycle to mark.
+fn void Heap.root_store_tval(&self, TVal value) @inline {
+    if (!value.is_object() && !value.is_buffer() && !value.is_bigint()) return;
+    self.root_store_header((HeapHeader*)value.get_heapptr());
+}
+
+fn void Heap.root_store_object(&self, HObject* value) @inline {
+    self.root_store_header((HeapHeader*)value);
+}
+
+fn void Heap.root_store_header(&self, HeapHeader* header) @inline {
+    if (header == null) return;
+    if (self.gc_phase == GcPhase.MARK) {
+        self.mark_header(header);
+    } else if (!header.gc.old) {
+        self.gc_young_roots.push((HObject*)header);
+    }
 }
 
 fn void Heap.shade_root_env(&self, void* value) @inline {

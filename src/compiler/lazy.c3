@@ -243,7 +243,7 @@ fn void? materialize_function(CompiledFunction* f, Heap* h, char[] why = {}) @no
     h.free_func(h.heap_udata, ready);
     // The replacement's constants must be visible even if the old stub was
     // already visited by the incremental root scan.
-    for (uint i = 0; i < f.const_count; i++) h.shade_root_tval(f.constants[i]);
+    for (uint i = 0; i < f.const_count; i++) h.root_store_tval(f.constants[i]);
     $else
         return COMPILE_ERROR~;
     $endif
