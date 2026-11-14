@@ -16,4 +16,6 @@ var p = /a/; p.exec = function() { return {}; }; out.push(runt(3000, o, p, "zz")
 try { run(3000, o, /a/, Symbol()); } catch (e) { out.push(e.constructor.name); }
 var q = /b/; Object.defineProperty(q, "lastIndex", {writable:false}); out.push(JSON.stringify(run(3000, o, q, "abc")));
 RegExp.prototype.exec = function() { return null; }; out.push(runt(3000, o, /a/, "a"));
-console.log(out.join("|"));
+var want = "[\"bc\",\"c\"]|1|||true|null||||false|[\"\u0101x\"]|1|||true|[\"q\",\"q\"]|1|{\"n\":\"q\"}||true|[\"x\"]|1||[[1,2]]|true|null||||false|[\"\\ud83d\"]|0|||true|[\"A\"]|0|||true|[\"\\n\"]|0|||true|null|[\"1\"]|3|false|true|TypeError|[\"b\"]|false";
+if (out.join("|") !== want) console.log("FAIL regexp inline exec: " + out.join("|"));
+else console.log("regexp inline exec: ok");
