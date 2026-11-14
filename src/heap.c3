@@ -827,7 +827,8 @@ struct RealmState {
     bool                regexp_pristine;
     // The argument block and capture buffer generated code calls a compiled
     // regexp body with, and the interrupt that body polls. A body neither
-    // allocates nor runs script, so one block serves every call.
+    // allocates nor runs script, and its poll keeps the block across the host's
+    // callback (poll_interrupt_reentrant), so one block serves every call.
     re_bindings::ReCall      regexp_call;
     int[2 * re_bindings::RE_CALL_GROUPS] regexp_caps;
     re_bindings::ReInterrupt regexp_poll;
@@ -6885,6 +6886,19 @@ fn bool Heap.set_jit_stress(&self, bool enabled) {
 }
 
 // Shared by bytecode safepoints and libregexp's backtracking timeout hook.
+// poll_interrupt from a running regexp body. The host's callback may run script, and that script
+// generated code calling a body through Heap.regexp_call: the block of the polling run is restored
+// after it.
+fn bool Heap.poll_interrupt_reentrant(&self) {
+    if (self.capi_interrupt_fn == null) return self.poll_interrupt();
+    re_bindings::ReCall call = self.regexp_call;
+    int[2 * re_bindings::RE_CALL_GROUPS] caps = self.regexp_caps;
+    bool hit = self.poll_interrupt();
+    self.regexp_call = call;
+    self.regexp_caps = caps;
+    return hit;
+}
+
 fn bool Heap.poll_interrupt(&self) {
     if (self.uncatchable_throw || self.heap_limit_hit || mem::@atomic_load(self.interrupt_requested) != 0) return true;
     if (self.capi_interrupt_fn == null) return false;
@@ -6894,7 +6908,7 @@ fn bool Heap.poll_interrupt(&self) {
 
 fn int regexp_interrupt(void* opaque) {
     Heap* h = (Heap*)opaque;
-    if (!h.poll_interrupt()) return 0;
+    if (!h.poll_interrupt_reentrant()) return 0;
     h.uncatchable_throw = true;
     return 1;
 }
