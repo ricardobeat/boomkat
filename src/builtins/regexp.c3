@@ -1186,6 +1186,13 @@ fn bool regexp_replace_try_pristine(BuiltinContext* ctx, HObject* rx, HString* s
                                     bool replace_is_fn, TVal replace_val, HString* replace_hs,
                                     bool known_pristine = false) {
     if (!known_pristine && !regexp_is_pristine(ctx.heap, rx)) return false;
+    if (!replace_is_fn) {
+        HString* out = regexp_replace_direct(ctx.heap, s_hstr, rx, replace_hs, false);
+        if (out != null) {
+            ctx.result_string(out);
+            return true;
+        }
+    }
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     int jsf = (*rx.extra_ptr()).regexp.flags;
     if (re_bindings::re_get_groupnames(re_data) != null || ((jsf & 32) != 0 && (jsf & 1) == 0)) return false;
@@ -1575,77 +1582,298 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     return true;
 }
 
-// String.prototype.replace, or replaceAll when `all`, on the narrow string `s`
-// with the plain RegExp `rx` and the narrow replacement `rep` that holds no `$`:
-// the result @@replace computes, without a builtin frame. The match positions
-// are found first, then one string of the exact size is filled; with no match
-// the result is `s`. Null, with nothing done, when the generic path must run:
-// another receiver, a wide string, a template, a sticky non-global pattern, a
-// non-global replaceAll (which throws), more groups than the stack buffer, an
-// interrupted run or a result past the length cap.
+// One piece of a replacement template (GetSubstitution): template units
+// [a, b), or what a `$` reference stands for in each match.
+struct ReplacePiece {
+    PieceKind kind;
+    // TEXT: the template range. GROUP: the group in a, 0 for the match. NAMED:
+    // in a, a bit per group of that name.
+    uint a;
+    uint b;
+}
+
+enum PieceKind : char {
+    TEXT,
+    GROUP,
+    NAMED,
+    BEFORE,
+    AFTER,
+}
+
+// The most pieces a template may have for regexp_replace_direct.
+const uint REPLACE_PIECES_MAX = 32;
+
+// Whether the units of `str` in [from, to) need a wide result.
+fn bool regexp_range_wide(HString* str, uint from, uint to) @inline {
+    if (!str.is_wide() || from >= to) return false;
+    return !hstring::fits_latin1({ .ptr = str.data_ptr() + (usz)from * 2, .len = to - from, .wide = true });
+}
+
+// Whether `rep` holds a `$`, remembered on the string after the first look.
+fn bool regexp_has_dollar(HString* rep) @inline {
+    if (rep.flags.dollar_known) return rep.flags.has_dollar;
+    bool found = rep.is_wide() ? regexp_find_literal(rep, "$", 0) >= 0 : hstring::find_bytes(rep.latin1(), "$") >= 0;
+    rep.flags.has_dollar = found;
+    rep.flags.dollar_known = true;
+    return found;
+}
+
+// A bit per group of `re_data`, below `groups`, whose name is units [from, to)
+// of `rep`.
+fn uint regexp_named_mask(void* re_data, int groups, HString* rep, uint from, uint to) {
+    char* p = re_bindings::re_get_groupnames(re_data);
+    uint mask = 0;
+    for (int g = 1; g < groups && p != null; g++) {
+        usz len = (usz)((ZString)p).len();
+        bool same = len > 0 && len == (usz)(to - from);
+        for (uint k = 0; same && k < to - from; k++) same = (uint)p[k] == rep.unit_at(from + k);
+        if (same) mask |= 1u << g;
+        // Each entry is the name, its terminator and a scope byte.
+        p += (sz)(len + 2);
+    }
+    return mask;
+}
+
+// GetSubstitution's template `rep` as pieces, for a pattern of `groups` groups
+// (the match included) that names a group when `named`: the piece count, or -1
+// when `out` cannot hold them.
+fn int regexp_parse_template(HString* rep, void* re_data, int groups, bool named, ReplacePiece[] out) {
+    uint n = 0;
+    uint len = rep.length;
+    uint text = 0;
+    uint i = 0;
+    while (i + 1 < len) {
+        if (rep.unit_at(i) != '$') {
+            i++;
+            continue;
+        }
+        uint c = rep.unit_at(i + 1);
+        ReplacePiece piece;
+        uint next = i + 2;
+        switch {
+            case c == '$':
+                // The second `$` opens the text that follows.
+                piece = { .kind = TEXT, .a = i + 1, .b = i + 1 };
+            case c == '&':
+                piece = { .kind = GROUP, .a = 0 };
+            case c == '`':
+                piece = { .kind = BEFORE };
+            case c == '\'':
+                piece = { .kind = AFTER };
+            case c >= '0' && c <= '9':
+                uint index = c - '0';
+                if (i + 2 < len && rep.unit_at(i + 2) >= '0' && rep.unit_at(i + 2) <= '9') {
+                    uint two = index * 10 + rep.unit_at(i + 2) - '0';
+                    if (two < (uint)groups) {
+                        index = two;
+                        next = i + 3;
+                    }
+                }
+                if (index < 1 || index >= (uint)groups) {
+                    i++;
+                    continue;
+                }
+                piece = { .kind = GROUP, .a = index };
+            case c == '<' && named:
+                uint close = i + 2;
+                while (close < len && rep.unit_at(close) != '>') close++;
+                if (close >= len) {
+                    i++;
+                    continue;
+                }
+                piece = { .kind = NAMED, .a = regexp_named_mask(re_data, groups, rep, i + 2, close) };
+                next = close + 1;
+            default:
+                i++;
+                continue;
+        }
+        if ((usz)n + 3 > out.len) return -1;
+        if (text < i) out[n++] = { .kind = TEXT, .a = text, .b = i };
+        if (piece.kind == TEXT) {
+            text = i + 1;
+        } else {
+            out[n++] = piece;
+            text = next;
+        }
+        i = next;
+    }
+    if (text < len) out[n++] = { .kind = TEXT, .a = text, .b = len };
+    return (int)n;
+}
+
+// The subject units a reference piece stands for in the match whose group
+// bounds `m` holds (-1 for a group that did not participate), into *from and
+// *to; an empty range for a group that did not.
+fn void regexp_piece_range(ReplacePiece* p, int* m, uint len, uint* from, uint* to) @inline {
+    int g = -1;
+    switch (p.kind) {
+        case GROUP:
+            g = (int)p.a;
+        case NAMED:
+            for (int k = 1; k < 32; k++) {
+                if ((p.a & (1u << k)) != 0 && m[2 * k] >= 0) {
+                    g = k;
+                    break;
+                }
+            }
+        case BEFORE:
+            *from = 0;
+            *to = (uint)m[0];
+            return;
+        case AFTER:
+            *from = (uint)m[1];
+            *to = len;
+            return;
+        case TEXT:
+            break;
+    }
+    if (g < 0 || m[2 * g] < 0 || m[2 * g + 1] < 0) {
+        *from = 0;
+        *to = 0;
+        return;
+    }
+    *from = (uint)m[2 * g];
+    *to = (uint)m[2 * g + 1];
+}
+
+// Units [from, to) of `src` stored at `dest`, a result of width `wide`; past
+// them returned. A wide range copied into a narrow result fits Latin-1.
+fn char* regexp_put(char* dest, bool wide, HString* src, uint from, uint to) @inline {
+    if (from >= to) return dest;
+    uint n = to - from;
+    if (!src.is_wide()) {
+        hstring::copy_units(dest, wide, hstring::narrow_units(src.data_ptr()[from:n]));
+    } else if (wide) {
+        mem::copy(dest, src.data_ptr() + (usz)from * 2, (usz)n * 2);
+    } else {
+        ushort* units = (ushort*)src.data_ptr() + from;
+        for (uint k = 0; k < n; k++) dest[k] = (char)units[k];
+    }
+    return dest + ((usz)n << (wide ? 1 : 0));
+}
+
+// The longest result, in bytes, regexp_replace_direct interns.
+const usz REPLACE_INTERN_MAX = 64;
+
+// String.prototype.replace, or replaceAll when `all`, on `s` with the plain
+// RegExp `rx` and the replacement string `rep`: the result @@replace computes,
+// without a builtin frame. The match bounds are found first, then one string of
+// the exact size is filled, the template's `$` references expanded; with no
+// match the result is `s`. Null, with nothing done, when the generic path must
+// run: another receiver, a sticky non-global pattern, a non-global replaceAll
+// (which throws), more groups than the stack buffer, a template of too many
+// pieces, an interrupted run or a result past the length cap.
 fn HString* regexp_replace_direct(Heap* heap, HString* s, HObject* rx, HString* rep, bool all) {
-    if (!regexp_is_pristine(heap, rx) || s.is_wide() || rep.is_wide()) return null;
+    if (!regexp_plain(heap, rx) || rx.prototype != heap.regexp_proto || !regexp_proto_pristine(heap)) return null;
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     int jsf = (*rx.extra_ptr()).regexp.flags;
     bool global = (jsf & 1) != 0;
     if ((all || (jsf & 32) != 0) && !global) return null;
-    if (re_bindings::re_group_count(re_data) > REGEXP_SMALL_GROUPS) return null;
-    char[] text = rep.latin1();
-    if (hstring::find_bytes(text, "$") >= 0) return null;
+    int groups = re_bindings::re_captures(re_data);
+    if (groups > REGEXP_SMALL_GROUPS) return null;
+    ReplacePiece[REPLACE_PIECES_MAX] piece_buf @noinit;
+    ReplacePiece[] pieces;
+    // Per match, the bounds of every group when a piece reads one, else the match's.
+    uint stride = 2;
+    if (regexp_has_dollar(rep)) {
+        int count = regexp_parse_template(rep, re_data, groups, re_bindings::re_has_group_names(re_data), &piece_buf);
+        if (count < 0) return null;
+        pieces = piece_buf[:count];
+        stride = 2 * (uint)groups;
+    } else {
+        piece_buf[0] = { .kind = TEXT, .a = 0, .b = rep.length };
+        pieces = piece_buf[:1];
+    }
     int[2 * REGEXP_SMALL_GROUPS] caps @noinit;
     int[64] span_buf @noinit;
     growvec::GrowVec{int} spans = { .heap = heap };
     spans.use_storage(&span_buf, span_buf.len);
     defer spans.free();
     re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, heap };
-    char[] lit = re_bindings::re_whole_literal(re_data);
+    char[] lit = stride == 2 ? re_bindings::re_whole_literal(re_data) : {};
+    bool unicode = (jsf & (16 | 128)) != 0;
     uint len = s.unit_len();
     uint pos = 0;
-    ulong removed = 0;
     while (pos <= len) {
-        int at;
-        int end;
         if (lit.len > 0) {
-            at = regexp_find_literal(s, lit, pos);
+            int at = regexp_find_literal(s, lit, pos);
             if (at < 0) break;
-            end = at + (int)lit.len;
+            caps[0] = at;
+            caps[1] = at + (int)lit.len;
         } else {
-            int ret = re_bindings::re_run_direct(re_data, s.data_ptr(), len, false, pos, &caps, caps.len, &interrupt);
+            int ret = re_bindings::re_run_direct(re_data, s.data_ptr(), len, s.is_wide(), pos, &caps, caps.len, &interrupt);
             if (heap.uncatchable_throw || ret < 0) return null;
             if (ret != re_bindings::RE_MATCH) break;
-            at = caps[0];
-            end = caps[1];
         }
-        if (!spans.push(at) || !spans.push(end)) return null;
-        removed += (ulong)(end - at);
+        for (uint k = 0; k < stride; k++) {
+            if (!spans.push(caps[k])) return null;
+        }
         if (!global) break;
-        // A narrow subject has no surrogate pairs: an empty match steps one unit.
-        pos = end == at ? (uint)end + 1 : (uint)end;
+        uint end = (uint)caps[1];
+        pos = end == (uint)caps[0] ? hstring::advance_string_index(s, end, unicode) : end;
     }
     if (global) {
         TVal zero;
         zero.set_fastint(0);
         rx.prop_values()[0] = (hobject::PropValue)zero;
     }
-    usz count = spans.len / 2;
-    if (count == 0) return s;
-    ulong total = (ulong)len - removed + (ulong)count * text.len;
+    if (spans.len == 0) return s;
+    // The size and width of the result.
+    ulong total = 0;
+    bool wide = false;
+    uint last = 0;
+    foreach (&p : pieces) {
+        if (p.kind == TEXT) wide |= regexp_range_wide(rep, p.a, p.b);
+    }
+    for (usz at = 0; at < spans.len; at += stride) {
+        int* m = &spans.items[at];
+        total += (ulong)((uint)m[0] - last);
+        wide |= regexp_range_wide(s, last, (uint)m[0]);
+        foreach (&p : pieces) {
+            uint from;
+            uint to;
+            if (p.kind == TEXT) {
+                total += (ulong)(p.b - p.a);
+                continue;
+            }
+            regexp_piece_range(p, m, len, &from, &to);
+            total += (ulong)(to - from);
+            wide |= regexp_range_wide(s, from, to);
+        }
+        last = (uint)m[1];
+    }
+    total += (ulong)(len - last);
+    wide |= regexp_range_wide(s, last, len);
     if (total == 0) return heap.str(heap::BuiltinStr.EMPTY);
     if (hstring::length_exceeds_max(total)) return null;
-    HString* out = hstring::hstring_alloc_storage(heap, (uint)total, false, hstring::HASH_DEFERRED, (uint)total) ?? null;
-    if (out == null) return null;
-    char* dest = out.data_ptr();
-    char* src = s.data_ptr();
-    uint last = 0;
-    for (usz i = 0; i < spans.len; i += 2) {
-        uint at = (uint)spans.items[i];
-        mem::copy(dest, src + last, (usz)(at - last));
-        dest += (sz)(at - last);
-        mem::copy(dest, text.ptr, text.len);
-        dest += (sz)text.len;
-        last = (uint)spans.items[i + 1];
+    // A short result is interned, so a replace that repeats finds its string.
+    char[REPLACE_INTERN_MAX] short_buf @noinit;
+    HString* out = null;
+    char* dest = &short_buf;
+    bool interned = (total << (wide ? 1 : 0)) <= REPLACE_INTERN_MAX;
+    if (!interned) {
+        out = hstring::hstring_alloc_storage(heap, (uint)total, wide, hstring::HASH_DEFERRED, (uint)total) ?? null;
+        if (out == null) return null;
+        dest = out.data_ptr();
     }
-    mem::copy(dest, src + last, (usz)(len - last));
+    last = 0;
+    for (usz at = 0; at < spans.len; at += stride) {
+        int* m = &spans.items[at];
+        dest = regexp_put(dest, wide, s, last, (uint)m[0]);
+        foreach (&p : pieces) {
+            if (p.kind == TEXT) {
+                dest = regexp_put(dest, wide, rep, p.a, p.b);
+                continue;
+            }
+            uint from;
+            uint to;
+            regexp_piece_range(p, m, len, &from, &to);
+            dest = regexp_put(dest, wide, s, from, to);
+        }
+        last = (uint)m[1];
+    }
+    regexp_put(dest, wide, s, last, len);
+    if (interned) return heap.str_intern_units({ .ptr = &short_buf, .len = (uint)total, .wide = wide });
     out.finish_data();
     heap.large_string_register(out);
     return out;
