@@ -4030,7 +4030,7 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
 fn void Heap.release_string(&self, hstring::HString* s) @inline {
     if (s.refcount == types::STRING_PINNED_REFCOUNT) return;
     uint table_reference = s.flags.is_interned ? 1u : 0u;
-    if (--s.refcount <= table_reference) self.zct_push(s);
+    if (--s.refcount <= table_reference && !s.flags.zct_queued) self.zct_push(s);
 }
 
 // ============================================================================
@@ -4319,7 +4319,7 @@ fn void Heap.move_tval_ref(&self, TVal* dst, TVal* src) @inline {
     TVal value = *src;
     *dst = value;
     src.set_undefined();
-    if (src_counted && !dst_counted) self.decref_tval(&value);
+    if (src_counted && !dst_counted && value.is_refcounted()) self.release_string((HString*)value.get_heapptr());
 }
 
 fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
