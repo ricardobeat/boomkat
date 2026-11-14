@@ -1663,11 +1663,12 @@ fn bool OptBuild.window_copy(&self, uint ra, char cc, uint* node = null) {
     return true;
 }
 
-// Whether the instruction being lowered has been cached for a string key.
+// Whether the instruction being lowered has been cached for a string key, or met a key no int32.
 fn bool OptBuild.string_keyed(&self) {
     CompiledFunction* f = self.cur_f();
     if (f.ic_entries == null) return true;
-    return ((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1].key.borrow() != null;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+    return ic.key.borrow() != null || (ic.feedback & hobject::FB_KEY) != 0;
 }
 
 // Whether register `r` can be an element index: an INT32 node, or the window while the
@@ -1717,7 +1718,7 @@ fn char OptBuild.equality_cc(&self, uint kind, uint rb, uint rc, long* imm, uint
     return kind >= 2 ? (char)(kind + 2) : (char)(kind | (id << WINDOW_CONST_SHIFT));
 }
 
-// Store the VALUE node of register `r` to its window slot if it is dirty.
+// Store the node of register `r` to its window slot if it is dirty.
 fn void OptBuild.publish_value(&self, uint r) {
     if (!self.cur[r].dirty) return;
     self.add(OptOp.STORE_VALUE, OptRep.NONE, self.cur[r].node, NO_NODE, (long)r);
@@ -2397,7 +2398,13 @@ fn void OptBuild.elem_fact(&self, uint r, uint n, bool store) {
     if (r >= self.nregs) return;
     char need = store ? ELEM_ARRAY_STORE : ELEM_ARRAY;
     if (self.fact_elem[r] >= need) self.g.nodes[n].cc |= ELEM_KNOWN;
-    if (opt_elem_arrays_only(self.cur_f(), self.next_pc - 1)) self.fact_elem[r] = max(self.fact_elem[r], need);
+    // A read that has met a string proves nothing of its receiver.
+    CompiledFunction* f = self.cur_f();
+    if (!store && f.ic_entries != null && (((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1].feedback & hobject::FB_STRING_RECV) != 0) {
+        if ((self.g.nodes[n].cc & ELEM_KNOWN) == 0) self.g.nodes[n].cc |= ELEM_STRING;
+        return;
+    }
+    if (opt_elem_arrays_only(f, self.next_pc - 1)) self.fact_elem[r] = max(self.fact_elem[r], need);
 }
 
 // GETPROP of an element at an integer index, from an object in the window.
@@ -2920,7 +2927,7 @@ fn bool OptBuild.generic(&self) {
             case RET: case RETUNDEF: case SETALEN: case INITPROP: case INITELEM: case CHKOBJ: case REQUIRE_OBJ:
             case NOP: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL: case CHKGLOBALVAR:
             case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW: case THROW_UNRESOLVED:
-            case SETCELL: case DECLVAR: case DECLVAR_HOIST:
+            case SETCELL: case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC:
                 break;
             default:
                 return self.refuse_op(op);
@@ -3000,7 +3007,11 @@ fn bool OptBuild.equality_branch(&self) {
     if (numeric_b || numeric_c) {
         if (self.holds_value(rb)) self.publish_value(rb);
         if (self.holds_value(rc)) self.publish_value(rc);
-        return unary ? self.refuse_op(op) : self.numeric_equality();
+        if (unary) return self.refuse_op(op);
+        if (self.arith_rep(rb, rc) != OptRep.NONE) return self.numeric_equality();
+        // A number the test has met against a string or an object: both compared in the window.
+        self.publish_value(rb);
+        self.publish_value(rc);
     }
     long imm;
     uint xb;
@@ -3226,7 +3237,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 why = OptInlineReject.THIS;
             case LDCONST:
                 uint index = self.w.get_bc();
-                ok = index < cf.const_count && (cf.constants[index].is_fastint() || cf.constants[index].is_number());
+                ok = index < cf.const_count && (cf.constants[index].is_numeric() || cf.constants[index].is_string());
                 why = OptInlineReject.CONSTANT;
             default:
                 break;
@@ -4492,6 +4503,12 @@ fn bool OptBuild.lower_op(&self) {
                 }
             } else if (v.is_number()) {
                 self.set(ra, self.const_f64(v.get_number()));
+            } else if (v.is_string() && self.cur_fn != 0 && ra < self.nregs) {
+                // An inlined body's register may lie beyond the caller's frame: a VALUE node, which
+                // the constant table keeps alive and a store into the heap counts.
+                uint n = self.add(OptOp.CONST_OBJ, OptRep.VALUE, NO_NODE, NO_NODE, (long)v.bits);
+                self.g.nodes[n].counted = true;
+                self.set(ra, n);
             } else if (v.is_string() && ra < self.nregs) {
                 // The constant table counts the string, so the slot takes it as the baseline's store does.
                 uint n = self.add(OptOp.STORE_CONST, OptRep.NONE, NO_NODE, NO_NODE, (long)v.bits);

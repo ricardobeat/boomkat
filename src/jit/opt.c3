@@ -470,6 +470,45 @@ fn bool opt_has_field_feedback(CompiledFunction* f) {
     return false;
 }
 
+fn bool opt_call_op(Opcode op) {
+    switch (op) {
+        case CALL: case CALL_PROP: case CALL_UNDEF_THIS: case NEW_OBJ: case CALL_S: case NEW_OBJ_S:
+        case CALL_VAR: case CALL_GLOBAL:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Why the call at word `i` of `f` is not one opt_direct_targets proves, for --opt-log.
+fn String opt_generic_reason(Heap* h, CompiledFunction* f, uint i) {
+    Instruction w = f.code[i];
+    bool var_call = w.op == Opcode.CALL_VAR || w.op == Opcode.CALL_GLOBAL;
+    if (w.op != Opcode.CALL && w.op != Opcode.CALL_UNDEF_THIS && !var_call) return "opcode";
+    if (opt_site_banned(f, f, i)) return "banned";
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
+    if ((ic.feedback & hobject::FB_CALL) == 0) return "no-feedback";
+    if ((ic.feedback & hobject::FB_POLY) != 0) return "megamorphic";
+    if ((ic.feedback & hobject::FB_DOTCALL) != 0) return "dotcall";
+    uint count = hobject::ic_call_count(ic);
+    uint nargs = var_call ? w.b : w.c;
+    for (uint k = 0; k < count; k++) {
+        uint index = hobject::ic_call_target(ic, k);
+        if ((index & hobject::IC_BUILTIN_TARGET) != 0) {
+            uint b = index & ~hobject::IC_BUILTIN_TARGET;
+            if (b >= builtins::Builtin::values.len) return "builtin";
+            return string::tformat("builtin%s:%s", builtins::leaf_of(b) == null ? "" : "-leaf", (builtins::Builtin)b);
+        }
+        if (index >= h.compiled_func_count) return "target-index";
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[index];
+        if (cf == null) return "target-gone";
+        if (cf.realm != f.realm) return "realm";
+        if (!call_entry_eligible(cf)) return "no-call-entry";
+        if (!entry_takes(cf, nargs, w.op != Opcode.CALL)) return "entry-refuses-args";
+    }
+    return "operands";
+}
+
 // The functions optimized code enters the call at word `i` of `f` into directly
 // (OptBuild.direct_callee): every one its feedback names, each with a call entry that takes the
 // call (entry_takes). Several only with register calls, which enter the function the callee holds.
@@ -877,6 +916,14 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, Activation* act, uint osr_
             }
         }
         io::eprintfn(" calls reg %d direct %d generic %d", calls[0], calls[1], calls[2]);
+        foreach (&nd : g.nodes) {
+            if (nd.op != OptOp.GENERIC || nd.key != null || nd.fidx != 0) continue;
+            Instruction w = f.code[(uint)nd.imm];
+            if (!opt_call_op(w.op)) continue;
+            io::eprintf("opt generic-call ");
+            opt_log_fn(f);
+            io::eprintfn(" +%d %s %s", nd.imm, w.op, opt_generic_reason(h, f, (uint)nd.imm));
+        }
     }
     return true;
 }
@@ -1051,6 +1098,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     // Feedback the build had not seen makes it rebuild at once, as an unprofiled site does.
     bool widened = (reason == OptExit.NOT_INT32.ordinal || reason == OptExit.NOT_NUMBER.ordinal) && oc.f.ic_entries != null
         && opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
+    if (reason == OptExit.SLOW_PATH.ordinal && oc.f.ic_entries != null) widened = widened || opt_note_string_elem(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
     if (reason == OptExit.UNPROFILED.ordinal || reason == OptExit.WATCH.ordinal || widened) {
         opt_relearn(h, oc);
@@ -1093,6 +1141,16 @@ fn bool opt_note_proto_exit(Dispatch* ds, CompiledFunction* f, uint pc) {
     return vm::ic_note_proto_read(ds.heap, &((hobject::ICEntry*)f.ic_entries)[d.payload_pc], (HObject*)recv.get_heapptr());
 }
 
+// A slow path of the element read at word `pc` of `f` taken for a string receiver: the rebuild
+// reads its units too (OptCg.string_elem). True when that is new.
+fn bool opt_note_string_elem(Dispatch* ds, CompiledFunction* f, uint pc) {
+    if (f.code[pc].op != Opcode.GETPROP || !ds.regs_base[f.code[pc].b].is_string()) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[pc];
+    if ((ic.feedback & hobject::FB_STRING_RECV) != 0) return false;
+    ic.feedback |= hobject::FB_STRING_RECV;
+    return true;
+}
+
 // OR the classes of the operands the instruction at word `pc` of `f` reads from the window into its
 // feedback, for the instructions whose feedback the optimizer reads.
 fn bool opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reason) {
@@ -1100,13 +1158,16 @@ fn bool opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reaso
     if (!d.valid) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.payload_pc];
     char before = ic.feedback;
+    TVal* regs = ds.regs_base;
     if (!vm::has_feedback(d.insn.op)) {
-        // A typed load (an element, field, closure or global read) found a value its int32 node
-        // cannot hold: the rebuild reads it as a double (OptBuild.typed_load).
-        if (reason == OptExit.NOT_INT32.ordinal) ic.feedback |= hobject::FB_DBL;
+        if (reason != OptExit.NOT_INT32.ordinal) return false;
+        // An element access whose key was no int32: the rebuild reads it by key (OptBuild.index_ok).
+        // Else a typed load (an element, field, closure or global read) found a value its int32
+        // node cannot hold, which the rebuild reads as a double (OptBuild.typed_load).
+        TVal* key = d.insn.op == Opcode.GETPROP ? regs + d.insn.c : (d.insn.op == Opcode.PUTPROP ? regs + d.insn.b : null);
+        ic.feedback |= key != null && !key.is_fastint() ? hobject::FB_KEY : hobject::FB_DBL;
         return ic.feedback != before;
     }
-    TVal* regs = ds.regs_base;
     TVal imm;
     char bits;
     switch (d.insn.op) {

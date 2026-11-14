@@ -1005,6 +1005,39 @@ $endif
     return (*fo.extra_ptr()).func.builtin_fn_index;
 }
 
+// Element `idx` of the string `recv`, for an element read optimized code took for an array's: the
+// cached one-unit string, which is pinned, or 0 for any other receiver, index or unit.
+fn ulong jit_string_elem(Heap* h, ulong recv, long idx) {
+$if types::USE_NANBOX:
+    TVal v = { .bits = recv };
+    if (!v.is_string()) return 0;
+    HString* s = (HString*)v.get_heapptr();
+    if (s == null || s.is_symbol() || idx < 0 || idx >= (long)s.unit_len()) return 0;
+    uint unit = s.unit_at((uint)idx);
+    if (unit >= heap::UNIT_STR_CACHE_SIZE || h.unit_strs[unit] == null) return 0;
+    TVal r;
+    r.set_string_borrowed(h.unit_strs[unit]);
+    return r.bits;
+$else
+    return 0;
+$endif
+}
+
+// The equality test generated code leaves undecided (Asm.equality's slow cases), of the values in
+// `a` and `b`, loose when `loose`: 1 or 0, or 2 when a loose test meets an object or a BigInt,
+// whose coercion can run code or allocate. Neither the frame state nor the collector is involved.
+fn long jit_equality(Dispatch* ds, ulong a, ulong b, long loose) {
+$if types::USE_NANBOX:
+    TVal x = { .bits = a };
+    TVal y = { .bits = b };
+    if (loose == 0) return (long)strict_eq(&x, &y);
+    if (x.get_tag() != y.get_tag() && (x.is_object() || y.is_object() || x.is_bigint() || y.is_bigint())) return 2;
+    return (long)abstract_eq(ds.vm, &x, &y);
+$else
+    return 2;
+$endif
+}
+
 // A builtin call a leaf entry answers (builtins::leaf_of), from generated code, over the window
 // `regs`: `meta` holds the argument count (bits 0-15), the callee register (16-31), the result
 // register (32-47), and bit 63 for a call whose receiver is undefined. 1 when the leaf answered,
