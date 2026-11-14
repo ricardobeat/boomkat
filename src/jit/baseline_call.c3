@@ -122,6 +122,27 @@ fn bool entry_forwards(CompiledFunction* f) @inline {
         && f.arguments_reg == (uint)f.num_formals + bytecode::FORWARD_ARGS_PAD;
 }
 
+// Whether the call entry of `f` makes its arguments object (jit_entry_arguments): a register
+// `arguments` past the formals, which a forwarding function keeps as the count instead.
+fn bool entry_builds_arguments(CompiledFunction* f) @inline {
+    return f.arguments_in_reg() && !f.call_flags.forward_args && f.arguments_reg >= f.num_formals;
+}
+
+// The arguments object of a call the call entry of its function took (entry_builds_arguments),
+// made from the `argc` arguments the frame's window starts with as bind_register_arguments makes
+// it on the helper path. The entry cleared the slots past them; those past the formals are the
+// body's locals, which start undefined once copied.
+fn void jit_entry_arguments(Dispatch* ds, ulong argc) {
+    Activation* act = ds.act;
+    CompiledFunction* f = (CompiledFunction*)act.func;
+    TVal* bottom = act.bottom;
+    vm::bind_register_arguments(ds.vm, act, f, (HObject*)bottom[-2].get_heapptr(), bottom, (uint)argc);
+    uint end = min((uint)argc, f.num_regs + vm::FRAME_SCRATCH_SLOTS);
+    for (uint i = f.num_formals; i < end; i++) {
+        if (i != f.arguments_reg) bottom[i].set_undefined();
+    }
+}
+
 fn CallLayout* call_layout() {
     if (call_layout_ready) return &call_layout_data;
     CallLayout* l = &call_layout_data;
@@ -195,7 +216,7 @@ fn CallLayout* call_layout() {
 // makes the parameters outnumber it, leaves the call to vm::jit_call.
 fn bool call_entry_eligible(CompiledFunction* f) {
     f.classify_lean_call();
-    return (f.call_flags.lean_call || f.env_call_ok(false)) && (!f.arguments_in_reg() || entry_forwards(f)) && f.call_flags.trivial_call == 0
+    return (f.call_flags.lean_call || f.env_call_ok(false)) && (!f.arguments_in_reg() || entry_forwards(f) || entry_builds_arguments(f)) && f.call_flags.trivial_call == 0
         && (f.num_args == f.num_formals || f.call_flags.rest_length_only)
         && f.ic_entries != null && f.var_ic_entries != null && f.num_formals <= f.num_regs
         && !is_top_level(f);
@@ -344,6 +365,9 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     }
     int undef = packed;
     int code = R2;
+    // The count jit_entry_arguments takes, kept past the reuse of its register.
+    bool builds = entry_builds_arguments(f);
+    if (builds) sljit_emit_op2(c, SLJIT_AND, vm, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
     bool takes_this = !f.call_flags.ignores_this;
     if (takes_this) sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM | CALL_CONSTRUCT);
     self.mov(undef, 0, SLJIT_IMM, K_UNDEF);
@@ -373,13 +397,34 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     // Locals and the scratch slots start undefined, surplus arguments included
     // unless they are kept for forwarding.
     uint from = forwards ? f.arguments_reg + 1 : f.num_formals;
-    self.mov(R2, 0, undef, 0);
-    self.clear_slots(bottom, from, clear_end, undef, R2, R4, R1);
+    if (builds) {
+        // The surplus arguments wait for jit_entry_arguments: the slots past them, or past the
+        // formals, are cleared from a start known at run time. R1 keeps the count for the call.
+        self.mov(R1, 0, vm, 0);
+        self.mov(R4, 0, vm, 0);
+        void* past = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, from);
+        self.mov(R4, 0, SLJIT_IMM, from);
+        sljit_set_label(past, sljit_emit_label(c));
+        void* top = sljit_emit_label(c);
+        void* done = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, clear_end);
+        self.mov(mem_index(bottom, R4), 3, SLJIT_IMM, K_UNDEF);
+        sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
+        sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), top);
+        sljit_set_label(done, sljit_emit_label(c));
+    } else {
+        self.mov(R2, 0, undef, 0);
+        self.clear_slots(bottom, from, clear_end, undef, R2, R4, R1);
+    }
     if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, k_int_op(), k_int_w());
     // The VM's frame state, the value stack's top included, waits for vm::jit_sync. The body's record and window
     // registers; the heap and thunk table registers are the caller's.
     self.mov(self.la, 0, la, 0);
     self.mov(self.regs, 0, bottom, 0);
+    if (builds) {
+        self.mov(m | ds, self.pc_off, SLJIT_IMM, (long)(usz)f.code);
+        self.mov(R0, 0, ds, 0);
+        self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&jit_entry_arguments);
+    }
     // Optimized code records the entry for the eviction sweep (opt_make_room).
     if (touch) self.mov(m, (long)(usz)&bc.touched, SLJIT_IMM, 1, SLJIT_MOV_U8);
     // The count toward optimizing the function and the call-time safepoint run in the frame, so
