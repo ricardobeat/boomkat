@@ -36,8 +36,11 @@ fn void promise_init(HObject* promise) {
 }
 
 // Get the promise state from HObjectExtra.promise.state.
+// A combinator's capability object is a native promise only for the Promise
+// constructor; for a custom one it is whatever that returned, which has no
+// promise state, and settles through the capability's functions alone.
 fn uint promise_get_state(HObject* promise, uint default_state) {
-    if (promise == null) return default_state;
+    if (promise == null || promise.flags.obj_class != hobject::ObjClass.PROMISE) return default_state;
     return (*promise.extra_ptr()).promise.state;
 }
 
@@ -50,8 +53,7 @@ fn uint promise_get_state(HObject* promise, uint default_state) {
 // microtask drain reaches the checkpoint reporter. The host transition hook
 // runs synchronously so its event loop can track late handler attachments.
 fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
-    if (promise == null) return;
-    if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
+    if (promise_get_state(promise, ~0u) != PROMISE_PENDING) return;
     heap.tval_copy_ref(&(*promise.extra_ptr()).promise.result, val);
     heap.write_barrier(promise, *val);
     (*promise.extra_ptr()).promise.state = state;

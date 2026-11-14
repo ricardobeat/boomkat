@@ -202,7 +202,7 @@ struct NewSite {
     ulong epoch;
     // The byte offset of the `prototype` slot in the constructor's values.
     ulong proto_off;
-    // The object's block: its PagePool's offset in the Heap, its GcBits and its inline capacity.
+    // The object's block: its ObjectPool's offset in the Heap, its GcBits and its inline capacity.
     ulong pool;
     uint gc;
     uint capacity;

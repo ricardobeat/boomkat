@@ -884,13 +884,26 @@ struct Heap {
     // Flags
     uint flags;
 
-    // Marking and teardown iterate these vectors. Sweeping takes ownership
-    // of a generation's vector; new allocations and survivors go into the
-    // emptied partner, so sweep-time allocations cannot enter its snapshot.
+    // Marking and teardown iterate these vectors. A sweep compacts each swept
+    // vector in place: the survivors before gc_sweep_write, the unvisited
+    // nodes from gc_sweep_read on. The young vector is swapped for its empty
+    // partner first, so sweep-time allocations cannot enter the snapshot; its
+    // survivors are spliced onto the old vector when it is done.
     Vec{HeapHeader*} objects_young;
     Vec{HeapHeader*} objects_old;
     Vec{HeapHeader*} gc_sweep_young;
-    Vec{HeapHeader*} gc_sweep_old;
+    Vec{HeapHeader*}* gc_sweep_vec;
+    sz gc_sweep_read;
+    sz gc_sweep_write;
+    // Pooled objects are swept a page at a time (pagepool::ObjectPool): the
+    // page's bitmaps first, then the teardown of its dead objects.
+    usz gc_sweep_pool;
+    pagepool::ObjPage* gc_sweep_page;
+    usz gc_sweep_word;
+    pagepool::Bitmap gc_sweep_dead;
+    uint gc_pool_live;            /// Live pooled objects after the last sweep of each page
+    uint gc_major_epoch;          /// Advances with every major; see ObjPage.mark_epoch
+    usz gc_alloc_bitmap;          /// ObjPage offset of the bitmap a new object is marked in
 
     // String interning table (open-addressing)
     HString**    str_table;
@@ -960,6 +973,10 @@ struct Heap {
     GeneratorState* gc_gen_retired;
     GcGeneratorReleaseCursor gc_generator_release_cursor;
     bool gc_mark_epoch;
+    // Advances with every cycle, modulo 256; a node is marked when GcBits.mark
+    // equals it. At most GC_MAX_MINORS minors separate two majors, so a stale
+    // mark never comes round to a major's epoch. A word, for generated code.
+    uint gc_epoch;
     bool gc_oracle_running;
     bool gc_in_step;
     uint gc_root_stage;
@@ -1435,16 +1452,18 @@ struct Heap {
     //   big:   the two payloads that exceed the small block: ITERATOR_HELPER
     //          and the Temporal classes
     long gc_trace_allocs;
-    pagepool::PagePool obj_pool_plain;
-    pagepool::PagePool obj_pool_compact;
-    pagepool::PagePool[hobject::SHAPED_INLINE_POOL_COUNT] obj_pool_shaped;
-    pagepool::PagePool obj_pool_array;
-    pagepool::PagePool obj_pool_dense_array;
-    pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
-    pagepool::PagePool obj_pool_gs;
-    pagepool::PagePool obj_pool_small;
-    pagepool::PagePool obj_pool_func;
-    pagepool::PagePool obj_pool_big;
+    pagepool::ObjectPool obj_pool_plain;
+    pagepool::ObjectPool obj_pool_compact;
+    pagepool::ObjectPool[hobject::SHAPED_INLINE_POOL_COUNT] obj_pool_shaped;
+    pagepool::ObjectPool obj_pool_array;
+    pagepool::ObjectPool obj_pool_dense_array;
+    pagepool::ObjectPool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
+    pagepool::ObjectPool obj_pool_gs;
+    pagepool::ObjectPool obj_pool_small;
+    pagepool::ObjectPool obj_pool_func;
+    pagepool::ObjectPool obj_pool_big;
+    // The object pools above, in one table for the sweep's cursor.
+    pagepool::ObjectPool*[OBJ_POOL_COUNT] obj_pools;
 
     // One PagePool per POOL_CLASS_SIZES entry, shared by property blocks
     // and string bodies. Both are small, high-churn allocations; keeping them
@@ -1854,25 +1873,7 @@ fn Heap*? create(
 
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
-    {
-        h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
-        h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
-        foreach (i, &pool : h.obj_pool_shaped) {
-            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
-        }
-        h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
-        h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
-        foreach (i, &pool : h.obj_pool_inline_arrays) {
-            pool.init((sz)hobject::inline_array_alloc_size((uint)i + 1));
-        }
-        h.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
-        h.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
-        h.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
-        h.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
-        for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-            h.small_pools[i].init((sz)POOL_CLASS_SIZES[i]);
-        }
-    }
+    h.init_pools();
 
     // Pre-intern well-known strings
     h.init_builtin_strs();
@@ -2580,10 +2581,7 @@ fn void Heap.destroy(&self) {
         self.zct_set = null;
         self.zct_set_mask = 0;
     }
-    if (self.gc_free_object != null) {
-        hobject::hobject_free(self.gc_free_object, self, true);
-        self.gc_free_object = null;
-    }
+    self.free_sweep_pending();
 
     HeapObjectCursor objects;
     for (HeapHeader* cur = self.next_object(&objects); cur != null;
@@ -2594,7 +2592,8 @@ fn void Heap.destroy(&self) {
             self.free_func(self.heap_udata, cur);
         }
     }
-    for (uint i = 0; i < 4; i++) self.object_list(i).free();
+    for (uint i = 0; i < OBJECT_LIST_COUNT; i++) self.object_list(i).free();
+    self.gc_sweep_vec = null;
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2749,7 +2748,7 @@ fn void Heap.destroy(&self) {
     esm::free_defined_modules(self);
 
     // Releases every pool page back to libc.
-    self.@each_pool(; pagepool::PagePool* pool) { pool.free(); };
+    self.free_pools();
 
     self.gc_roots.free();
 
@@ -2820,10 +2819,7 @@ fn void Heap.reset(&self) {
 
     // Same teardown mode as destroy(): object teardown skips its string decref loop.
     self.tearing_down = true;
-    if (self.gc_free_object != null) {
-        hobject::hobject_free(self.gc_free_object, self, true);
-        self.gc_free_object = null;
-    }
+    self.free_sweep_pending();
 
     HeapObjectCursor objects;
     for (HeapHeader* cur = self.next_object(&objects); cur != null;
@@ -2834,7 +2830,10 @@ fn void Heap.reset(&self) {
             self.free_func(self.heap_udata, cur);
         }
     }
-    for (uint i = 0; i < 4; i++) self.object_list(i).clear();
+    for (uint i = 0; i < OBJECT_LIST_COUNT; i++) self.object_list(i).clear();
+    self.gc_sweep_vec = null;
+    // The object pages still hold the live bits of the objects freed above.
+    foreach (pool : self.obj_pools) pool.free();
     self.run_deferred_finalizers();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
@@ -2963,6 +2962,7 @@ fn void Heap.reset(&self) {
     self.gc_running       = false;
     self.gc_oracle_running = false;
     self.gc_mark_epoch = false;
+    self.gc_epoch = 0;
     self.env_mark_epoch = false;
     self.env_alloc_budget = 1024;
     self.mem_check_budget = MEM_CHECK_INTERVAL;
@@ -3000,6 +3000,7 @@ fn void Heap.reset(&self) {
     self.gc_kind = GcKind.MAJOR;
     self.gc_minors = 0;
     self.gc_old_count = 0;
+    self.gc_pool_live = 0;
     self.gc_major_old_count = 0;
     self.gc_major_mark_work = 0;
     self.gc_young_kept = 0;
@@ -3163,40 +3164,8 @@ fn void Heap.reset(&self) {
     self.module_hooks = null;
     self.current_module_name = {};
 
-    // Every pool page goes back to libc, and the fresh pools start with a clean
-    // bump pointer and an empty freelist.
-    self.obj_pool_plain.free();
-    self.obj_pool_compact.free();
-    foreach (&pool : self.obj_pool_shaped) pool.free();
-    self.obj_pool_array.free();
-    self.obj_pool_dense_array.free();
-    foreach (&pool : self.obj_pool_inline_arrays) pool.free();
-    self.obj_pool_gs.free();
-    self.obj_pool_small.free();
-    self.obj_pool_func.free();
-    self.obj_pool_big.free();
-    for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-        self.small_pools[i].free();
-    }
-    {
-        self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
-        self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
-        foreach (i, &pool : self.obj_pool_shaped) {
-            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
-        }
-        self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
-        self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
-        foreach (i, &pool : self.obj_pool_inline_arrays) {
-            pool.init((sz)hobject::inline_array_alloc_size((uint)i + 1));
-        }
-        self.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
-        self.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
-        self.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
-        self.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
-        for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-            self.small_pools[i].init((sz)POOL_CLASS_SIZES[i]);
-        }
-    }
+    // Every pool page goes back to libc, and the pools start empty.
+    self.free_pools();
 
     self.init_builtin_strs();
 
@@ -3674,7 +3643,7 @@ fn HObject*? Heap.alloc_plain_object(&self, uint capacity = hobject::INLINE_PROP
     void* raw = null;
 $if !$feat(POOL_BYPASS):
     // See hobject::hobject_alloc for why debug builds skip the pools.
-    raw = hobject::plain_object_pool(self, compact, shaped).alloc_uninit();
+    raw = hobject::plain_object_pool(self, compact, shaped).alloc(self.gc_major_epoch);
 $endif
     bool from_pool = raw != null;
     if (!from_pool) {
@@ -3694,7 +3663,7 @@ $endif
 fn HObject*? Heap.alloc_inline_array(&self, uint capacity) {
     void* raw = null;
 $if !$feat(POOL_BYPASS):
-    raw = self.obj_pool_inline_arrays[capacity - 1].alloc_uninit();
+    raw = self.obj_pool_inline_arrays[capacity - 1].alloc(self.gc_major_epoch);
 $endif
     bool from_pool = raw != null;
     if (!from_pool) raw = self.alloc(hobject::inline_array_alloc_size(capacity))!;
@@ -3716,7 +3685,7 @@ fn HObject*? Heap.alloc_inline_array_uninit(&self, uint named, uint elements) {
     uint capacity = named + elements;
     void* raw = null;
 $if !$feat(POOL_BYPASS):
-    raw = self.obj_pool_inline_arrays[capacity - 1].alloc_uninit();
+    raw = self.obj_pool_inline_arrays[capacity - 1].alloc(self.gc_major_epoch);
 $endif
     bool from_pool = raw != null;
     if (!from_pool) raw = self.alloc(hobject::inline_array_alloc_size(capacity))!;
@@ -3822,6 +3791,7 @@ fn void? Heap.install_shape(&self, HObject* obj, uint shape_id, uint count) @inl
         void* storage = self.pool_alloc((usz)count * hobject::PropValue::size)!;
         obj.props = storage;
         obj.prop_capacity = count;
+        needs_teardown(obj);
     }
     hobject::fill_undefined(obj.prop_values(), count);
     obj.prop_count = count;
@@ -4363,29 +4333,86 @@ fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst,
 // Managed-object vectors
 // ============================================================================
 
-struct HeapObjectCursor { uint list; sz index; }
+struct HeapObjectCursor {
+    uint list;
+    sz index;
+    usz pool;
+    pagepool::ObjPage* page;
+    usz word;
+    ulong bits;
+}
+
+const uint OBJECT_LIST_COUNT = 3;
+
+// Teardown frees what a sweep in progress has condemned but not yet released:
+// the object under bounded teardown and the dead objects of the page.
+fn void Heap.free_sweep_pending(&self) {
+    if (self.gc_free_object != null) {
+        hobject::hobject_free(self.gc_free_object, self, true);
+        self.gc_free_object = null;
+    }
+    pagepool::ObjPage* p = self.gc_sweep_page;
+    if (p == null) return;
+    pagepool::ObjectPool* pool = self.obj_pools[self.gc_sweep_pool];
+    for (usz w = self.gc_sweep_word; w < pagepool::BITMAP_WORDS; w++) {
+        for (ulong bits = self.gc_sweep_dead[w]; bits != 0; bits &= bits - 1) {
+            hobject::hobject_free((HObject*)pool.block_at(p, (w << 6) + (usz)bits.ctz()), self, true);
+        }
+    }
+    self.gc_sweep_page = null;
+}
 
 fn Vec{HeapHeader*}* Heap.object_list(&self, uint index) {
     switch (index) {
         case 0: return &self.objects_young;
         case 1: return &self.objects_old;
-        case 2: return &self.gc_sweep_young;
-        default: return &self.gc_sweep_old;
+        default: return &self.gc_sweep_young;
     }
 }
 
+// Every node once: the vectors, skipping the gap a sweep in progress has opened
+// in the one it compacts, then the allocated blocks of every object page. The
+// dead objects of a page whose teardown is pending are not among them.
 fn HeapHeader* Heap.next_object(&self, HeapObjectCursor* cursor) {
-    while (cursor.list < 4) {
+    while (cursor.list < OBJECT_LIST_COUNT) {
         Vec{HeapHeader*}* objects = self.object_list(cursor.list);
+        if (objects == self.gc_sweep_vec && cursor.index == self.gc_sweep_write) cursor.index = self.gc_sweep_read;
         if (cursor.index < objects.len) return (*objects)[cursor.index++];
         cursor.list++;
         cursor.index = 0;
     }
+    while (cursor.pool < OBJ_POOL_COUNT) {
+        pagepool::ObjectPool* pool = self.obj_pools[cursor.pool];
+        if (cursor.bits != 0) {
+            usz g = (cursor.word << 6) + (usz)cursor.bits.ctz();
+            cursor.bits &= cursor.bits - 1;
+            return (HeapHeader*)pool.block_at(cursor.page, g);
+        }
+        if (cursor.page == null) {
+            pool.sync();
+            cursor.page = pool.pages;
+            cursor.word = 0;
+        } else if (++cursor.word == pagepool::BITMAP_WORDS) {
+            cursor.page = cursor.page.next;
+            cursor.word = 0;
+        }
+        if (cursor.page == null) {
+            cursor.pool++;
+            continue;
+        }
+        cursor.bits = pool.allocated_word(cursor.page, cursor.word);
+    }
     return null;
 }
 
+// A pooled object is found through its page. Any other node joins the young
+// vector carrying the current epoch: marked while a cycle is marking, and
+// unmarked for the next cycle otherwise.
 fn void Heap.register_allocation(&self, HeapHeader* header) @inline {
-    push_header(&self.objects_young, header);
+    if (!is_pooled(header)) {
+        push_header(&self.objects_young, header);
+        header.gc.mark = (char)self.gc_epoch;
+    }
     self.shade_new_header(header);
 }
 
@@ -4402,15 +4429,15 @@ macro void push_header(Vec{HeapHeader*}* list, HeapHeader* header) {
 }
 
 fn void Heap.prepare_object_sweep(&self) {
-    assert(self.gc_sweep_young.len == 0 && self.gc_sweep_old.len == 0);
+    assert(self.gc_sweep_young.len == 0 && self.gc_sweep_page == null);
+    foreach (pool : self.obj_pools) pool.begin_sweep(self.gc_kind == GcKind.MAJOR);
+    self.gc_sweep_pool = 0;
     Vec{HeapHeader*} young = self.objects_young;
     self.objects_young = self.gc_sweep_young;
     self.gc_sweep_young = young;
-    if (self.gc_kind == GcKind.MAJOR) {
-        Vec{HeapHeader*} old = self.objects_old;
-        self.objects_old = self.gc_sweep_old;
-        self.gc_sweep_old = old;
-    }
+    self.gc_sweep_vec = self.gc_kind == GcKind.MAJOR ? &self.objects_old : &self.gc_sweep_young;
+    self.gc_sweep_read = 0;
+    self.gc_sweep_write = 0;
 }
 
 // ============================================================================
@@ -4500,10 +4527,12 @@ fn void Heap.watched_write(&self) @noinline {
 
 /**
  * Shade a newly stored traced value while incremental marking is active.
- * Every pointer store, including construction stores, uses this barrier.
+ * Every pointer store, including construction stores, uses this barrier, as
+ * does every store of a counted string, which the owner's death releases.
  */
 fn void Heap.write_barrier(&self, HObject* owner, TVal v) @inline {
     if (owner != null && owner.gc.watched) self.watched_write();
+    if (v.is_refcounted()) needs_teardown(owner);
     if (self.gc_phase == GcPhase.MARK) {
         if (v.is_traced()) self.shade_value(v);
     } else if (owner != null && owner.gc.old && self.is_young_value(v)) {
@@ -4566,7 +4595,7 @@ fn void Heap.restart_vm_root_scan(&self) @inline {
 
 fn void Heap.shade_new_header(&self, HeapHeader* value) @inline {
     if (self.gc_phase != GcPhase.MARK || value == null) return;
-    value.set_reachable();
+    self.gc_set_marked(value);
     if (value.is_object()) self.gray_push((HObject*)value);
 }
 
@@ -5380,7 +5409,7 @@ fn void Heap.prune_var_ic_entries(&self) {
                 && hobject::env_record_is_allocated(vie.search_head)
                 && hobject::env_record_get_epoch(vie.search_head) == self.env_mark_epoch) {
                 HObject* b = (HObject*)vie.bindings;
-                if (b != null && ((HeapHeader*)b).is_reachable()
+                if (b != null && self.gc_is_marked((HeapHeader*)b)
                     && hobject::env_record_bindings(vie.env) == b) {
                     survive = true;
                 }
@@ -5717,7 +5746,7 @@ $if $feat(HEAP_VERIFY):
             HObject* obj = (HObject*)walk;
             // Dying generators may hold children collected in the same sweep.
             if (obj.flags.obj_class == ObjClass.GENERATOR
-                && (walk.is_reachable() || walk.is_temproot())) {
+                && (self.gc_is_marked(walk) || walk.is_temproot())) {
                 GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
                 if (gs != null && gs.saved_regs != null) {
                     for (uint i = 0; i < gs.num_regs; i++) {
@@ -5743,19 +5772,42 @@ $endif
 // GC sweep
 // ============================================================================
 
-// Every page pool of the heap.
-macro void Heap.@each_pool(&self; @body(pagepool::PagePool* pool)) {
-    @body(&self.obj_pool_plain);
-    @body(&self.obj_pool_compact);
-    foreach (&pool : self.obj_pool_shaped) @body(pool);
-    @body(&self.obj_pool_array);
-    @body(&self.obj_pool_dense_array);
-    foreach (&pool : self.obj_pool_inline_arrays) @body(pool);
-    @body(&self.obj_pool_gs);
-    @body(&self.obj_pool_small);
-    @body(&self.obj_pool_func);
-    @body(&self.obj_pool_big);
-    foreach (&pool : self.small_pools) @body(pool);
+const usz OBJ_POOL_COUNT = 8 + hobject::SHAPED_INLINE_POOL_COUNT + hobject::ARRAY_INLINE_MAX_CAPACITY;
+
+fn void Heap.init_pools(&self) {
+    usz n = 0;
+    self.obj_pools[n++] = &self.obj_pool_plain;
+    self.obj_pools[n++] = &self.obj_pool_compact;
+    foreach (&pool : self.obj_pool_shaped) self.obj_pools[n++] = pool;
+    self.obj_pools[n++] = &self.obj_pool_array;
+    self.obj_pools[n++] = &self.obj_pool_dense_array;
+    foreach (&pool : self.obj_pool_inline_arrays) self.obj_pools[n++] = pool;
+    self.obj_pools[n++] = &self.obj_pool_gs;
+    self.obj_pools[n++] = &self.obj_pool_small;
+    self.obj_pools[n++] = &self.obj_pool_func;
+    self.obj_pools[n++] = &self.obj_pool_big;
+    assert(n == OBJ_POOL_COUNT);
+    self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
+    self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+    foreach (i, &pool : self.obj_pool_shaped) {
+        pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+    }
+    self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
+    self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
+    foreach (i, &pool : self.obj_pool_inline_arrays) {
+        pool.init((sz)hobject::inline_array_alloc_size((uint)i + 1));
+    }
+    self.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
+    self.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
+    self.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
+    self.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
+    foreach (i, &pool : self.small_pools) pool.init((sz)POOL_CLASS_SIZES[i]);
+}
+
+// Every pool page goes back to libc; the pools stay usable.
+fn void Heap.free_pools(&self) {
+    foreach (pool : self.obj_pools) pool.free();
+    foreach (&pool : self.small_pools) pool.free();
 }
 
 // Explicit callers can finish a scheduled sweep at a quiescent boundary.
@@ -5812,7 +5864,7 @@ fn void Heap.mark_and_sweep(&self, bool safepoint, bool force_major) {
         for (HeapHeader* cur = self.next_object(&pinned_objects); cur != null;
              cur = self.next_object(&pinned_objects)) {
             if (!cur.is_temproot()) continue;
-            cur.set_reachable();
+            self.gc_set_marked(cur);
             if (cur.is_object()) self.gray_push((HObject*)cur);
         }
         hobject::env_pool_seed_or_clear_pins(self, false);

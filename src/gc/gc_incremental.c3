@@ -1,5 +1,6 @@
 module boomkat::heap;
 
+import boomkat::ast::vec;
 import boomkat::gcprofile;
 import boomkat::hobject;
 import boomkat::hstring;
@@ -43,16 +44,28 @@ fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJ
     self.gc_aux_env_cursor.started = true;
     if (kind == GcKind.MINOR) self.gc_aux_env_cursor.block = self.env_pool_blocks;
     if (kind == GcKind.MAJOR) {
+        // Every page allocation takes from has this major's marks, so new
+        // objects can be marked in the bitmap without an epoch check.
+        self.gc_major_epoch++;
+        foreach (pool : self.obj_pools) {
+            ObjPage* cur = pool.cur;
+            if (cur == null) continue;
+            cur.mark = {};
+            cur.mark_epoch = self.gc_major_epoch;
+        }
+        self.gc_alloc_bitmap = pagepool::bitmap_offset(false);
         self.gc_aux_alloc_bytes = 0;
         self.gc_young_kept = 0;
         self.gc_young_dead = 0;
     }
+    if (kind == GcKind.MINOR) self.gc_alloc_bitmap = pagepool::bitmap_offset(true);
     self.gc_phase = GcPhase.MARK;
     self.gc_running = true;
     self.gc_requested = false;
     self.gc_alloc_since_begin = 0;
     self.gc_alloc_paced = 0;
     self.gc_mark_epoch = !self.gc_mark_epoch;
+    self.gc_epoch = (self.gc_epoch + 1) & 0xFF;
     self.env_mark_epoch = !self.env_mark_epoch;
     self.mark_work_last = 0;
     self.marked_obj_count = 0;
@@ -98,8 +111,10 @@ fn bool Heap.gc_mark_stage_ready(&self, uint stage) {
     }
 }
 
-// One swept object can own a large slot array. The cursor stays on its header
-// until bounded teardown finishes, then the header itself is returned.
+// One swept object can own a large slot array. The cursor stays on it until
+// bounded teardown finishes, then its header is returned. Survivors are only
+// read: list nodes keep their place as the vector is compacted behind the read
+// cursor, and pooled ones are bits in their pages' bitmaps.
 fn void Heap.gc_sweep_objects_step(&self, uint budget) {
     while (budget > 0) {
         if (self.gc_free_object != null) {
@@ -114,48 +129,123 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
             self.gc_free_index = 0;
             continue;
         }
-        HeapHeader* cur = self.gc_sweep_old.pop() @inline
-            ?? self.gc_sweep_young.pop() @inline ?? null;
-        if (cur == null) { self.gc_sweep_stage++; return; }
-        gcprofile::gcprof_sweep_node(cur.gc.old);
-        budget--;
-        if (cur.is_reachable()) {
-            bool promoted = !cur.gc.old && !self.gc_keep_temproots;
-            cur.clear_reachable();
-            if (!self.gc_keep_temproots) cur.clear_temproot();
-            if (promoted) {
-                cur.gc.old = true;
-                self.gc_old_count++;
-                self.gc_young_kept++;
-            }
-            push_header(cur.gc.old ? &self.objects_old : &self.objects_young, cur);
-            if (cur.gc.old && cur.is_object()) {
-                HObject* owner = (HObject*)cur;
-                if (promoted || self.gc_keep_temproots || self.gc_has_host_edges(owner)) self.remember(owner);
-            }
+        if (self.gc_sweep_page != null) {
+            self.gc_sweep_page_step(&budget);
             continue;
         }
-        if (cur.gc.old) {
-            self.gc_old_count--;
-        } else {
-            self.gc_young_dead++;
-        }
-        if (self.live_obj_count > 0) self.live_obj_count--;
-        if (cur.is_object()) {
-            HObject* obj = (HObject*)cur;
-            // Freeing costs one unit per slot, as hobject_free_step charges. An
-            // object whose slots are all in its header block is freed whole.
-            uint slots = obj.prop_count + obj.array_size;
-            if (hobject::hobject_free_inline(obj, self)) {
-                budget = slots >= budget ? 0 : budget - slots;
+        if (self.gc_sweep_pool < OBJ_POOL_COUNT) {
+            ObjectPool* pool = self.obj_pools[self.gc_sweep_pool];
+            ObjPage* p = pool.queued.pop();
+            if (p == null) {
+                self.gc_sweep_pool++;
                 continue;
             }
-            self.gc_free_object = obj;
+            $if $feat(GC_VERIFY):
+                pagepool::Bitmap allocated;
+                pagepool::Bitmap teardown = p.teardown;
+                for (usz w = 0; w < pagepool::BITMAP_WORDS; w++) allocated[w] = pool.allocated_word(p, w);
+            $endif
+            SweepCounts n = pool.sweep_page(p, self.gc_kind == GcKind.MAJOR, self.gc_major_epoch, &self.gc_sweep_dead);
+            $if $feat(GC_VERIFY):
+                // A dead object reclaimed unvisited must own nothing its teardown would release.
+                for (usz w = 0; w < pagepool::BITMAP_WORDS; w++) {
+                    for (ulong clean = allocated[w] & ~p.live[w] & ~teardown[w]; clean != 0; clean &= clean - 1) {
+                        HObject* obj = (HObject*)pool.block_at(p, (w << 6) + (usz)clean.ctz());
+                        if (!hobject::owns_nothing(obj, self)) {
+                            io::eprintfn("GC_VERIFY: dead object %p (class %s) owns what its teardown releases",
+                                         obj, obj.flags.obj_class);
+                            self.fatal("GC_VERIFY: unvisited dead object owns resources");
+                        }
+                    }
+                }
+            $endif
+            self.gc_pool_live += n.kept_young;
+            self.gc_pool_live -= n.dead_old;
+            self.gc_young_kept += n.kept_young;
+            self.gc_young_dead += n.dead_young;
+            uint dead = n.dead_old + n.dead_young;
+            self.live_obj_count = self.live_obj_count > dead ? self.live_obj_count - dead : 0;
+            gcprofile::gcprof_sweep_page(dead);
+            self.gc_sweep_page = p;
+            self.gc_sweep_word = 0;
+            budget = budget > pagepool::BITMAP_WORDS / 4 ? budget - pagepool::BITMAP_WORDS / 4 : 0;
+            continue;
+        }
+        Vec{HeapHeader*}* list = self.gc_sweep_vec;
+        if (list == null) {
+            self.gc_old_count = (uint)self.objects_old.len + self.gc_pool_live;
+            self.gc_sweep_stage++;
+            return;
+        }
+        if (self.gc_sweep_read == list.len) {
+            self.gc_finish_object_list();
+            continue;
+        }
+        HeapHeader* cur = list.data[self.gc_sweep_read++];
+        gcprofile::gcprof_sweep_node(cur.gc.old);
+        budget--;
+        if (self.gc_is_marked(cur)) {
+            list.data[self.gc_sweep_write++] = cur;
+            continue;
+        }
+        if (!cur.gc.old) self.gc_young_dead++;
+        if (self.live_obj_count > 0) self.live_obj_count--;
+        if (cur.is_object()) {
+            self.gc_free_object = (HObject*)cur;
             self.gc_free_index = 0;
         } else {
             self.free_func(self.heap_udata, cur);
         }
     }
+}
+
+// Tear down the dead objects of the page being swept, then offer it for
+// allocation. An object whose slots are all in its block is released whole;
+// any other one takes the bounded teardown above.
+fn void Heap.gc_sweep_page_step(&self, uint* budget) {
+    ObjPage* p = self.gc_sweep_page;
+    ObjectPool* pool = self.obj_pools[self.gc_sweep_pool];
+    while (*budget > 0) {
+        usz w = self.gc_sweep_word;
+        if (w == pagepool::BITMAP_WORDS) {
+            pool.finish_page(p);
+            self.gc_sweep_page = null;
+            return;
+        }
+        ulong bits = self.gc_sweep_dead[w];
+        if (bits == 0) {
+            self.gc_sweep_word++;
+            continue;
+        }
+        self.gc_sweep_dead[w] = bits & (bits - 1);
+        HObject* obj = (HObject*)pool.block_at(p, (w << 6) + (usz)bits.ctz());
+        uint slots = obj.prop_count + obj.array_size;
+        if (!hobject::hobject_release_inline(obj, self)) {
+            self.gc_free_object = obj;
+            self.gc_free_index = 0;
+            return;
+        }
+        *budget = slots >= *budget ? 0 : *budget - slots - 1;
+    }
+}
+
+// The swept vector holds its survivors before the write cursor. Young
+// survivors were promoted when they were marked, so they join the old vector,
+// unless the cycle kept its temporary roots and promoted nothing.
+fn void Heap.gc_finish_object_list(&self) {
+    Vec{HeapHeader*}* list = self.gc_sweep_vec;
+    list.len = self.gc_sweep_write;
+    self.gc_sweep_read = 0;
+    self.gc_sweep_write = 0;
+    if (list == &self.objects_old) {
+        self.gc_sweep_vec = &self.gc_sweep_young;
+        return;
+    }
+    self.gc_sweep_vec = null;
+    Vec{HeapHeader*}* into = self.gc_keep_temproots ? &self.objects_young : &self.objects_old;
+    if (!self.gc_keep_temproots) self.gc_young_kept += (uint)list.len;
+    if (list.len != 0) into.push_all(list.array_view());
+    list.len = 0;
 }
 
 fn bool Heap.gc_collects_strings(&self) {
@@ -213,7 +303,8 @@ fn void Heap.gc_finish_cycle(&self) {
     // RSS includes memory the collector cannot reclaim, so the check is coarse.
     // One read is cheap next to a cycle. Checking minor cycles too keeps the
     // overshoot small while a growing heap spaces its majors out.
-    self.@each_pool(; pagepool::PagePool* pool) { pool.trim(); };
+    foreach (pool : self.obj_pools) pool.trim();
+    foreach (&pool : self.small_pools) pool.trim();
     self.check_mem_limit(0);
     if (self.accounting) self.plan_limit_gc();
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;

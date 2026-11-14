@@ -142,9 +142,9 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, heap);
     if (epoch_chain) {
         // A dictionary receiver is skipped like a prototype, and observed like one.
-        if (dict_receiver) hobj.gc.prototype_observed = true;
+        if (dict_receiver) hobj.observe_prototype();
         for (uint i = 0; i < chain_len; i++) {
-            ((HObject*)chain_protos[i]).gc.prototype_observed = true;
+            ((HObject*)chain_protos[i]).observe_prototype();
         }
         ic.chain_len = hobject::IC_CHAIN_EPOCH;
         ic.chain.epoch.value = heap.prototype_epoch;
@@ -174,8 +174,8 @@ fn bool ic_note_proto_read(Heap* heap, hobject::ICEntry* ic, HObject* hobj) {
         int idx = walk.find_prop_idx(key, heap);
         if (idx < 0) continue;
         if (walk.get_prop_flags((uint)idx, heap).is_accessor) return false;
-        for (HObject* p = hobj.prototype; p != walk; p = p.prototype) p.gc.prototype_observed = true;
-        walk.gc.prototype_observed = true;
+        for (HObject* p = hobj.prototype; p != walk; p = p.prototype) p.observe_prototype();
+        walk.observe_prototype();
         return hobject::ic_proto_add(ic, hobj.shape_id, hobj.prototype, walk, (uint)idx, heap);
     }
     return false;

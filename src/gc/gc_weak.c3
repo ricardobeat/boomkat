@@ -30,6 +30,7 @@ fn void set_weak_flag(HeapHeader* h, bool on) @inline {
         ((HString*)h).flags.weak_target = on;
     } else {
         h.gc.weak_target = on;
+        if (on) needs_teardown((HObject*)h);
     }
 }
 
@@ -116,7 +117,7 @@ fn void Heap.weak_condemn(&self) {
         WeakEntry* e = &self.weak_entries[i];
         HeapHeader* t = e.target;
         if (t == null || t.flags.htype == HType.STRING) continue;
-        if (t.is_reachable() || (t.gc.old && self.gc_kind != GcKind.MAJOR)) continue;
+        if (self.gc_is_marked(t) || (t.gc.old && self.gc_kind != GcKind.MAJOR)) continue;
         self.weak_target_died(t);
     }
 }
