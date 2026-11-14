@@ -664,7 +664,7 @@ fn bool OptBuild.region_exit_sets(&self) {
     CompiledFunction* f = self.f;
     DecodedCfg* cfg = &self.cfg;
     DecodedCfg whole;
-    if (!compiler::bytecode_cfg_build(&whole, f.code, f.code_count, self.h, budget: OPT_REGION_LIVENESS_BUDGET, resolve: true, objects: true)) return false;
+    if (!compiler::bytecode_cfg_build(&whole, f.code, f.code_count, self.h, budget: OPT_REGION_LIVENESS_BUDGET, resolve: true, objects: true, tail_calls: true)) return false;
     defer compiler::bytecode_cfg_free(&whole);
     uint words = (f.num_regs + 32) / 32;
     uint nb = whole.block_count;
@@ -693,7 +693,7 @@ fn bool OptBuild.analyze(&self) {
     CompiledFunction* f = self.f;
     OptRegion* rg = &self.g.region;
     compiler::DecodedCfgBudget budget = rg.end != 0 ? OPT_REGION_CFG_BUDGET : compiler::DEFAULT_CFG_BUDGET;
-    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, budget: budget, resolve: true, objects: true, start: rg.start, end: rg.end)) {
+    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, budget: budget, resolve: true, objects: true, start: rg.start, end: rg.end, tail_calls: true)) {
         // Name the first instruction the graph decoder does not take (--opt-log).
         for (uint pc = rg.start; pc < (rg.end != 0 ? rg.end : f.code_count);) {
             DecodedBytecode view = bytecode::decode_bytecode(f.code, f.code_count, pc);
@@ -2197,6 +2197,44 @@ fn bool OptBuild.string_regexp_call(&self) {
     return true;
 }
 
+// A CALL or CALL_UNDEF_THIS, or its tail form, of a builtin with a leaf entry (builtins::leaf_of)
+// that the site has always made, in the function's own body: a CHECK_BUILTIN of the callee, then a
+// BUILTIN_LEAF, which stores the dirty registers and reads its operands from the window. A builtin
+// never reuses the frame, so the tail form falls through to its RET.
+fn bool OptBuild.leaf_call(&self) {
+    Opcode op = compiler::tailcall_base(self.w.op);
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS) || self.wide || self.cur_fn != 0) return false;
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
+    if (builtins::leaf_of(builtin) == null || opt_site_banned(self.f, f, self.next_pc - 1)) return false;
+    uint callee = self.w.b;
+    uint ra = self.w.a;
+    if (callee + 1 + self.w.c >= self.nregs || ra >= self.nregs) return false;
+    uint fn_node = NO_NODE;
+    if (self.holds_value(callee)) {
+        fn_node = self.cur[callee].node;
+    } else if (!self.in_window(callee)) {
+        return false;
+    }
+    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, fn_node, NO_NODE, (long)builtin);
+    self.g.nodes[chk].home = callee;
+    self.snapshot(chk);
+    uint n = self.add(OptOp.BUILTIN_LEAF, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    OptNode* node = &self.g.nodes[n];
+    for (uint k = 0; k < node.dirty_count; k++) {
+        self.cur[self.g.dirty[(sz)(node.dirty_first + k)].reg].dirty = false;
+    }
+    self.kill(ra);
+    // A push or pop may have moved an array's storage.
+    self.forget_facts();
+    self.builtin_calls++;
+    return true;
+}
+
 // The Math function of builtin number `builtin`.
 fn bool opt_math_of(uint builtin, OptMath* m) {
     if (builtin >= builtins::Builtin::values.len) return false;
@@ -2861,7 +2899,8 @@ fn bool OptBuild.generic(&self) {
     Opcode op = self.w.op;
     if (!self.cur_cfg().nodes[self.insn].must_def(&def)) {
         def = NO_NODE;
-        switch (op) {
+        // A tail call that does not reuse the frame is the call it shadows.
+        switch (compiler::tailcall_base(op)) {
             // The compiler's own cells: NEWCELLS builds one, GETCELL writes A, and MOVECELL clears
             // the A it moved into the cell (its roles read A and leave the write out).
             case NEWOBJ: case NEWARR: case NEWARR_CONST: case NEWARR_FILL: case CLOSURE: case NEWREGEXP:
@@ -4640,7 +4679,12 @@ fn bool OptBuild.lower_op(&self) {
             if (self.math_call()) return true;
             if (self.regexp_call()) return true;
             if (self.string_regexp_call()) return true;
+            if (self.leaf_call()) return true;
             if (self.try_inline()) return true;
+            return self.generic();
+        case TAILCALL_CALL:
+        case TAILCALL_UNDEF_THIS:
+            if (self.leaf_call()) return true;
             return self.generic();
         case CALL_S:
             // The second half of a forwarding call its APPLY_ARGS inlined (an inlined body that

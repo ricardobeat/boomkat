@@ -261,7 +261,7 @@ fn void moveelim_init_roles() {
         // def-kill would overstate liveness at every loop header.
         r.a_write = moveelim_a_is_write(op) || op == Opcode.INC
             || op == Opcode.INC_LT || op == Opcode.DEC || op == Opcode.ADD_FUSED;
-        switch (op) {
+        switch (tailcall_base(op)) {
             case Opcode.CLASS_SCALAR_GUARD:
             case Opcode.CALL:
             case Opcode.CALL_UNDEF_THIS:
@@ -474,7 +474,9 @@ fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_
 }
 
 fn void moveelim_add_decoded_uses_general(DecodedInsn ins, RegSet* live, bool mark_call_windows) {
-    Opcode op = ins.op;
+    // A tail call reads what the call it shadows reads.
+    Opcode op = tailcall_base(ins.op);
+    ins.op = op;
 
     // Call-family argument windows. The VM reads every register from the callee
     // slot through the last argument, but those slots are not operands of the

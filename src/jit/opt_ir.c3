@@ -251,6 +251,11 @@ enum OptOp : char {
     // builtin computes it for a string receiver, a plain RegExp and a replacement string.
     // Exits (SLOW_PATH) before any effect for anything else (vm::jit_opt_string_regexp).
     STRING_REGEXP,
+    // A CALL or CALL_UNDEF_THIS (pc) in the function's own body of a builtin with a leaf entry
+    // (builtins::leaf_of), after the CHECK_BUILTIN of its callee, with the dirty registers stored
+    // first: the result stored into the call's window slot (vm::jit_leaf_call). Exits (SLOW_PATH)
+    // before any effect for a case the leaf declines.
+    BUILTIN_LEAF,
     // A call of a Math function (OptMath imm) on the numbers a and b (b: NO_NODE but for two
     // arguments), after the CHECK_BUILTIN of its callee. INT32 for ABS, MIN and MAX of INT32
     // operands, where ABS exits (OVERFLOW) at -2^31; FLOAT64 otherwise.

@@ -73,6 +73,8 @@ module boomkat::jit @feat(SLJIT);
 
 import boomkat::vm;
 import boomkat::bytecode;
+import boomkat::builtins;
+import boomkat::compiler;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hstring;
@@ -1194,6 +1196,12 @@ fn void Asm.c_call(&self, int arg_types, int src, long srcw) {
     sljit_emit_op1(self.c, SLJIT_MOV, self.la, 0, SLJIT_MEM | self.ds, self.lay.ds_act);
 }
 
+// Call C that reads no frame state and switches no frame, such as a builtin's leaf entry
+// (vm::jit_leaf_call): no sync before it and the record register kept.
+fn void Asm.c_call_frameless(&self, int arg_types, int src, long srcw) {
+    sljit_emit_icall(self.c, SLJIT_CALL, arg_types, src, srcw);
+}
+
 // Leave generated code with `src`/`srcw` as the status, the frame state synced: from the native
 // frame of the entry from C, whatever register calls' frames lie below it.
 fn void Asm.emit_leave(&self, int src, long srcw) {
@@ -1340,6 +1348,16 @@ fn void jit_forget_reg_returns(Vm* vm, Activation* base) @noinline {
 fn bool Asm.emit_call(&self) {
     void* c = self.c;
     if (self.wide) return false;
+    // A tail call of a builtin with a leaf entry is a plain call that falls through to its RET;
+    // anything else takes the thunk, which may reuse the frame and costs far more than the try.
+    if (self.w.op == Opcode.TAILCALL_CALL || self.w.op == Opcode.TAILCALL_UNDEF_THIS) {
+        if (self.f.ic_entries == null) return false;
+        Jumps leaf_done;
+        self.emit_leaf_call(&leaf_done);
+        self.emit_thunk_call(self.i);
+        leaf_done.bind(sljit_emit_label(c));
+        return true;
+    }
     switch (self.w.op) {
         case CALL:
         case CALL_UNDEF_THIS:
@@ -1387,6 +1405,7 @@ fn bool Asm.emit_call(&self) {
         // A direct call's guard (OptBuild.direct_callee) has read the callee into its register.
         if (global && self.direct_cf == null) self.load_global_callee(&generic);
         if (scoped && self.direct_cf == null) self.load_var_callee(&generic);
+        if (self.direct_cf == null && self.leaf_site()) self.emit_leaf_call(&done);
         self.emit_direct_call(&generic);
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         generic.bind(sljit_emit_label(c));
@@ -1399,6 +1418,29 @@ fn bool Asm.emit_call(&self) {
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
     done.bind(sljit_emit_label(c));
     return true;
+}
+
+// Whether the call being emitted (a CALL, CALL_UNDEF_THIS, CALL_GLOBAL or CALL_VAR, or the tail
+// form of the first two) has only ever called one builtin, which has a leaf entry
+// (builtins::leaf_of).
+fn bool Asm.leaf_site(&self) {
+    if (self.f.ic_entries == null) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.next - 1];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    return builtins::leaf_of(ic.prop_idx & ~hobject::IC_BUILTIN_TARGET) != null;
+}
+
+// The call through the leaf entry of whichever builtin its callee register holds
+// (vm::jit_leaf_call), which reads neither the frame state nor the collector's. A call it
+// answered joins `done` with the result stored; anything else falls through, nothing written.
+fn void Asm.emit_leaf_call(&self, Jumps* done) {
+    void* c = self.c;
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.regs, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1]);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)vm::jit_leaf_meta(compiler::tailcall_base(self.w.op), self.w));
+    self.c_call_frameless(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_leaf_call);
+    done.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
 }
 
 fn void Asm.load(&self, int reg, uint r) @inline {

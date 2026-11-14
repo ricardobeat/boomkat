@@ -302,7 +302,8 @@ const uint CONCAT_ACCUM_MIN = 32;
 const uint CONCAT_RESERVE_SCAN = 3;
 
 // A two-owner accumulator may change only when the other owner is the
-// writable data binding that the immediately following instruction replaces.
+// writable data binding or compiler cell that the immediately following
+// instruction replaces.
 // Inspect the slot without invoking accessors or with/unscopables hooks: RHS
 // coercion can replace the binding and leave an unrelated alias as owner two.
 fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
@@ -313,6 +314,13 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
     uint name_idx;
     bool snapshot = false;
     switch (store.op) {
+        case Opcode.MOVECELL:
+            // The compiler's own cell object, slot C, which no accessor or proxy can reach.
+            if ((uint)store.b >= func.num_regs || !act.bottom[store.b].is_object()) return false;
+            HObject* cells = (HObject*)act.bottom[store.b].get_heapptr();
+            if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT || store.c >= cells.prop_count) return false;
+            TVal held = cells.prop_values()[store.c].get();
+            return held.is_string() && held.get_heapptr() == (void*)value;
         case Opcode.PUTVAR_SNAP:
             snapshot = true;
             if ((uint)store.b >= func.num_regs) return false;
@@ -349,16 +357,25 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
     return false;
 }
 
-// True when a slot of `act`'s register span other than `ra` holds `s`. The
-// span is the one the collector and the zero-count flush read for the frame.
-fn bool concat_frame_holds_elsewhere(Vm* vm, Activation* act, TVal* ra, HString* s) @private {
+// True when a slot of `act`'s register span other than `ra` holds the string
+// in `ra`. The span is the one the collector and the zero-count flush read for
+// the frame. A slot holds that string exactly when its bits equal `ra`'s, so
+// the loop is a branch-free count.
+fn bool concat_frame_holds_elsewhere(Vm* vm, Activation* act, TVal* ra) @private {
     usz index = (usz)(act - vm.activations);
     if (index >= vm.activation_count) return true;
     TVal* end = activation_span_end(vm, (uint)index);
+    if (ra < act.bottom || ra >= end) return true;
+    TVal held = *ra;
+    uint hits = 0;
     for (TVal* tv = act.bottom; tv < end; tv++) {
-        if (tv != ra && tv.is_string() && tv.get_heapptr() == (void*)s) return true;
+$if types::USE_NANBOX:
+        hits += (uint)(tv.bits == held.bits);
+$else
+        hits += (uint)(tv.tag == held.tag && tv.pointer == held.pointer);
+$endif
     }
-    return false;
+    return hits > 1;
 }
 
 // Only the destination register and its proven write-back binding may own a
@@ -388,7 +405,7 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     if (rc_val != 0 && (rc_val != 1
         || !concat_binding_owns(vm, act, ls, reg_idx, next_insn))) return false;
     if (!vm.heap.accum_birth_matches(ls, reg_idx, act.serial)) return false;
-    if (concat_frame_holds_elsewhere(vm, act, ra, ls)) return false;
+    if (concat_frame_holds_elsewhere(vm, act, ra)) return false;
     // Appending a slice of the accumulator's own buffer would read the units
     // the append is concurrently writing, and growing would leave `tail`
     // dangling at the old allocation. `s += s` is the reachable case; the

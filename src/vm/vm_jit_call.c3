@@ -888,7 +888,6 @@ fn Instruction* jit_stop(Instruction* pc, HandlerTable* handlers, TVal* regs, Co
 fn void jit_relay_init() @private @noinline {
     init_threaded_handlers();
     for (usz i = 0; i < TH_TABLE_SIZE; i++) jit_stop_table.fns[i] = &jit_stop;
-    foreach (i, &kind : jit_leaf_kinds) *kind = leaf_kind((uint)i);
     jit_relay_ready = true;
 }
 
@@ -1006,109 +1005,30 @@ $endif
     return (*fo.extra_ptr()).func.builtin_fn_index;
 }
 
-alias MathFn1 @local = fn double(double);
-alias MathFn2 @local = fn double(double, double);
-
-macro bool leaf_number(TVal v, double* out) @local {
-    if (v.is_fastint()) {
-        *out = (double)v.get_fastint();
-        return true;
-    }
-    if (!v.is_number()) return false;
-    *out = v.get_number();
-    return true;
+// A builtin call a leaf entry answers (builtins::leaf_of), from generated code, over the window
+// `regs`: `meta` holds the argument count (bits 0-15), the callee register (16-31), the result
+// register (32-47), and bit 63 for a call whose receiver is undefined. 1 when the leaf answered,
+// with the builtin noted in the site's entry `ic`; 0 having done nothing for any other callee or
+// case. Neither the frame state nor the collector is involved.
+fn long jit_leaf_call(Heap* h, TVal* regs, hobject::ICEntry* ic, ulong meta) {
+    TVal* callee = regs + ((meta >> 16) & 0xFFFF);
+    int idx = jit_builtin_index(*callee);
+    if (idx < 0) return 0;
+    builtins::LeafFn leaf = builtins::leaf_of((uint)idx);
+    if (leaf == null) return 0;
+    TVal this_val = callee[1];
+    if ((meta >> 63) != 0) this_val.set_undefined();
+    if (!leaf(h, this_val, callee + 2, (uint)(meta & 0xFFFF), regs + ((meta >> 32) & 0xFFFF))) return 0;
+    hobject::ic_note_callee(ic, hobject::IC_BUILTIN_TARGET | (uint)idx);
+    return 1;
 }
 
-// The cached string of one Latin-1 unit, as a register's value.
-macro bool leaf_unit_string(Heap* h, uint unit, TVal* dest) @local {
-    if (unit >= heap::UNIT_STR_CACHE_SIZE || h.unit_strs[unit] == null) return false;
-    h.set_reg_string(dest, h.unit_strs[unit]);
-    return true;
-}
-
-// The builtins jit_builtin_leaf answers, by builtin number, so a call of any
-// other skips it with one load.
-enum LeafKind : char @local { NONE, CHAR_AT, FROM_CHAR_CODE, PUSH, PARSE_INT, MATH }
-LeafKind[builtins::Builtin::values.len] jit_leaf_kinds @private;
-
-fn LeafKind leaf_kind(uint builtin) @local {
-    switch ((builtins::Builtin)builtin) {
-        case STRING_PROTO_CHARAT: return CHAR_AT;
-        case STRING_FROMCHARCODE: return FROM_CHAR_CODE;
-        case ARRAY_PROTO_PUSH: return PUSH;
-        case PARSE_INT: return PARSE_INT;
-        default:
-            jit::OptMath m;
-            return jit::opt_math_of(builtin, &m) ? LeafKind.MATH : LeafKind.NONE;
-    }
-}
-
-// A builtin call that needs no frame: the case the builtin itself answers
-// without coercing, throwing, collecting or entering JavaScript, computed
-// from the receiver and arguments into `dest`. False with nothing done
-// leaves the call to the builtin.
-fn bool jit_builtin_leaf(Dispatch* ds, LeafKind kind, uint builtin, TVal this_val, TVal* args, uint nargs, TVal* dest) {
-    if (nargs == 0) return false;
-    TVal x = args[0];
-    switch (kind) {
-        case NONE:
-            return false;
-        case CHAR_AT:
-            HString* text = plain_string_of(&this_val);
-            if (text == null || !text.is_ascii() || !x.is_fastint()) return false;
-            long at = x.get_fastint();
-            if (at < 0 || at >= (long)text.unit_len()) return false;
-            return leaf_unit_string(ds.heap, text.unit_at((uint)at), dest);
-        case FROM_CHAR_CODE:
-            if (nargs != 1 || !x.is_fastint()) return false;
-            return leaf_unit_string(ds.heap, (uint)(x.get_fastint() & 0xFFFF), dest);
-        case PUSH:
-            $if types::USE_NANBOX:
-                if (nargs != 1 || !this_val.is_object()) return false;
-                long len = jit::opt_array_push(ds, (HObject*)this_val.get_heapptr(), x.bits);
-                if (len < 0) return false;
-                dest.set_fastint(len);
-                return true;
-            $else
-                return false;
-            $endif
-        case PARSE_INT:
-            // A number whose decimal string has no exponent and whose integer
-            // part is exact parses to that part.
-            if (nargs != 1) return false;
-            if (x.is_fastint()) {
-                *dest = x;
-                return true;
-            }
-            if (!x.is_number()) return false;
-            double d = x.get_number();
-            double size = math::abs(d);
-            if (!(size >= 1e-6 && size < 0x1p53)) return false;
-            double whole = math::trunc(d);
-            if (whole != 0 && size < 0x1p31) {
-                dest.set_fastint((long)whole);
-            } else {
-                dest.set_number(whole);
-            }
-            return true;
-        case MATH:
-            jit::OptMath m;
-            double a;
-            double b;
-            if (!jit::opt_math_of(builtin, &m) || nargs != m.args || !leaf_number(x, &a)) return false;
-            if (m.args == 2 && !leaf_number(args[1], &b)) return false;
-            switch (m) {
-                case MIN:
-                case MAX:
-                    return false;
-                case ABS:
-                    dest.set_number(math::abs(a));
-                default:
-                    void* f = jit::opt_math_fn(m);
-                    dest.set_number(m.args == 2 ? ((MathFn2)f)(a, b) : ((MathFn1)f)(a));
-            }
-            return true;
-    }
+// The `meta` word of jit_leaf_call for a call of `op` (a call or its tail form) whose word is `w`.
+fn ulong jit_leaf_meta(Opcode op, bytecode::DecodedInsn w) {
+    bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
+    ulong nargs = var_call ? w.b : w.c;
+    ulong callee = var_call ? w.a : w.b;
+    return nargs | callee << 16 | (ulong)w.a << 32 | (op != Opcode.CALL ? 1ul << 63 : 0);
 }
 
 // A method CALL of a builtin function object that is no leaf, run as th_call_native
@@ -1127,9 +1047,8 @@ fn bool jit_call_builtin_method(Dispatch* ds, Instruction* next, OpStatus* statu
     if (function == null || !function.is_callable()
         || function.callable_kind() != hobject::CallableKind.BUILTIN_FN) return false;
     int idx = (*function.extra_ptr()).func.builtin_fn_index;
-    // Leaves, and charCodeAt, which th_call_native answers inline, keep the generic path.
-    if (idx < 0 || (idx < jit_leaf_kinds.len && jit_leaf_kinds[idx] != NONE)
-        || idx == (int)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal) return false;
+    // Leaves keep the generic path, which tries them first.
+    if (idx < 0 || builtins::leaf_of((uint)idx) != null) return false;
     Heap* heap = ds.heap;
     if (heap.gc_safepoint_due(true)) return false;
     if (idx != (int)builtins::Builtin.FUNCTION_PROTO_CALL.ordinal) {
@@ -1328,8 +1247,8 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
         hobject::ic_note_callee(th_ic_at(cold, pc), hobject::IC_BUILTIN_TARGET | (uint)builtin);
     }
     uint nargs = global ? pc.b : pc.c;
-    LeafKind leaf = (uint)builtin < jit_leaf_kinds.len ? jit_leaf_kinds[builtin] : LeafKind.NONE;
-    if (leaf != NONE && jit_builtin_leaf(ds, leaf, (uint)builtin, regs[callee + 1], regs + callee + 2, nargs, regs + pc.a)) {
+    builtins::LeafFn leaf = builtin >= 0 ? builtins::leaf_of((uint)builtin) : null;
+    if (leaf != null && leaf(ds.heap, regs[callee + 1], regs + callee + 2, nargs, regs + pc.a)) {
         track_heap_store(ds.act, regs + pc.a, pc.a);
         ds.curr_pc = next;
         *status = NEXT;

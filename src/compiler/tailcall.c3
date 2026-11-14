@@ -75,6 +75,18 @@ fn Opcode tailcall_form(Opcode op) {
     }
 }
 
+// The plain call a tail form shadows, or `op` itself.
+fn Opcode tailcall_base(Opcode op) {
+    switch (op) {
+        case Opcode.TAILCALL_UNDEF_THIS: return Opcode.CALL_UNDEF_THIS;
+        case Opcode.TAILCALL_VAR:        return Opcode.CALL_VAR;
+        case Opcode.TAILCALL_GLOBAL:     return Opcode.CALL_GLOBAL;
+        case Opcode.TAILCALL_CALL:       return Opcode.CALL;
+        case Opcode.TAILCALL_CALL_S:     return Opcode.CALL_S;
+        default:                         return op;
+    }
+}
+
 // Clear the tail-call protection flag over each try's finally body, then
 // restore it for whatever an enclosing try still protects.
 //

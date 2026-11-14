@@ -9,6 +9,7 @@ module boomkat::jit @feat(SLJIT);
 
 import boomkat::heap;
 import boomkat::bytecode;
+import boomkat::compiler;
 import boomkat::types;
 import boomkat::features;
 import boomkat::hobject;
@@ -3043,6 +3044,24 @@ fn void OptCg.emit_string_regexp(&self, uint i, OptNode* n) {
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
 }
 
+// BUILTIN_LEAF: vm::jit_leaf_call over the call's window slots, with the dirty registers stored
+// and the registers in use saved around it; what it declines leaves for the baseline code at the
+// CALL, which nothing was written for.
+fn void OptCg.emit_builtin_leaf(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    self.store_dirty(n.dirty_first, n.dirty_count);
+    self.decode(n);
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, a.regs, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&((hobject::ICEntry*)a.f.ic_entries)[a.next - 1]);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)vm::jit_leaf_meta(compiler::tailcall_base(a.w.op), a.w));
+    a.c_call_frameless(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_leaf_call);
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
+}
+
 // Where emit_regexp_body keeps the boxed receiver and argument across the body's call, in the
 // frame's CALL_FRAME_BYTES, which no subroutine uses meanwhile.
 const long REGEXP_RECV_OFF = 8;
@@ -3189,29 +3208,7 @@ $endif
 // with nothing done for any other receiver or value.
 fn long opt_array_push(Dispatch* ds, HObject* obj, ulong value) {
 $if types::USE_NANBOX:
-    TVal v = { .bits = value };
-    Heap* h = ds.heap;
-    if (obj.get_class() != hobject::ObjClass.ARRAY || obj.prop_count != 0 || !obj.flags.extensible
-        || !obj.flags.array_len_writable || obj.flags.has_indexed_named_prop || v.is_undefined()) return -1;
-    uint len = *obj.array_len_ptr();
-    if (len >= 0x1000000u) return -1;
-    if (len < obj.array_size) {
-        hobject::PropValue* dense = obj.array_part();
-        if (dense == null || !dense[len].get().is_undefined()) return -1;
-    } else if (obj.array_size != 0 && obj.array_part() == null) {
-        return -1;
-    }
-    HObject* array_proto = h.array_proto;
-    HObject* object_proto = h.object_proto;
-    if (array_proto == null || object_proto == null || obj.prototype != array_proto
-        || array_proto.get_class() != hobject::ObjClass.ARRAY
-        || object_proto.get_class() != hobject::ObjClass.OBJECT
-        || array_proto.prototype != object_proto || object_proto.prototype != null
-        || array_proto.flags.has_indexed_named_prop || array_proto.array_used > 0
-        || object_proto.flags.has_indexed_named_prop || object_proto.array_used > 0) return -1;
-    if (!obj.set_array_idx(len, v, h)) return -1;
-    *obj.array_len_ptr() = len + 1;
-    return (long)len + 1;
+    return builtins::array_push_dense(ds.heap, obj, { .bits = value });
 $else
     return -1;
 $endif
@@ -3744,7 +3741,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.STORE_GLOBAL || n.op == OptOp.STEP_GLOBAL || n.op == OptOp.GUARD_BINDING || n.op == OptOp.GUARD_CAPTURE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH || n.op == OptOp.REGEXP_EXEC || n.op == OptOp.STRING_REGEXP) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.STORE_GLOBAL || n.op == OptOp.STEP_GLOBAL || n.op == OptOp.GUARD_BINDING || n.op == OptOp.GUARD_CAPTURE || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH || n.op == OptOp.REGEXP_EXEC || n.op == OptOp.STRING_REGEXP || n.op == OptOp.BUILTIN_LEAF) {
         if (self.force_here(n)) {
             self.forced_done = true;
             // The hook falls through once its count is spent: an allocation for the exit must not run then.
@@ -3891,6 +3888,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_regexp_exec(i, n);
         case STRING_REGEXP:
             self.emit_string_regexp(i, n);
+        case BUILTIN_LEAF:
+            self.emit_builtin_leaf(i, n);
         case MOVE_WINDOW:
             self.emit_move_window(n);
         case EXIT:

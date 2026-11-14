@@ -89,8 +89,9 @@ fn bool jit_get_elem(Dispatch* ds, Instruction* next) {
     if (rb.is_string()) {
         HString* s = (HString*)rb.get_heapptr();
         if (s.is_symbol() || idx < 0 || idx >= (long)s.unit_len()) return false;
+        uint unit = s.unit_at((uint)idx);
         char[4] buf;
-        HString* ch = h.str_intern(buf[:hstring::encode_codepoint(s.unit_at((uint)idx), buf[:4])]);
+        HString* ch = unit < heap::UNIT_STR_CACHE_SIZE ? h.unit_str(unit) : h.str_intern(buf[:hstring::encode_codepoint(unit, buf[:4])]);
         if (ch == null) return false;
         h.set_reg_string(regs + pc.a, ch);
         return true;

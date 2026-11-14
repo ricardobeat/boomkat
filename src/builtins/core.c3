@@ -4116,6 +4116,7 @@ fn void init_builtin_dispatch_table() @init
 {
     features::validate_dependencies();
     init_builtin_handlers();
+    init_leaf_table();
     $if $feat(TEMPORAL):
         init_temporal_dispatch_table();
     $endif
