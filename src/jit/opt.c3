@@ -497,7 +497,7 @@ fn String opt_generic_reason(Heap* h, CompiledFunction* f, uint i) {
         if ((index & hobject::IC_BUILTIN_TARGET) != 0) {
             uint b = index & ~hobject::IC_BUILTIN_TARGET;
             if (b >= builtins::Builtin::values.len) return "builtin";
-            return string::tformat("builtin%s:%s", builtins::leaf_of(b) == null ? "" : "-leaf", (builtins::Builtin)b);
+            return string::tformat("builtin%s:%d", builtins::leaf_of(b) == null ? "" : "-leaf", b);
         }
         if (index >= h.compiled_func_count) return "target-index";
         CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[index];
