@@ -855,6 +855,7 @@ fn bool jit_alloc(Dispatch* ds, Instruction* next) {
     switch (pc.op) {
         case NEWARR: return alloc_newarr(vm, ds.act, ds.regs_base, *pc);
         case NEWARR_CONST: return alloc_newarr_const(vm, ds.act, ds.regs_base, *pc);
+        case NEWREGEXP: return alloc_newregexp(ds, *pc);
         default: return alloc_newobj(ds.heap, ds.act, ds.regs_base, *pc);
     }
 }

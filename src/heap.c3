@@ -2503,7 +2503,10 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
         if (cf.regexp_cache != null) {
             for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
-                if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }
+                bytecode::RegExpLiteral* lit = &cf.regexp_cache[ri];
+                if (lit.program == null) continue;
+                re_bindings::re_free(lit.program);
+                if (!self.tearing_down) self.decref((HeapHeader*)lit.source);
             }
             self.free_func(self.heap_udata, cf.regexp_cache);
         }

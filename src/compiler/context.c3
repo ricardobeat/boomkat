@@ -2089,8 +2089,8 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     for (uint i = 0; i < func.code_count; i++) {
         Opcode op = func.code[i].op;
         if (op != Opcode.NEWREGEXP && op != Opcode.RETEST) continue;
-        usz bytes = (usz)func.const_count * void*::size;
-        func.regexp_cache = (void**)h.alloc_func(h.heap_udata, bytes);
+        usz bytes = (usz)func.const_count * bytecode::RegExpLiteral::size;
+        func.regexp_cache = (bytecode::RegExpLiteral*)h.alloc_func(h.heap_udata, bytes);
         if (func.regexp_cache != null) {
             mem::clear(func.regexp_cache, (sz)bytes);
             func.regexp_cache_count = func.const_count;
