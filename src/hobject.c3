@@ -3168,7 +3168,8 @@ fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
 // Drop the string references held in `count` slots.
 fn void release_slots(heap::Heap* h, PropValue* slots, usz count) @inline {
     for (usz i = 0; i < count; i++) {
-        if (slots[i].get().is_heap_allocated()) slots[i].release_ref(h);
+        TVal v = slots[i].get();
+        if (v.is_refcounted()) h.release_string((HString*)v.get_heapptr());
     }
 }
 
