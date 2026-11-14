@@ -542,22 +542,22 @@ fn bool object_shape_own_keys(BuiltinContext* ctx, HObject* obj, OwnKeyFilter fi
     HString*[64] keys;
     uint count;
     if (!collect_shape_own_keys(ctx.heap, obj, &keys, &count, filter)) return false;
-    HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = raw) { ctx.result_undefined(); return true; }
+    keys_result(ctx, &keys, count);
+    return true;
+}
+
+// Return a fresh array of `keys[:count]` as the builtin's result.
+fn void keys_result(BuiltinContext* ctx, HString** keys, uint count) {
+    HObject*? raw = ctx.heap.alloc_dense_array(count);
+    if (catch err = raw) { ctx.result_undefined(); return; }
     HObject* result = raw;
-    ctx.heap.set_prototype(result, ctx.heap.array_proto);
+    hobject::PropValue* part = result.array_part();
     for (uint i = 0; i < count; i++) {
-        HString* index = ctx.heap.int_to_hstring((long)i);
-        if (index == null) { ctx.result_undefined(); return true; }
         TVal key;
         key.set_string_borrowed(keys[i]);
-        result.put_prop(index, key, hobject::PROP_FLAGS_WEC, ctx.heap);
+        ctx.heap.init_slot_ref(result, &part[i], &key);
     }
-    TVal length;
-    length.set_fastint((long)count);
-    result.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), length, hobject::PROP_FLAGS_WC, ctx.heap);
     ctx.result_object(result);
-    return true;
 }
 
 // Object.keys(obj), ECMA-262 §15.2.3.14
@@ -584,22 +584,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
     }
     if (object_shape_own_keys(ctx, obj, OwnKeyFilter.ENUMERABLE_STRINGS)) return;
 
-    // Allocate result array
-    HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = arr_raw) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* arr = arr_raw;
-    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
-    uint idx = 0;
-
-    // Collect keys into a temporary buffer, then write them into the result
-    // array as named properties (using put_prop with string index keys) so
-    // that hasOwnProperty("0"), getOwnPropertyDescriptor("0"), and
-    // for-in + result[stringKey] all work correctly on the result array.
-
-    // Maximum number of keys collected.
+    // Collect keys into a temporary buffer, then build the result from it.
     HString** key_buf;
     uint key_count;
     if (obj.is_proxy()) {
@@ -628,23 +613,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
     }
     defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
 
-    // Write collected keys into the result array as named properties.
-    // Using put_prop with string index keys ensures hasOwnProperty("0"),
-    // getOwnPropertyDescriptor("0"), and for-in + result[stringKey] all work.
-    for (uint i = 0; i < key_count; i++) {
-        HString* idx_key = ctx.heap.int_to_hstring((long)i);
-        if (idx_key == null) { ctx.result_undefined(); return; }
-        TVal val_tv;
-        val_tv.set_string_borrowed(key_buf[i]);
-        arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    }
-
-    // Set .length, Array.length is writable, non-enumerable, configurable (ECMA-262 §15.4.5.1)
-    TVal len_tv;
-    len_tv.set_fastint((long)key_count);
-    HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC, ctx.heap);
-    ctx.result_object(arr);
+    keys_result(ctx, key_buf, key_count);
 }
 
 // ============================================================================
