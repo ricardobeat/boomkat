@@ -1678,6 +1678,13 @@ fn Instruction* th_mul(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
 fn Instruction* th_div(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
+    long quotient;
+    if (types::exact_fastint_quotient(regs + insn.b, regs + insn.c, &quotient)) {
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
+        ra.set_fastint(quotient);
+        return th_next(pc + 1, handlers, regs, cold);
+    }
     double x; double y;
     if (!th_numeric_operand(regs + insn.b, &x) || !th_numeric_operand(regs + insn.c, &y)) return pc;
     if (!th_can_release(ra)) return pc;

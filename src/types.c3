@@ -514,6 +514,21 @@ $endif
 // top-16-bit tag is XORed with TAG_FASTINT (zero only for a FASTINT) and the
 // two results are ORed, with no dependency between the two tests. The
 // non-NaN-box build calls is_fastint() twice.
+// The quotient of two fastints when it is an integer a fastint holds, as
+// `values.length / times.length` is: kept as an integer, it indexes elements
+// and feeds integer arithmetic without leaving their fast paths. A zero
+// dividend over a negative divisor is -0, which only a double holds.
+macro bool exact_fastint_quotient(TVal* b, TVal* c, long* out) {
+    if (!both_fastint(b, c)) return false;
+    long x = b.get_fastint();
+    long y = c.get_fastint();
+    if (y == 0 || x % y != 0 || (x == 0 && y < 0)) return false;
+    long q = x / y;
+    if (!fits_fastint(q)) return false;
+    *out = q;
+    return true;
+}
+
 macro bool both_fastint(TVal* b, TVal* c) {
 $if USE_NANBOX:
     return (((b.bits ^ (TAG_FASTINT << 48)) | (c.bits ^ (TAG_FASTINT << 48))) >> 48) == 0;

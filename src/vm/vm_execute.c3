@@ -3378,6 +3378,11 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
 
     case Opcode.DIV: {
+        long quotient;
+        if (types::exact_fastint_quotient(rb, rc, &quotient)) {
+            vm.heap.set_reg_fastint(ra, quotient);
+            continue;
+        }
         if (@needs_to_numeric(rb, rc)) {
             if (vm_numeric_binop(vm, Opcode.DIV, ra, rb, rc) == BigIntOpResult.THREW) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
