@@ -1966,6 +1966,13 @@ fn bool OptBuild.cold_field(&self) {
     }
 }
 
+// Whether the call at word `at` of `f` has never run: its entry names no callee of any kind.
+fn bool cold_call_site(CompiledFunction* f, Opcode op, uint at) {
+    if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && op != Opcode.CALL_VAR && op != Opcode.CALL_GLOBAL) return false;
+    if (f.ic_entries == null) return false;
+    return (((hobject::ICEntry*)f.ic_entries)[at].feedback & (hobject::FB_CALL | hobject::FB_POLY)) == 0;
+}
+
 // The distinct receiver shapes the entry `ic` of an own data property caches, the entry's own
 // first and then its polymorphic set, each with its slot. False when there are more than
 // OPT_POLY_MAX.
@@ -3619,6 +3626,8 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
             if ((cop == Opcode.NEW_OBJ || real) && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
             // A call the body makes for real (OptBuild.reg_call).
             if (real) continue;
+            // A call that has never run: a flat body leaves for the baseline code there (lower_flat).
+            if (self.sites[si].flat && cold_call_site(self.sites[si].cf, cop, self.sites[si].cfg.nodes[k].view.next_pc - 1)) continue;
             self.rej_op = cop == Opcode.NEW_OBJ ? cop : Opcode.CALL;
             return false;
         }
@@ -4104,7 +4113,7 @@ fn bool OptBuild.lower_flat(&self) {
         self.store_const(self.w.a, K_UNDEF);
     } else if (kind == 3) {
         // The CALL_S of a forwarding call its APPLY_ARGS inlined.
-    } else if (self.cold_field()) {
+    } else if (self.cold_field() || cold_call_site(self.cur_f(), self.w.op, self.next_pc - 1)) {
         // Never executed: leave for the callee's baseline code here, and lower nothing after it
         // on this path.
         uint n = self.add(OptOp.EXIT, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
