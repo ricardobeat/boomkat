@@ -3012,7 +3012,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (!vm_throw_error(vm, vm.heap.ref_err_proto,
                     "Must call super constructor in derived class before accessing 'this' or returning from derived constructor",
                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.throw_value);
+                return VM_ERROR~;
             }
             continue;
         }
@@ -4486,7 +4486,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (!vm_throw_error(vm, vm.heap.ref_err_proto,
                     "Must call super constructor before returning from derived constructor",
                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.throw_value);
+                return VM_ERROR~;
             }
             continue;
         }
@@ -4494,7 +4494,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (!vm_throw_error(vm, vm.heap.type_err_proto,
                     "Derived constructors may only return object or undefined",
                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.throw_value);
+                return VM_ERROR~;
             }
             continue;
         }
@@ -4506,7 +4506,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (!vm_throw_error(vm, vm.heap.ref_err_proto,
                     "Super constructor may only be called once",
                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.throw_value);
+                return VM_ERROR~;
             }
             continue;
         }

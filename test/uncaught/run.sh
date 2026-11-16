@@ -107,6 +107,17 @@ check "iterator result not an object" \
       'var it = { [Symbol.iterator]() { return { next() { return 1; } }; } }; for (var x of it) {} print("continued");' \
       "Uncaught TypeError: Iterator result is not an object"
 
+# Derived-constructor errors are thrown once and must not be reported again
+# from a stale value, which printed "Uncaught: 0".
+check "this before super()" 'class A {} class C extends A { constructor() { this; super(); } } new C();' \
+      "Uncaught ReferenceError: Must call super constructor in derived class before accessing 'this' or returning from derived constructor"
+check "derived ctor without super()" 'class A {} class C extends A { constructor() {} } new C();' \
+      "Uncaught ReferenceError: Must call super constructor before returning from derived constructor"
+check "derived ctor returns primitive" 'class A {} class C extends A { constructor() { return 1; } } new C();' \
+      "Uncaught TypeError: Derived constructors may only return object or undefined"
+check "super() twice" 'class A {} class C extends A { constructor() { super(); super(); } } new C();' \
+      "Uncaught ReferenceError: Super constructor may only be called once"
+
 # A LIVE MICROTASK QUEUE must not change any of the above. With a pending
 # microtask, every one of these used to collapse onto
 # "VM error: vm::VM_ERROR (at execute)" — the error was formed correctly and
