@@ -577,8 +577,11 @@ fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TV
                          this_value, this_valid);
 }
 
+// `undef_this` says the instruction passes an undefined receiver without
+// storing it in the register above the callee (CALL_UNDEF_THIS).
 fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                               uint callee_reg, uint result_reg, uint nargs) @private @noinline {
+                               uint callee_reg, uint result_reg, uint nargs,
+                               bool undef_this = false) @private @noinline {
     Vm* vm = cold.vm;
     TVal callee = regs[callee_reg];
     HObject* function = null;
@@ -618,8 +621,10 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
     if (top > vm.valstack_top) vm.valstack_top = top;
     TVal result;
     result.set_undefined();
+    TVal undefined_this = th_undefined();
     builtins::BuiltinContext ctx = call_context(cold, callee_reg, nargs, &result,
-                                                this_val: &regs[callee_reg + 1], callee: function);
+                                                this_val: undef_this ? &undefined_this : &regs[callee_reg + 1],
+                                                callee: function);
     builtins::dispatch_builtin(fn_idx, &ctx);
     // The builtin may have moved the value stack.
     regs = act.bottom;
@@ -926,7 +931,7 @@ fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
     Vm* vm = cold.vm;
     if (th_call_gate(cold)) return pc;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, true);
-    if (target == null) return pc;
+    if (target == null) return th_call_native(pc, handlers, regs, cold, insn.b, insn.a, insn.c, true);
     if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
 }
