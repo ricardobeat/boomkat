@@ -1250,6 +1250,8 @@ fn uint OptBuild.typed_load(&self, OptOp op, uint a) {
 fn bool OptBuild.asked_rep(&self, OptRep* rep) {
     foreach (c : self.load_reps) {
         if (c.block != self.pckey()) continue;
+        // A load that has met a value that is no number stays a read into the window.
+        if ((self.feedback() & hobject::FB_VALUE) != 0) return false;
         // A load that has exited with a value an int32 node cannot hold (opt_note_operands) reads
         // a double; its int32 uses convert it, or (as an index) leave the access to the baseline.
         *rep = c.rep;

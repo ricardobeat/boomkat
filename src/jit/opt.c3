@@ -1213,7 +1213,13 @@ fn bool opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reaso
     char before = ic.feedback;
     TVal* regs = ds.regs_base;
     if (!vm::has_feedback(d.insn.op)) {
-        if (reason != OptExit.NOT_INT32.ordinal) return false;
+        // A typed load found a value that is no number: the rebuild reads it into the window
+        // (OptBuild.asked_rep).
+        if (reason != OptExit.NOT_INT32.ordinal) {
+            if (d.insn.op == Opcode.PUTPROP) return false;
+            ic.feedback |= hobject::FB_VALUE;
+            return ic.feedback != before;
+        }
         // An element access whose key was no int32: the rebuild reads it by key (OptBuild.index_ok).
         // Else a typed load (an element, field, closure or global read) found a value its int32
         // node cannot hold, which the rebuild reads as a double (OptBuild.typed_load).
