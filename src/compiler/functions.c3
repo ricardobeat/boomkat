@@ -1633,6 +1633,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     def_ctx.in_class_body = self.in_class_body;
     def_ctx.is_constructable = self.is_constructable;
     def_ctx.has_super_binding = self.has_super_binding;
+    def_ctx.in_derived_ctor = self.in_derived_ctor;
     def_ctx.super_is_home_object = self.super_is_home_object;
     def_ctx.super_is_static_method = self.super_is_static_method;
     def_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
@@ -1695,7 +1696,10 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // read. Only SuperCall needs this. `super.x` reads the home object through the
     // captured scope, and `this`/`new.target` are passed or captured separately.
     // Flagging every thunk would change direct-eval `arguments` semantics.
-    if (func.code != null) {
+    // In a derived constructor every thunk is flagged, as `this` may be unbound.
+    if (self.in_derived_ctor) {
+        func.flags.is_arrow = true;
+    } else if (func.code != null) {
         for (uint ci = 0; ci < func.code_count; ci++) {
             Instruction ins = func.code[ci];
             if (ins.op == Opcode.SUPER_CALL || ins.op == Opcode.SUPER_CALL_S) {
@@ -1991,6 +1995,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     } else if (is_method_body) {
         inner_ctx.in_class_body = self.in_class_body;
         inner_ctx.has_super_binding = self.has_super_binding;
+        inner_ctx.in_derived_ctor = self.in_derived_ctor;
         inner_ctx.super_is_home_object = self.super_is_home_object;
         inner_ctx.super_is_static_method = self.super_is_static_method;
         inner_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
@@ -2051,6 +2056,7 @@ fn void CompilerContext.init_arrow_context(&self, CompilerContext* arrow_ctx, bo
     arrow_ctx.is_generator = is_async_arrow;
     arrow_ctx.in_class_body = self.in_class_body;
     arrow_ctx.has_super_binding = self.has_super_binding;
+    arrow_ctx.in_derived_ctor = self.in_derived_ctor;
     arrow_ctx.super_is_home_object = self.super_is_home_object;
     arrow_ctx.super_is_static_method = self.super_is_static_method;
     arrow_ctx.super_home_is_object_literal = self.super_home_is_object_literal;

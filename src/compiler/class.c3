@@ -1020,6 +1020,8 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         // Save and restore is_constructable
         bool saved_constructable = self.is_constructable;
 
+        bool saved_in_derived_ctor = self.in_derived_ctor;
+        self.in_derived_ctor = is_constructor && self.has_super_binding;
         if (is_constructor) {
             self.is_constructable = true;
         } else {
@@ -1125,6 +1127,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         self.super_is_static_method = saved_super_is_static_method;
 
         self.is_constructable = saved_constructable;
+        self.in_derived_ctor = saved_in_derived_ctor;
         self.is_generator = saved_is_generator;
         self.is_user_generator = saved_is_user_generator;
         self.is_async = saved_is_async;

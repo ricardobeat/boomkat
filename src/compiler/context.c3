@@ -509,6 +509,7 @@ struct CompilerContext {
     // `super.x` emission.
     bool super_is_home_object;
     bool has_super_binding;     // true when class has extends (super() available)
+    bool in_derived_ctor;       // derived constructor body, or an arrow/default/eval within it
     // True while compiling a static class method or accessor. Its HomeObject is the class
     // constructor (ECMA-262 GetSuperBase), so `super.x` resolves via __static_super__ (always
     // GETPROTO on the constructor), not __super__.
