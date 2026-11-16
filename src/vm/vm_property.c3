@@ -2036,6 +2036,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (setter_obj.is_callable() && (*setter_obj.extra_ptr()).func.comp_func != null) {
                                 CompiledFunction* target = (*setter_obj.extra_ptr()).func.comp_func;
                                     if (!vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
+                                // The threaded put calls an inherited setter from
+                                // this entry, and only a classified lean one. As
+                                // for an own data store, only the register's own
+                                // interned key is cached.
+                                target.classify_lean_call();
+                                if (ds.ic_base != null && rb.is_string() && rb.get_heapptr() == key
+                                    && hobj.get_class() == hobject::ObjClass.OBJECT && acc.owner != null) {
+                                    hobject::ICEntry* put_ic = ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base);
+                                    ic_fill_read(vm, put_ic, hobj, key, acc.owner);
+                                }
 
                                 // Stage the call frame above the caller's live registers
                                 // (see own-property setter path above).

@@ -703,7 +703,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
                               uint callee_reg, uint result_reg, uint nargs,
                               bool borrowed, bool clear_this,
                               TVal this_value, bool this_valid,
-                              HObject* new_target = null) @private @inline {
+                              HObject* new_target = null, bool discard_result = false) @private @inline {
     Vm* vm = cold.vm;
     Activation* caller = cold.act;
     HObject* function = (HObject*)regs[callee_reg].get_heapptr();
@@ -741,7 +741,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     la.new_target = new_target;
     la.curr_pc = target.code;
     la.bottom = bottom;
-    la.retval = regs + result_reg;
+    la.retval = discard_result ? null : regs + result_reg;
     la.flags = 0;
     la.tv_func.set_object_borrowed(function);
     if (borrowed) {
@@ -2906,6 +2906,36 @@ fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* r
     return th_next(pc, handlers, regs, cold);
 }
 
+// A cached setter store: calls the lean setter the entry names with `target`
+// as `this` and the value as its one argument, discarding its result. The
+// frame is staged above the caller's registers, where the switch's setter call
+// puts it, since a store has no free register to call through. The receiver and
+// the value must stay rooted by the caller for the whole call: the frame's
+// `this` or a register under the caller's watermark. A counted value would be
+// owed a reference by the frame, and a private name keeps PrivateSet's checks;
+// both go to the switch, as does anything th_call_getter would refuse.
+fn Instruction* th_call_setter(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                               HObject* hobj, hobject::ICEntry* ic, TVal* target, TVal* value) @private @noinline {
+    Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    if (((HString*)ic.key.borrow()).is_hidden() || value.is_refcounted()) return pc;
+    if (target != &act.this_binding && (uint)(target - regs) >= act.heap_reg_count) return pc;
+    if (value.is_heap_allocated() && (uint)(value - regs) >= act.heap_reg_count) return pc;
+    hobject::PropValue* slot = hobject::ic_resolve_slot(ic, hobj);
+    if (slot == null) return pc;
+    TVal setter = hobject::hobject_access_setter(slot.get());
+    uint callee_reg = vm.current_func.num_regs;
+    TVal* window = regs + callee_reg;
+    CompiledFunction* callee = th_lean_target(vm, setter, window + 2, false);
+    if (callee == null || th_call_gate(cold)) return pc;
+    // Raw stores: the slots lie above the caller's frame and hold nothing owned.
+    window[0] = setter;
+    window[1].set_undefined();
+    window[2] = *value;
+    return th_enter_lean(pc, handlers, regs, cold, callee, callee_reg, callee_reg, 1, true, false,
+                         *target, true, discard_result: true);
+}
+
 // The reference-counted and traced half of a slot store. It is a tail call from
 // the handler, so the handler itself makes no call and needs no frame.
 //
@@ -2964,6 +2994,9 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
             return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, computed ? null : ic);
         }
         return th_put_absent(pc, handlers, regs, cold, hobj, ic, key, value);
+    }
+    if (ic.prop_flags.is_accessor && ic.key.borrow() == key && ic.shape_id == hobj.shape_id) {
+        return th_call_setter(pc, handlers, regs, cold, hobj, ic, target, value);
     }
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
@@ -3478,6 +3511,7 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
+    if (fa.retval == null) return th_return_discarded(pc, handlers, cold, value, is_undefined);
     if (th_frame_is_replaceable(vm, fa)
         && (fa.heap_reg_count == 0 || th_tracked_regs_uncounted(fa))
         && !vm.heap.gc_safepoint_due(false)) {
@@ -3501,6 +3535,30 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
             th_clear_tracked_regs(fa);
             *result = value;
             if (object_return) track_heap_store(caller, result, (uint)(result - caller.bottom));
+            return th_resume_caller(handlers, cold, fa, caller, cross_function);
+        }
+    }
+    return th_return_slow(pc, handlers, cold, value, is_undefined);
+}
+
+// The return of a frame whose caller drops the result, a setter's
+// (th_call_setter): the pop of a plain frame is the fast return's without the
+// store. A counted result is still owned by the frame and goes to the switch.
+fn Instruction* th_return_discarded(Instruction* pc, HandlerTable* handlers,
+                                    ColdCtx* cold, TVal value, bool is_undefined) @private @noinline {
+    Vm* vm = cold.vm;
+    Activation* fa = cold.act;
+    if (vm.activation_count >= 2 && (is_undefined || !value.is_refcounted())
+        && (fa.flags & ~TH_LEAN_FRAME_FLAGS) == 0
+        && fa.cat == null && fa.forin == null
+        && fa.func == vm.current_func
+        && !((CompiledFunction*)fa.func).maps_formals()
+        && (fa.heap_reg_count == 0 || th_tracked_regs_uncounted(fa))
+        && !vm.heap.gc_safepoint_due(false)) {
+        Activation* caller = &vm.activations[vm.activation_count - 2];
+        bool cross_function = caller.func != fa.func;
+        if (!cross_function || (caller.func != null && caller.curr_pc != null)) {
+            th_clear_tracked_regs(fa);
             return th_resume_caller(handlers, cold, fa, caller, cross_function);
         }
     }
