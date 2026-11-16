@@ -1223,12 +1223,12 @@ fn uint CompilerContext.add_inner_func(&self, CompiledFunction* func) {
     return idx;
 }
 
-// Whether a parameter default is a thunk closure. Literal defaults read no
-// binding, so they leave the parameter scope unobservable.
+// Whether a parameter default is a thunk closure. Literal and inline defaults
+// create no closure, so they leave the parameter scope unobservable.
 fn bool CompilerContext.has_thunk_defaults(&self) {
     if (self.ast_param_scope) return true;
     foreach (d : self.defaults) {
-        if (!d.is_literal) return true;
+        if (!d.is_literal && d.ast_expr == 0) return true;
     }
     return false;
 }

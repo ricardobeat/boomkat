@@ -82,3 +82,7 @@ same(threw, true);
 class Base {}
 class Derived extends Base { constructor(a = Math.max(1, 2)) { super(); this.a = a; } }
 same(new Derived().a, 2);
+// An inline default leaves no parameter scope: a body closure still sees the
+// parameters and locals it captures.
+function capture(a, b = a * 2) { const c = b + 1; return () => a + b + c; }
+same(capture(1)(), 6);
