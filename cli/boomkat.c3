@@ -59,6 +59,7 @@ fn int main(String[] args) {
     bool jit = false;
     bool jit_stress = false;
     bool opt = false;
+    bool no_opt = false;
     bool opt_always = false;
     bool opt_dump = false;
     bool opt_log = false;
@@ -120,6 +121,8 @@ fn int main(String[] args) {
         } else if (a == "--jit-stress") {
             jit = true;
             jit_stress = true;
+        } else if (a == "--no-opt") {
+            no_opt = true;
         } else if (a == "--opt") {
             jit = true;
             opt = true;
@@ -269,6 +272,8 @@ fn int main(String[] args) {
 
     Heap*? hp = heap::create(null, null, null, null, &cli_fatal);
     if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
+    if (jit && !jit_stress) opt = true;
+    if (no_opt) opt = false;
     if (jit && !hp.set_jit(true)) {
         io::eprintfn("boomkat: JIT is not available in this build");
         hp.destroy();
@@ -431,11 +436,13 @@ fn void print_usage() {
     io::printn("--ignore-unhandled-promises does not report unhandled promise rejections or let them");
     io::printn("set a non-zero exit status (by default they are reported and exit with status 1).");
     $if $feat(SLJIT):
-        io::printn("--jit enables native compilation of eligible hot functions (off by default).");
-        io::printn("--jit-stress also compiles on the first call and keeps every entry (test setting).");
+        io::printn("--jit enables native compilation of eligible hot functions, both tiers (off by default).");
+        io::printn("--no-opt keeps only the baseline tier; --opt-no-inline, --opt-no-region and --opt-no-sink");
+        io::printn("switch off single optimizations of the upper one.");
+        io::printn("--jit-stress also compiles on the first call and keeps every entry (test setting, baseline tier only unless --opt is given).");
         io::printn("--jit-stats prints the compile and exit counters of both tiers on exit.");
         io::printn("--jit-count-ops also counts inline and thunk executions per opcode (inflates code).");
-        io::printn("--opt adds the optimizing tier: SSA graphs for hot functions, exiting into the baseline.");
+        io::printn("the optimizing tier builds SSA graphs for hot functions and exits into the baseline.");
         io::printn("--opt-always compiles on the first call instead of waiting for the hot threshold.");
         io::printn("--opt-log traces each refusal, exit and discard; --opt-dump prints each graph.");
         io::printn("--jit-dump-code prints each optimized body's code, for scripts/jit_disasm.py.");

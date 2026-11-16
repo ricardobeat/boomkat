@@ -12,8 +12,8 @@ one() {
         # shellcheck disable=SC2086
         [ "$ref" = "$(run $mode)" ] || echo "DIFF $f [$mode]"
     done <<'EOF'
---jit
---jit --opt --opt-always
+--jit --no-opt
+--jit --opt-always
 EOF
 }
 export -f one

@@ -3,7 +3,7 @@
 
     python3 scripts/jit_report.py [options] -- BIN [ENGINE ARGS] FILE
 
-Runs the program with --jit --opt --opt-log (added when missing) and reads the optimizer's log:
+Runs the program with --jit --opt-log (added when missing) and reads the optimizer's log:
 
   - compiles: each optimized build, how many calls it inlined, and how the calls it kept were
     lowered: `reg` (a register call: the proven callee's entry on a native frame of its own, the

@@ -32,8 +32,9 @@
 
 The `SLJIT` feature compiles the native backend into the CLI and the C
 libraries; native compilation itself stays off until it is switched on.
-`boomkat --jit file.js` enables it for one run, and `--jit-stress` also
-compiles every function on its first call (a test setting). Embedders call
+`boomkat --jit file.js` enables it for one run, with both tiers below, and
+`--jit-stress` also compiles every function on its first call (a test setting,
+baseline tier only unless `--opt` is added). Embedders call
 `bk_set_jit(runtime, 1)` or, in C3, `runtime.set_jit(true)`; zero or false
 disables it again. The setting is shared by every context in the runtime.
 
@@ -42,8 +43,8 @@ slim and tiny profiles are not. Where it is unavailable, `--jit` reports an
 error and exits with status 2, the C setter returns `BK_ERR_INVALID`, and the
 C3 setter returns false; disabling always succeeds.
 
-The optimizing tier is a second layer on top of that baseline: `--opt` for one
-run, `bk_set_jit_opt(runtime, 1)` for an embedder. It compiles hot functions into
+The optimizing tier is a second layer on top of that baseline: on by default under
+`--jit` and dropped with `--no-opt`; `bk_set_jit_opt(runtime, 1)` for an embedder. It compiles hot functions into
 SSA graphs and exits into the baseline code when a guard fails, so it needs the
 baseline tier on. [jit.md](jit.md) describes both tiers, their switches and
 their limits.

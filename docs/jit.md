@@ -28,7 +28,7 @@ bytecode words) is not compiled.
 
 ## Optimizing tier
 
-`--opt` enables it on top of the baseline. A function that reaches the hot
+`--jit` enables it on top of the baseline; `--no-opt` keeps only the baseline, and `--opt-no-inline`, `--opt-no-region` and `--opt-no-sink` switch off single optimizations. A function that reaches the hot
 threshold is built into an SSA graph and given a second native body; the
 baseline body stays, and an optimized body's exits continue in it.
 
@@ -92,7 +92,7 @@ discard with the function and program counter; `--opt-dump` prints the graph.
 | Forced exits, discard and ban paths | `bash scripts/opt_exit_check.sh` |
 | Differential suites | `bash scripts/run_jit_diff.sh ./out/boomkat` |
 | Differential test262 | `PATH=/usr/bin:/bin bash scripts/run_jit_diff.sh --test262 ./out/test262_runner` |
-| Optimizing tier differential | `JIT_FLAGS="--opt --opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat` |
+| Optimizing tier differential | `JIT_FLAGS="--opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat` |
 | Embedding JIT suites | `make test-jit-api` and `make test-jit-api-asan` |
 | Sanitized differential | `make test-jit-asan` |
 
@@ -111,7 +111,7 @@ overflows its stack and dies without a report.
 ## Measured bounds
 
 Apple M3, this branch, the full Octane suite in one process with
-`--opt --jit-stats`: 485 ms of compilation in total across both tiers, the
+`--jit-stats`: 485 ms of compilation in total across both tiers, the
 longest single compile 21 ms (a 37006-word baseline compile), 63.4 MB of
 generated code live at exit (65.2 MB peak) and 2.4 MB of optimized code after
 20 sweeps of the 4 MiB cap. Function compilation is 2089 optimizing compiles

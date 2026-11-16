@@ -7,7 +7,7 @@ Each shape runs a loop of N and of 2N calls, and the same loop with the call rep
 body; the difference of the four runs' retired instructions, over N, is what one call and return
 adds. Shapes: a plain call of a two-argument function, a method call reading `this`, and a
 recursive call (fib). Each runs under `--jit` (baseline code calling baseline code), under
-`--jit --opt --opt-no-inline` (a baseline caller of optimized callees: `run` is entered too
+`--jit --opt-no-inline` (a baseline caller of optimized callees: `run` is entered too
 rarely, and small integer functions have no feedback to tier up on), and under the same with
 `--opt-always` (optimized code calling optimized code). --jsc adds the system
 JavaScriptCore, whose callees are kept out of line with noInline. Needs /usr/bin/time -l (macOS).

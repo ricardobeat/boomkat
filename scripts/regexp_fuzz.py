@@ -6,7 +6,7 @@
 Random patterns from a small grammar, random narrow and wide subjects, every flag combination of
 `dgimsuvy` that node accepts, run through exec, test, replace (string and function replacers),
 split, match, matchAll and search. Each case runs in a function called enough times for both JIT
-tiers to compile it, so the interpreter, `--jit` and `--jit --opt` each answer from their own code;
+tiers to compile it, so the interpreter, `--jit --no-opt` and `--jit` each answer from their own code;
 every answer is compared with node's. Exits non-zero on any difference.
 """
 import argparse, json, random, subprocess, sys, tempfile

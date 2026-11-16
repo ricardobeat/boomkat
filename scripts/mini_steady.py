@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure the steady-state cost of the mini benchmarks, apart from warm-up.
 
-    python3 scripts/mini_steady.py [--args "--jit --opt"] [--jsc] [--scale K] BIN [BIN2 ...] [-- bench ...]
+    python3 scripts/mini_steady.py [--args "--jit"] [--jsc] [--scale K] BIN [BIN2 ...] [-- bench ...]
 
 Octane scores the runs that follow a warm-up, so the cost that matters is one steady iteration.
 Each mini (bench/mini) runs twice per engine, with its timed run count and with double that after
@@ -46,7 +46,7 @@ def run(engine, path, warm, runs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--args', default='--jit --opt', help='engine arguments (default: --jit --opt)')
+    parser.add_argument('--args', default='--jit', help='engine arguments (default: --jit)')
     parser.add_argument('--jsc', action='store_true', help='add JavaScriptCore as a reference')
     parser.add_argument('--scale', type=int, default=1, help='multiply every warm-up and run count')
     parser.add_argument('binaries', nargs='+')

@@ -823,6 +823,7 @@ fn int run_worker_loop() {
 bool runner_jit;
 bool runner_jit_stress;
 bool runner_opt;
+bool runner_no_opt;
 bool runner_opt_always;
 
 // The tiers the run selects, on a heap that is about to execute the tests.
@@ -832,13 +833,15 @@ fn bool runner_apply_jit(Heap* hp) {
         return false;
     }
     if (runner_jit_stress) (void)hp.set_jit_stress(true);
+    bool opt = runner_opt || (runner_jit && !runner_jit_stress);
+    if (runner_no_opt) opt = false;
     $if $feat(SLJIT):
-        if (runner_opt) {
+        if (opt) {
             hp.opt.enabled = true;
             hp.opt.always = runner_opt_always;
         }
     $else
-        if (runner_opt) {
+        if (opt && runner_opt) {
             io::eprintfn("test262_runner: the optimizing tier is not available in this build");
             return false;
         }
@@ -858,6 +861,8 @@ fn int main(String[] args) {
         } else if (args[i] == "--jit-stress") {
             runner_jit = true;
             runner_jit_stress = true;
+        } else if (args[i] == "--no-opt") {
+            runner_no_opt = true;
         } else if (args[i] == "--opt") {
             runner_opt = true;
         } else if (args[i] == "--opt-always") {
@@ -869,7 +874,7 @@ fn int main(String[] args) {
     }
     if (worker) return run_worker_loop();
     if (manifest.len == 0) {
-        io::eprintfn("Usage: batch_test_vm <manifest_file> [--jit] [--jit-stress] [--opt] [--opt-always]");
+        io::eprintfn("Usage: batch_test_vm <manifest_file> [--jit] [--jit-stress] [--no-opt] [--opt] [--opt-always]");
         io::eprintfn("       batch_test_vm --worker  (stdin-driven worker mode)");
         return 1;
     }

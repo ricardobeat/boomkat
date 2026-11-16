@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Randomized differential fuzz of string accumulation, tail calls and leaf
 builtins: each generated script runs under node and under boomkat in the
-interpreter, --jit and --jit --opt; any output difference is reported.
+interpreter, --jit --no-opt and --jit; any output difference is reported.
 
 usage: fuzz_jit_strings.py [--seed N] [--count N] [--bin out/boomkat]
 """
@@ -116,8 +116,8 @@ def main():
     ap.add_argument("--count", type=int, default=40)
     ap.add_argument("--bin", default="out/boomkat")
     o = ap.parse_args()
-    modes = {"interp": [o.bin, "--script"], "jit": [o.bin, "--jit", "--script"],
-             "opt": [o.bin, "--jit", "--opt", "--script"]}
+    modes = {"interp": [o.bin, "--script"], "jit": [o.bin, "--jit", "--no-opt", "--script"],
+             "opt": [o.bin, "--jit", "--script"]}
     fails = 0
     for n in range(o.count + 1):
         rng = random.Random(o.seed * 100003 + n)

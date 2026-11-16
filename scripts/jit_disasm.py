@@ -3,7 +3,7 @@
 
     python3 scripts/jit_disasm.py [--fn N] [--all] [--node-op OP] -- BIN [ENGINE ARGS] --script FILE
 
-Runs BIN with --jit-dump-code (add --jit --opt to the engine arguments) and prints the machine code
+Runs BIN with --jit-dump-code (add --jit to the engine arguments) and prints the machine code
 of each optimized body under the graph node it was emitted for: `n<index> <OP> pc <bytecode pc>`,
 with `fn <k>` for a node of an inlined callee. Node indexes match --opt-dump, so running the same
 command with --opt-dump shows each node's operands. The code after the last node holds the exit
@@ -64,7 +64,7 @@ for line in run.stderr.splitlines():
         pending = None
 if not bodies:
     sys.stderr.write(run.stderr[-2000:])
-    sys.exit('jit_disasm: no optimized code was printed (are --jit --opt among the engine arguments?)')
+    sys.exit('jit_disasm: no optimized code was printed (are --jit among the engine arguments?)')
 
 enc_re = re.compile(r'encoding: \[([^\]]*)\]')
 

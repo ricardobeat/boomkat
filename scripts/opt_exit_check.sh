@@ -38,15 +38,15 @@ diffs=$(for f in $FILES; do for r in $REASONS discard; do echo "$f $r"; done; do
 if [ -n "$diffs" ]; then echo "$diffs"; fails=$(echo "$diffs" | wc -l | tr -d ' '); fi
 # The polymorphic regressions must reach their optimized paths, rather than pass
 # output comparison entirely through generic calls and property reads.
-n=$($BIN --memory-limit=512 --jit --opt --opt-dump --script test/jit/opt_poly_call.js 2>&1 | grep -c BRANCH_CALLEE)
+n=$($BIN --memory-limit=512 --jit --opt-dump --script test/jit/opt_poly_call.js 2>&1 | grep -c BRANCH_CALLEE)
 if [ "$n" -eq 0 ]; then echo "NOPOLYCALL"; fails=$((fails+1)); fi
 # A polymorphic call in an inlined body inlines its cases there.
-n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_inline_poly_nested.js 2>&1 | grep -c "^opt compile fn#[0-9]* drive:.* inlined [4-9] ")
+n=$($BIN --memory-limit=512 --jit --opt-log --script test/jit/opt_inline_poly_nested.js 2>&1 | grep -c "^opt compile fn#[0-9]* drive:.* inlined [4-9] ")
 if [ "$n" -eq 0 ]; then echo "NONESTEDPOLY"; fails=$((fails+1)); fi
 # A polymorphic call whose callees are not inlined enters them as register calls.
-n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_poly_reg_call.js 2>&1 | grep -c "^opt compile fn#[0-9]* drive:.* calls reg 1 ")
+n=$($BIN --memory-limit=512 --jit --opt-log --script test/jit/opt_poly_reg_call.js 2>&1 | grep -c "^opt compile fn#[0-9]* drive:.* calls reg 1 ")
 if [ "$n" -eq 0 ]; then echo "NOPOLYREGCALL"; fails=$((fails+1)); fi
-st=$($BIN --memory-limit=512 --jit --opt --opt-dump --jit-stats --script test/jit/opt_poly_load_late.js 2>&1)
+st=$($BIN --memory-limit=512 --jit --opt-dump --jit-stats --script test/jit/opt_poly_load_late.js 2>&1)
 case "$st" in *"opt inherited poly:"*) ;; *) echo "NOPOLYLOAD"; fails=$((fails+1));; esac
 n=$(printf '%s\n' "$st" | sed -n 's/^opt exit shape: //p')
 if [ -z "$n" ] || [ "$n" -gt 6 ]; then echo "POLYLOADCHURN $n"; fails=$((fails+1)); fi
@@ -62,25 +62,25 @@ done
 st=$($BIN --memory-limit=512 --opt-force-exit=forced:2:5 --opt-exit-max=2 --jit-stats --script test/jit_baseline_calls.js 2>&1 | grep "^opt: ")
 case "$st" in *"discarded 0"*|*"(0 reoptimized)"*|"") echo "NODISCARD: $st"; fails=$((fails+1));; esac
 # A site that exits repeatedly is lowered generically by the rebuild instead of exiting again.
-n=$($BIN --memory-limit=512 --jit --opt --jit-stats --script test/jit/opt_site_ban.js 2>&1 | grep -c "^opt: [1-9][0-9]* sites lowered generically")
+n=$($BIN --memory-limit=512 --jit --jit-stats --script test/jit/opt_site_ban.js 2>&1 | grep -c "^opt: [1-9][0-9]* sites lowered generically")
 if [ "$n" != 1 ]; then echo "NOBAN"; fails=$((fails+1)); fi
 # An instruction of an inlined body that exits repeatedly keeps its call out of the next build: the
 # exits stay few (the fixture takes 24 before the ban).
-n=$($BIN --memory-limit=512 --jit --opt --jit-stats --script test/jit/opt_inline_exit_ban.js 2>&1 | sed -n 's/^opt inline: .* \([0-9]*\) exits from inlined bodies/\1/p')
+n=$($BIN --memory-limit=512 --jit --jit-stats --script test/jit/opt_inline_exit_ban.js 2>&1 | sed -n 's/^opt inline: .* \([0-9]*\) exits from inlined bodies/\1/p')
 if [ -z "$n" ] || [ "$n" -gt 8 ]; then echo "NOINLINEBAN $n"; fails=$((fails+1)); fi
 # The 20 KB code cap evicts optimized bodies that were not entered since the last sweep.
-n=$($BIN --memory-limit=512 --jit --opt --opt-always --opt-code-max=20000 --jit-stats --script test/jit/opt_inline_getvar.js 2>&1 | grep -c "^opt: [1-9][0-9]* evicted")
+n=$($BIN --memory-limit=512 --jit --opt-always --opt-code-max=20000 --jit-stats --script test/jit/opt_inline_getvar.js 2>&1 | grep -c "^opt: [1-9][0-9]* evicted")
 if [ "$n" != 1 ]; then echo "NOEVICT"; fails=$((fails+1)); fi
 # High phi pressure must retain the safe initial global-helper inlining; overflow
 # recompilation may fall back when synthetic conversions cannot fit in registers.
-n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_global_phi.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ globalPhi:[0-9]+ .* inlined [1-9][0-9]* ')
+n=$($BIN --memory-limit=512 --jit --opt-log --script test/jit/opt_global_phi.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ globalPhi:[0-9]+ .* inlined [1-9][0-9]* ')
 if [ "$n" = 0 ]; then echo "NOGLOBALPHIINLINE"; fails=$((fails+1)); fi
 # Overflow feedback introduces pinned conversions without frame homes. Phi repair
 # must make room for them and retain the recompiled inlined body safely.
-n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_global_phi.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ globalPhi:[0-9]+ .* inlined [1-9][0-9]* reopt [1-9][0-9]* ')
+n=$($BIN --memory-limit=512 --jit --opt-log --script test/jit/opt_global_phi.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ globalPhi:[0-9]+ .* inlined [1-9][0-9]* reopt [1-9][0-9]* ')
 if [ "$n" = 0 ]; then echo "NOGLOBALPHIREOPTINLINE"; fails=$((fails+1)); fi
 # A function too large for its graph compiles the loop it spends its time in on its own.
-n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_region.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ .* region [0-9]+-[0-9]+ ')
+n=$($BIN --memory-limit=512 --jit --opt-log --script test/jit/opt_region.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ .* region [0-9]+-[0-9]+ ')
 if [ "$n" = 0 ]; then echo "NOREGION"; fails=$((fails+1)); fi
 echo "opt-exits fails=$fails"
 [ "$fails" = 0 ]

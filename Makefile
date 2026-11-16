@@ -641,7 +641,7 @@ test-jit-api: out/jit_capi
 .PHONY: test-jit-asan
 test-jit-asan: out/boomkat_jit_asan
 	bash scripts/run_jit_diff.sh ./out/boomkat_jit_asan
-	JIT_FLAGS="--opt --opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat_jit_asan
+	JIT_FLAGS="--opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat_jit_asan
 
 out/boomkat_jit_asan: project.json $(call target_sources,boomkat_jit_asan) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat_jit_asan $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
