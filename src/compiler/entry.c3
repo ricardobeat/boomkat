@@ -207,6 +207,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // production in expressions.c3; without it `eval("super()")` is a spurious
     // SyntaxError even though the runtime env carries __super__ and new.target.
     ctx.is_constructable = allow_super_call;
+    ctx.in_derived_ctor = allow_super_call;
     ctx.eval_direct_in_function = direct_in_function;
     // Inherit the caller's ContainsArguments restriction (ECMA-262 §15.7.10
     // step 14 / §PerformEval): a direct eval called from inside a class
