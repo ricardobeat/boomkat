@@ -124,7 +124,7 @@ fn OpStatus op_ldthis(Dispatch* ds, DecodedInsn insn) {
         if (!vm_throw_error(vm, vm.heap.ref_err_proto,
                 "Must call super constructor in derived class before accessing 'this' or returning from derived constructor",
                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
-            return op_uncaught(ds, &vm.throw_value);
+            return op_fail(ds, VM_ERROR);
         }
         return ds.needs_restart ? RESTART : NEXT;
     }
@@ -1753,7 +1753,7 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
         if (!vm_throw_error(vm, vm.heap.ref_err_proto,
                 "Must call super constructor before returning from derived constructor",
                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
-            return op_uncaught(ds, &vm.throw_value);
+            return op_fail(ds, VM_ERROR);
         }
         return ds.needs_restart ? RESTART : NEXT;
     }
@@ -1761,7 +1761,7 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
         if (!vm_throw_error(vm, vm.heap.type_err_proto,
                 "Derived constructors may only return object or undefined",
                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
-            return op_uncaught(ds, &vm.throw_value);
+            return op_fail(ds, VM_ERROR);
         }
         return ds.needs_restart ? RESTART : NEXT;
     }
@@ -1773,7 +1773,7 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
         if (!vm_throw_error(vm, vm.heap.ref_err_proto,
                 "Super constructor may only be called once",
                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
-            return op_uncaught(ds, &vm.throw_value);
+            return op_fail(ds, VM_ERROR);
         }
         return ds.needs_restart ? RESTART : NEXT;
     }

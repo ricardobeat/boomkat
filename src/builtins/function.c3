@@ -395,6 +395,11 @@ fn bool is_intrinsic_apply(TVal callee) {
     return (*obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.FUNCTION_PROTO_APPLY.ordinal;
 }
 
+// Stores apply's extracted arguments in the argument slots.
+fn void apply_place_args(BuiltinContext* ctx, TVal* args, uint count) @local {
+    for (uint i = 0; i < count; i++) ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg + i], &args[i]);
+}
+
 // Shared apply implementation for Function.prototype.apply and Reflect.apply.
 // `target` must already be callable. `this_arg` and `arg_array` are the
 // receiver and arguments-list values respectively.
@@ -638,10 +643,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
 
         // Lightfunc callees read their receiver from regs[base_reg - 1].
         ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 1], &this_arg);
-        for (uint i = 0; i < actual_count; i++) {
-            ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg + i], &extracted_args[i]);
-        }
-
+        apply_place_args(ctx, extracted_args, actual_count);
         if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         dispatch_retargeted(fn_idx, &inner_ctx);
         // A re-entrant builtin (Generator.prototype.throw/return/next) does not
@@ -675,9 +677,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         // Reflect.apply / Function.prototype.apply calls on the same values.
         ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 2], &target);
         ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 1], &this_arg);
-        for (uint i = 0; i < actual_count; i++) {
-            ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg + i], &extracted_args[i]);
-        }
+        apply_place_args(ctx, extracted_args, actual_count);
         if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         ctx.needs_re_dispatch = true;
         ctx.re_nargs = (ushort)actual_count;

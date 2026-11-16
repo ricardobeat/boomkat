@@ -56,3 +56,33 @@ same(instance.target, Target);
     function strict(a, b = a + 1) { return b; }
     same(strict(2), 3);
 })();
+// Defaults that read `this`, members, calls and outer names compile inline.
+var outer = { order: 'XYZ' };
+class Euler {
+    constructor() { this._order = 'ZYX'; }
+    set(m, order = this._order, other = outer.order, made = new Array(2)) {
+        const te = m, a = te[0];
+        return order + other + made.length + a;
+    }
+}
+same(new Euler().set([7]), 'ZYXXYZ27');
+same(new Euler().set([7], 'A', 'B', []), 'AB07');
+// A body declaration never shadows the name a default reads.
+var shadowed = 'outer';
+function bodyVar(a = shadowed) { var shadowed = 'inner'; return a; }
+same(bodyVar(), 'outer');
+function bodyFn(a = shadowed) { function shadowed() {} return a; }
+same(bodyFn(), 'outer');
+// A later parameter is still in its TDZ.
+function later(a = b, b) { return a; }
+var threw = false;
+try { later(); } catch (e) { threw = e instanceof ReferenceError; }
+same(threw, true);
+// A derived constructor's default cannot read `this` before super().
+class Base {}
+class Derived extends Base { constructor(a = Math.max(1, 2)) { super(); this.a = a; } }
+same(new Derived().a, 2);
+// An inline default leaves no parameter scope: a body closure still sees the
+// parameters and locals it captures.
+function capture(a, b = a * 2) { const c = b + 1; return () => a + b + c; }
+same(capture(1)(), 6);

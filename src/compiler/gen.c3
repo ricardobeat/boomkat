@@ -90,8 +90,12 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
     defer free_destruct_binds(&param_binds);
     uint nparams = tree.list_len(params);
     bool inline_defaults = !self.disable_optimize && !self.capture_all
-        && !self.is_arrow && !self.is_generator && !self.is_async
-        && !self.in_class_body && !self.has_super_binding;
+        && !self.is_arrow && !self.is_generator && !self.is_async;
+    // A derived constructor's `this` is unbound until super() returns.
+    ParamExprScope param_scope = {
+        .res = &idx.res, .func_scope = scope, .params = params,
+        .allow_this = !self.in_derived_ctor,
+    };
     for (uint i = 0; inline_defaults && i < nparams; i++) {
         uint p = tree.list_item(params, i);
         if (tree.tags.data[p] == NodeTag.ASSIGN_PAT) p = tree.lhs.data[p];
@@ -137,7 +141,8 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
                 self.gen_line_main(p);
                 uint expr = tree.rhs.data[p];
                 uint budget = 32;
-                if (inline_defaults && inline_param_expr(tree, expr, params, i, &budget)) {
+                param_scope.before = i;
+                if (inline_defaults && inline_param_expr(&param_scope, tree, expr, &budget)) {
                     self.defaults.push({ .param_reg = reg, .param_name_idx = name_idx, .ast_expr = expr });
                 } else {
                     self.push_param_default(reg, name_idx, self.compile_default_expr(name, expr)!);

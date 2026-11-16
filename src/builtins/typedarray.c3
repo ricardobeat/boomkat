@@ -1080,7 +1080,7 @@ fn HObject* ta_validate(BuiltinContext* ctx) {
 // out of bounds when the buffer shrinks past it. Covers both TypedArray and
 // DataView. Returns true if detached or out of bounds. Fixed (non-resizable)
 // buffers can never be OOB while live, so this collapses to a detach check.
-fn bool view_is_out_of_bounds(HObject* obj) {
+fn bool view_is_out_of_bounds(HObject* obj) @inline {
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     if (buf == null) return true;
     uint buf_len = buffer_byte_length(buf);
@@ -1123,7 +1123,7 @@ fn bool ta_prevent_extensions_allowed(HObject* obj) {
 // For length-tracking views this is recomputed from the buffer; for fixed
 // views it is the stored byte_length (0 when out of bounds). For TypedArrays
 // the tracking length is floored to a whole number of elements.
-fn uint view_effective_byte_length(HObject* obj) {
+fn uint view_effective_byte_length(HObject* obj) @inline {
     if (view_is_out_of_bounds(obj)) return 0;
     if (!(*obj.extra_ptr()).view.length_tracking) {
         return (*obj.extra_ptr()).view.byte_length;
@@ -1159,7 +1159,7 @@ fn bool ta_buffer_truly_detached(HObject* obj) {
 
 // Element count ([[ArrayLength]]) of a live TypedArray, 0 when detached
 // or out of bounds.
-fn uint ta_element_count(HObject* obj) {
+fn uint ta_element_count(HObject* obj) @inline {
     uint shift = ta_elem_shift(obj.flags.obj_class);
     return view_effective_byte_length(obj) >> shift;
 }
@@ -1308,7 +1308,9 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
     // Resolve offset argument
     TVal offset_arg; offset_arg.set_undefined();
     if (ctx.argc >= 2) offset_arg = ctx.regs[ctx.base_reg + 1];
-    double off_d = builtin_to_integer_vm(ctx, &offset_arg);
+    // ToIntegerOrInfinity of an integer is itself and runs no user code.
+    double off_d = offset_arg.is_fastint() ? (double)offset_arg.get_fastint()
+                                           : builtin_to_integer_vm(ctx, &offset_arg);
     if (ctx.should_throw) return;
     if (off_d < 0.0) {
         arraybuffer_throw_range_error(ctx, "TypedArray.set: offset is negative");
@@ -1408,18 +1410,23 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
         return;
     }
 
-    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-    TVal len_tv; len_tv.set_fastint(0);
-    {
+    // An Array's length is a data property held in array_len_ptr.
+    bool plain_array = src_arr.get_class() == hobject::ObjClass.ARRAY;
+    uint src_len;
+    if (plain_array) {
+        src_len = *src_arr.array_len_ptr();
+    } else {
+        HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+        TVal len_tv; len_tv.set_fastint(0);
         TVal? lv = builtins_generic_get(src_arr, length_key, ctx);
         if (ctx.should_throw) return;
         if (try v = lv) len_tv = v;
+        double src_len_d = builtin_to_integer_vm(ctx, &len_tv);
+        if (ctx.should_throw) return;
+        if (src_len_d < 0.0) src_len_d = 0.0;
+        // LengthOfArrayLike may return a very large number; cap to uint range.
+        src_len = (src_len_d >= 4294967296.0) ? 0xFFFFFFFFu : (uint)(long)src_len_d;
     }
-    double src_len_d = builtin_to_integer_vm(ctx, &len_tv);
-    if (ctx.should_throw) return;
-    if (src_len_d < 0.0) src_len_d = 0.0;
-    // LengthOfArrayLike may return a very large number; cap to uint range.
-    uint src_len = (src_len_d >= 4294967296.0) ? 0xFFFFFFFFu : (uint)(long)src_len_d;
 
     if ((ulong)src_len + (ulong)target_offset > (ulong)dst_len) {
         arraybuffer_throw_range_error(ctx, "TypedArray.set: source is too large");
@@ -1437,7 +1444,29 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
         src_prim_str = (HString*)(*src_arr.extra_ptr()).prim.primitive_value.get_heapptr();
     }
 
-    for (uint i = 0; i < src_len; i++) {
+    // The leading dense numbers of an ordinary array: their Get and ToNumber
+    // run no user code, so the range checked above still holds for each store.
+    // A hole reads as undefined in the dense part and ends the run, as does a
+    // named entry at an index (see arr_dense_elem).
+    uint i = 0;
+    if (plain_array && !src_arr.flags.has_indexed_named_prop && !is_bigint_typed_array_class(dst_cls)) {
+        hobject::PropValue* part = src_arr.array_part();
+        uint run = part == null ? 0 : min(src_len, src_arr.array_size);
+        char* dst_data = (*dst_buf.extra_ptr()).ab.data + dst_byte_off + (target_offset << dst_shift);
+        for (; i < run; i++) {
+            TVal elem = part[i].get();
+            if (!(elem.is_number() || elem.is_fastint())) break;
+            double d = elem.get_number_or_fastint();
+            switch (dst_cls) {
+                case hobject::ObjClass.FLOAT32ARRAY: ((float*)dst_data)[i] = (float)d;
+                case hobject::ObjClass.FLOAT64ARRAY: ((double*)dst_data)[i] = d;
+                default:
+                    TAScalar sv = { .num = d };
+                    ta_store_scalar(dst_data + (i << dst_shift), dst_cls, &sv);
+            }
+        }
+    }
+    for (; i < src_len; i++) {
         TVal elem; elem.set_undefined();
         if (src_is_string_exotic && src_prim_str != null) {
             // Serve char at index i from the underlying string.
