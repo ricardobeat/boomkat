@@ -1437,7 +1437,25 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
         src_prim_str = (HString*)(*src_arr.extra_ptr()).prim.primitive_value.get_heapptr();
     }
 
-    for (uint i = 0; i < src_len; i++) {
+    // The leading dense numbers of an ordinary array: their Get and ToNumber
+    // run no user code, so the range checked above still holds for each store.
+    uint i = 0;
+    if (!is_bigint_typed_array_class(dst_cls)) {
+        char* dst_data = (*dst_buf.extra_ptr()).ab.data + dst_byte_off + (target_offset << dst_shift);
+        for (; i < src_len; i++) {
+            TVal elem;
+            if (!arr_dense_elem(src_arr, i, &elem) || !(elem.is_number() || elem.is_fastint())) break;
+            double d = elem.get_number_or_fastint();
+            switch (dst_cls) {
+                case hobject::ObjClass.FLOAT32ARRAY: ((float*)dst_data)[i] = (float)d;
+                case hobject::ObjClass.FLOAT64ARRAY: ((double*)dst_data)[i] = d;
+                default:
+                    TAScalar sv = { .num = d };
+                    ta_store_scalar(dst_data + (i << dst_shift), dst_cls, &sv);
+            }
+        }
+    }
+    for (; i < src_len; i++) {
         TVal elem; elem.set_undefined();
         if (src_is_string_exotic && src_prim_str != null) {
             // Serve char at index i from the underlying string.
