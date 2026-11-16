@@ -2857,6 +2857,9 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
 // GETPROPC becomes GETPROPC_CACHED, as when the switch fills its entry.
 fn void th_fill_from_mega(Instruction* pc, heap::Heap* h, hobject::ICEntry* ic, HObject* hobj, void* key,
                           hobject::MegamorphicEntry* me) @private @noinline {
+    // A snapshot of one link cannot describe a deeper owner; the switch fills
+    // the entry with the whole chain when the site comes back to it.
+    if (me.first_proto != null) return;
     if (me.proto != null) {
         if (!hobject::ic_reserve_chain(ic, h)) return;
         HObject* owner = (HObject*)me.proto;
