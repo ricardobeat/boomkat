@@ -692,11 +692,11 @@ fn JsValue? JsContext.root(&self, TVal tv) {
 //         io::printn(rt.as_string(name)!);
 //     };
 macro void JsContext.@scope(&self; @body()) {
-    var mark = self.scoped.len();
+    var mark = self.scoped.len;
     self.scope_depth++;
     defer {
         self.scope_depth--;
-        while (self.scoped.len() > mark) self.release(self.scoped.pop()!!);
+        while (self.scoped.len > mark) self.release(self.scoped.pop()!!);
     }
     @body();
 }
