@@ -33,8 +33,8 @@
 // run inline. They guard their operand tags as the threaded handlers do and
 // take their slow path on any failed guard: out of line, a number path where the
 // threaded handlers have one, then the thunk call. A backward branch charges
-// the GC budget inline and takes the slow path when it expires or an
-// interrupt hook is installed, so vm_branch runs the safepoint. Property,
+// the GC budget inline and takes the slow path when it expires, so vm_branch
+// runs the safepoint, which also polls an installed interrupt hook. Property,
 // global, variable and capture access run their inline cache hits inline
 // (baseline_access.c3).
 //
@@ -626,8 +626,6 @@ struct Asm {
     long pc_off;
     long regs_off;
     long budget_off;
-    long interrupt_off;
-    long runtime_off;
     long htmldda_off;
     Layout* lay;
     // The heap the code is compiled for: its shape table sizes NEWOBJ_SHAPE's object.
@@ -681,8 +679,6 @@ fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
         .pc_off = (char*)&dl.curr_pc - (char*)dl,
         .regs_off = (char*)&dl.regs_base - (char*)dl,
         .budget_off = (char*)&hl.bwd_gc_budget - (char*)hl,
-        .interrupt_off = (char*)&hl.capi_interrupt_fn - (char*)hl,
-        .runtime_off = (char*)&hl.capi_runtime - (char*)hl,
         .htmldda_off = (char*)&hl.htmldda_obj - (char*)hl,
         .lay = layout(),
         .hp = h,
@@ -1475,16 +1471,14 @@ fn void Asm.box_shifted(&self, int reg) {
 }
 
 // Charge a backward branch against the GC budget as vm_branch does, taking
-// the slow path (which runs vm_branch) when the budget expires or an
-// interrupt hook is installed.
+// the slow path (which runs vm_branch) when the budget expires. An installed
+// interrupt hook is polled there too, so native loops poll it once every
+// BWD_GC_INTERVAL back edges instead of leaving native code on each one.
 fn void Asm.back_edge(&self) {
     void* c = self.c;
     int hm = SLJIT_MEM | self.heap;
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, hm, self.budget_off);
     self.call.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, SLJIT_IMM, 1));
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, hm, self.interrupt_off);
-    sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, hm, self.runtime_off);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
     sljit_emit_op2(c, SLJIT_SUB, R2, 0, R2, 0, SLJIT_IMM, 1);
     sljit_emit_op1(c, SLJIT_MOV_U32, hm, self.budget_off, R2, 0);
 }

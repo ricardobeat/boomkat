@@ -396,14 +396,19 @@ fn void* opt_osr(Dispatch* ds, CompiledFunction* f) @noinline {
     return baseline_jump_entry(f);
 }
 
-// The slow path of a back edge's poll in optimized code: the budget expired or a
-// hook is installed. Zero continues the loop; nonzero leaves for the baseline code.
+// The slow path of a back edge's poll in optimized code: the budget expired.
+// Zero continues the loop; nonzero leaves for the baseline code, when an
+// installed hook asks to interrupt. The budget is then left about to expire,
+// so the baseline's next back edge reaches vm_branch, which raises it.
 fn long opt_poll(Dispatch* ds) {
     Heap* h = ds.heap;
-    if (h.capi_interrupt_fn != null || h.capi_runtime != null) return 1;
     if (--h.bwd_gc_budget == 0) {
         if (h.gc_pending) h.safepoint_gc(heap::GC_LOOP_WORK);
         h.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+    }
+    if ((h.capi_interrupt_fn != null || h.capi_runtime != null) && h.poll_interrupt()) {
+        h.bwd_gc_budget = 1;
+        return 1;
     }
     return 0;
 }

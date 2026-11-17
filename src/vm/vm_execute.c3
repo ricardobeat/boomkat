@@ -2485,6 +2485,9 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
         if (--h.bwd_gc_budget == 0) {
             if (h.gc_pending) h.safepoint_gc(heap::GC_LOOP_WORK);
             h.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+            // Native code charges no interrupt poll per back edge and comes
+            // here only when the budget expires: poll the hook now.
+            if (h.capi_interrupt_fn != null || h.capi_runtime != null) h.interrupt_due = true;
             // An interpreted loop that got hot continues in native code:
             // Vm.run restarts and enters the frame at the branch target.
             $if $feat(SLJIT):
