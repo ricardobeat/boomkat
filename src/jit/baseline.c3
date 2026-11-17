@@ -414,11 +414,6 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
         st.skipped_eval++;
         return null;
     }
-    if (!baseline_compilable(f)) {
-        st.excluded_opcode++;
-        f.jit_refused = true;
-        return null;
-    }
     if (f.code_count > BASELINE_MAX_WORDS) {
         st.too_large++;
         f.jit_refused = true;
@@ -426,10 +421,19 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
     }
     // Codegen is wasted work when the cap will only discard its result: use
     // the ~80 bytes of code plus the entry table per instruction word, and
-    // sweep first so this estimate does not have to be exact.
+    // sweep first so this estimate does not have to be exact. A capped
+    // function waits for another full entry threshold before it tries again:
+    // with the optimizing tier on, only evicted optimized code lowers the cap,
+    // and a retry on every entry would repeat this check on each call.
     usz estimate = BaselineCode::size + (usz)f.code_count * (BASELINE_BYTES_PER_WORD + void*::size);
     if (st.live_bytes + estimate > BASELINE_CODE_CAP && !baseline_make_room(h, estimate)) {
         st.capped++;
+        f.jit_entries = 0;
+        return null;
+    }
+    if (!baseline_compilable(f)) {
+        st.excluded_opcode++;
+        f.jit_refused = true;
         return null;
     }
     long t0 = st.timing ? (long)clock::now() : 0;
@@ -456,6 +460,7 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
         sljit_free_code(bc.exec, null);
         h.free_func(h.heap_udata, bc);
         st.capped++;
+        f.jit_entries = 0;
         return null;
     }
     st.code_bytes += bc.code_bytes;
