@@ -661,10 +661,12 @@ fn TVal th_undefined() @private @inline {
 
 // Whether a call must take the switch path: a collection is due, or one is
 // marking and the frame's roots would need shading as they are published, or
-// the burst has entered TH_CALL_BURST calls without returning to the switch.
+// an interrupt poll is due (vm_call_poll_due), or the burst has entered
+// TH_CALL_BURST calls without returning to the switch.
 macro bool th_call_gate(ColdCtx* cold) @private {
     Vm* vm = cold.vm;
     if (vm.heap.gc_safepoint_due(true)) { opprof_bail(GATE_GC); return true; }
+    if (vm_call_poll_due(vm.heap)) { opprof_bail(GATE_INTERRUPT); return true; }
     if (++cold.call_burst < TH_CALL_BURST) return false;
     cold.call_burst = 0;
     opprof_bail(GATE_BURST);

@@ -37,12 +37,13 @@ enum CallBail : char {
     PLAIN_THIS,      // undefined receiver to a sloppy callee that reads this
     GATE_GC,         // safepoint due
     GATE_BURST,      // TH_CALL_BURST reached
+    GATE_INTERRUPT,  // interrupt poll due
     ENTER,           // th_enter_lean declined
     NOT_COMPILED,    // callee not an object, or a native or bound function
     NATIVE_KIND,     // not compiled and not a builtin the native path runs
     NATIVE_GATE,     // builtin call while GC work is due
 }
-const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "enter", "not_compiled", "native_kind", "native_gate" };
+const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "gate_interrupt", "enter", "not_compiled", "native_kind", "native_gate" };
 tlocal ulong[CALL_BAIL_NAMES.len] opprof_call_bail;
 
 macro void opprof_bail(CallBail why) {
