@@ -141,8 +141,8 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
             case TokenType.LT:       angle++;
             case TokenType.GT:       if (angle > 0) angle--;
             case TokenType.GE:       if (angle > 0) angle--;  // `>=` at end of generic like `T=>`
-            case TokenType.SHR:      if (angle >= 2) { angle -= 2; } else if (angle == 1) angle--;
-            case TokenType.USHR:     if (angle >= 3) { angle -= 3; } else if (angle > 0) angle = 0;
+            case TokenType.SHR:      if (angle >= 2) { angle -= 2; } else if (angle == 1) { angle--; }
+            case TokenType.USHR:     if (angle >= 3) { angle -= 3; } else if (angle > 0) { angle = 0; }
             case TokenType.ARROW:
                 if (paren == 1 && top_group_first_is_group) paren_has_arrow = true;
                 break;

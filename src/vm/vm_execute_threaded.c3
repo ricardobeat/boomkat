@@ -550,8 +550,11 @@ fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TV
                          this_value, this_valid);
 }
 
+// `undef_this` says the instruction passes an undefined receiver without
+// storing it in the register above the callee (CALL_UNDEF_THIS).
 fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                               uint callee_reg, uint result_reg, uint nargs) @private @noinline {
+                               uint callee_reg, uint result_reg, uint nargs,
+                               bool undef_this = false) @private @noinline {
     Vm* vm = cold.vm;
     TVal callee = regs[callee_reg];
     HObject* function = null;
@@ -581,8 +584,10 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
     if (top > vm.valstack_top) vm.valstack_top = top;
     TVal result;
     result.set_undefined();
+    TVal undefined_this = th_undefined();
     builtins::BuiltinContext ctx = call_context(cold, callee_reg, nargs, &result,
-                                                this_val: &regs[callee_reg + 1], callee: function);
+                                                this_val: undef_this ? &undefined_this : &regs[callee_reg + 1],
+                                                callee: function);
     builtins::dispatch_builtin(fn_idx, &ctx);
     // The builtin may have moved the value stack.
     regs = act.bottom;
@@ -1000,7 +1005,7 @@ macro LeanCall @lean_call_undef_this(Instruction* pc, TVal* regs, ColdCtx* cold,
     Instruction insn = *pc;
     if (@lean_gate(cold, $jit)) return DECLINE;
     CompiledFunction* target = th_lean_target(cold.vm, regs[insn.b], regs + insn.b + 2, true, $jit);
-    if (target == null) return DECLINE;
+    if (target == null) return NATIVE;
     @note_callee(pc, cold, target);
     if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return DONE;
     return @lean_publish(pc, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false, $jit);
@@ -1009,7 +1014,9 @@ macro LeanCall @lean_call_undef_this(Instruction* pc, TVal* regs, ColdCtx* cold,
 fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
                                    TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    return @lean_continue(pc, handlers, regs, cold, @lean_call_undef_this(pc, regs, cold, false), insn.b, insn.a, insn.c);
+    LeanCall outcome = @lean_call_undef_this(pc, regs, cold, false);
+    if (outcome == LeanCall.NATIVE) return th_call_native(pc, handlers, regs, cold, insn.b, insn.a, insn.c, true);
+    return @lean_continue(pc, handlers, regs, cold, outcome, insn.b, insn.a, insn.c);
 }
 
 // The variable IC entry for the instruction at `pc` when it still describes the
@@ -1740,6 +1747,11 @@ fn Instruction* th_mul(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
 fn Instruction* th_div(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
+    long quotient;
+    if (types::exact_fastint_quotient(regs + insn.b, regs + insn.c, &quotient)) {
+        ra.set_fastint(quotient);
+        return th_next(pc + 1, handlers, regs, cold);
+    }
     double x; double y;
     if (!th_numeric_operand(regs + insn.b, &x) || !th_numeric_operand(regs + insn.c, &y)) return pc;
     ra.set_number(x / y);
@@ -2874,6 +2886,9 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
 // entry.
 fn void th_fill_from_mega(Instruction* pc, heap::Heap* h, hobject::ICEntry* ic, HObject* hobj, void* key,
                           hobject::MegamorphicEntry* me) @private @noinline {
+    // A snapshot of one link cannot describe a deeper owner; the switch fills
+    // the entry with the whole chain when the site comes back to it.
+    if (me.first_proto != null) return;
     if (me.proto != null) {
         if (!ic_fill_read_heap(h, ic, hobj, key, (HObject*)me.proto)) return;
     } else {
@@ -2973,6 +2988,12 @@ fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* reg
 fn Instruction* th_call_setter(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                HObject* hobj, hobject::ICEntry* ic, TVal* receiver, TVal* value) @private @noinline {
     Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    // A private name keeps PrivateSet's checks; the receiver and a heap value stay rooted by the
+    // frame's `this` or a register under its watermark.
+    if (((HString*)ic.key.borrow()).is_hidden()) return pc;
+    if (receiver != &act.this_binding && (uint)(receiver - regs) >= act.heap_reg_count) return pc;
+    if (value.is_heap_allocated() && (uint)(value - regs) >= act.heap_reg_count) return pc;
     hobject::PropValue* slot = hobject::ic_resolve_slot(ic, hobj);
     if (slot == null) return pc;
     TVal setter = hobject::hobject_access_setter(slot.get());

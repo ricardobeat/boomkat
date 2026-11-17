@@ -586,6 +586,11 @@ fn OpStatus op_div(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = ds.regs_base + insn.c;
+    long quotient;
+    if (types::exact_fastint_quotient(rb, rc, &quotient)) {
+        vm.heap.set_reg_fastint(ra, quotient);
+        return NEXT;
+    }
     NumericOperands ops;
     if (!vm_numeric_operands(vm, rb, rc, &ops)) {
         if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);

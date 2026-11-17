@@ -543,7 +543,7 @@ const PropFlags PROP_FLAGS_NEC = {
 struct AccessorResult {
     // The getter or setter TVal (function), or undefined if not found.
     TVal accessor_fn;
-    // The object that owns the accessor (needed for `this` binding).
+    // The receiver the lookup started from (needed for `this` binding).
     HObject* this_obj;
     // The object on the chain that holds the accessor property (find_accessor_proto).
     HObject* owner;
@@ -4375,14 +4375,18 @@ fn PropValue* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
 }
 
 // One entry in the global megamorphic cache, shared by every call site. An own
-// property is keyed by (shape_id, key); one found on the receiver's immediate
-// prototype is keyed by (shape_id, key, prototype), since receivers of one
-// shape can have different prototypes (every fresh object starts at the empty
-// shape) and would otherwise evict each other's entries.
+// property is keyed by (shape_id, key); an inherited one by (shape_id, key,
+// immediate prototype), since receivers of one shape can have different
+// prototypes (every fresh object starts at the empty shape) and would otherwise
+// evict each other's entries.
 //
 // A shape does not name a prototype, which Object.setPrototypeOf can repoint
 // without touching shapes, so a prototype entry also snapshots the prototype's
-// identity and shape for the hit path to re-check.
+// identity and shape for the hit path to re-check. An owner further up, like a
+// base class's method read through two subclasses' instances, is guarded the
+// way a read site guards a chain: the immediate prototype by identity and the
+// whole chain by the heap's prototype epoch, which every observed object on it
+// bumps when it changes.
 struct MegamorphicEntry {
     hstring::StringRef key;           // interned key pointer (null = empty slot)
     uint    shape_id;      // receiver's shape ID at lookup time
@@ -4399,7 +4403,15 @@ struct MegamorphicEntry {
     bool    is_accessor;
     // The property's flags, which its owner's shape fixes.
     PropFlags flags;
+    // An owner beyond the immediate prototype: that prototype, and the
+    // prototype epoch the chain was observed at. Null for an own or
+    // immediate-prototype entry.
+    void*   first_proto;
+    ulong   proto_epoch;
 }
+
+// The deepest owner a megamorphic entry records, counted in prototype links.
+const uint MEGA_MAX_DEPTH = 4;
 
 fn uint mega_hash(uint shape_id, void* key) @inline {
     return ((uint)(uptr)key ^ (shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
@@ -4429,22 +4441,35 @@ fn PropValue* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key, Megamor
     // The receiver's shape says it has no own `key`; the recorded link must
     // still be the live one, at the same shape, for the owner to answer.
     HObject* owner = (HObject*)e.proto;
-    if (hobj.prototype != owner || owner.shape_id != e.proto_shape_id) return null;
+    if (e.first_proto != null) {
+        if (hobj.prototype != e.first_proto || e.proto_epoch != h.prototype_epoch) return null;
+    } else if (hobj.prototype != owner || owner.shape_id != e.proto_shape_id) {
+        return null;
+    }
     return &owner.prop_values()[e.prop_idx];
 }
 
 // Record a successful lookup in the megamorphic cache.
 //
 // Own properties and properties on the receiver's immediate prototype are
-// stored; anything deeper is not, since the entry has room to re-check only
-// one link and a longer chain could change out of sight.
+// re-checked by shape. A deeper owner, within MEGA_MAX_DEPTH links, needs every
+// object on the way to it to be a plain one whose changes bump the prototype
+// epoch, as a read site's epoch chain does (ic_fill_read).
 fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx, bool is_accessor) @inline {
     if (h.mega_cache == null) return;
     bool own = owner == hobj;
     // A dictionary shape can lose a key without changing its id.
-    if (hobj.in_dict_mode(h) || (!own && (hobj.prototype != owner || owner.in_dict_mode(h)))) return;
-    uint slot = own ? mega_hash(hobj.shape_id, key) : mega_hash_proto(hobj.shape_id, key, (void*)owner);
+    if (hobj.in_dict_mode(h)) return;
+    bool deep = !own && hobj.prototype != owner;
+    if (deep) {
+        if (!mega_observe_chain(hobj, key, owner)) return;
+    } else if (!own && owner.in_dict_mode(h)) {
+        return;
+    }
+    uint slot = own ? mega_hash(hobj.shape_id, key) : mega_hash_proto(hobj.shape_id, key, (void*)hobj.prototype);
     MegamorphicEntry* e = h.mega_cache + slot;
+    e.first_proto = deep ? (void*)hobj.prototype : null;
+    e.proto_epoch = h.prototype_epoch;
     e.key.set(h, (HString*)key);
     e.shape_id = hobj.shape_id;
     e.prop_idx = (uint)prop_idx;
@@ -4453,6 +4478,24 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     e.recycle_epoch = h.shape_recycle_epoch;
     e.is_accessor = is_accessor;
     e.flags = owner.get_prop_flags((uint)prop_idx, h);
+}
+
+// Mark the chain from `hobj`'s prototype to `owner` observed, so a change to any
+// object on it bumps the prototype epoch, when the epoch can guard it: plain
+// objects all the way, an ordinary named key, and an owner within reach.
+fn bool mega_observe_chain(HObject* hobj, void* key, HObject* owner) @noinline {
+    if (!plain_property_object(hobj) || ((HString*)key).is_arridx() || ((HString*)key).is_hidden()) return false;
+    HObject* cur = hobj.prototype;
+    for (uint depth = 1; cur != owner; depth++) {
+        if (cur == null || depth >= MEGA_MAX_DEPTH || !plain_property_object(cur)) return false;
+        cur = cur.prototype;
+    }
+    if (!plain_property_object(owner)) return false;
+    for (cur = hobj.prototype; ; cur = cur.prototype) {
+        cur.observe_prototype();
+        if (cur == owner) break;
+    }
+    return true;
 }
 
 // True when `instanceof` with `rfunc` on the right is plain OrdinaryHasInstance:
@@ -4741,7 +4784,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             if (cur.get_prop_flags((uint)idx, h).is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
-                if (want_getter && depth <= 1 && self.mega_cacheable(key, h)) {
+                if (want_getter && depth < MEGA_MAX_DEPTH && self.mega_cacheable(key, h)) {
                     mega_cache_store(h, self, key, cur, idx, true);
                 }
                 return {
@@ -4755,9 +4798,9 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
                 };
             }
             // Record the hit so the next lookup of this (shape, key) skips the
-            // walk. mega_cache_store rejects an owner further than one link
-            // away, so only depth 0 and 1 are offered.
-            if (want_getter && depth <= 1 && self.mega_cacheable(key, h)) {
+            // walk. mega_cache_store takes an owner up to MEGA_MAX_DEPTH links
+            // away when the prototype epoch can guard the chain.
+            if (want_getter && depth < MEGA_MAX_DEPTH && self.mega_cacheable(key, h)) {
                 mega_cache_store(h, self, key, cur, idx, false);
             }
             return {

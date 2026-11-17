@@ -1005,6 +1005,9 @@ fn long jit_put_setter(Dispatch* ds, ulong next_arg) {
     hobject::ICEntry* ic = ds.ic_base + (pc - ds.code_base);
     if (!ic.prop_flags.is_accessor || !ic.has_proto || ic.shape_id != hobj.shape_id
         || ic.key.borrow() != ds.constants[pc.c].get_heapptr() || vm.heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
+    if (((HString*)ic.key.borrow()).is_hidden()) return JIT_CALL_SLOW;
+    if (!own && (uint)pc.a >= ds.act.heap_reg_count) return JIT_CALL_SLOW;
+    if (value.is_heap_allocated() && (uint)(value - regs) >= ds.act.heap_reg_count) return JIT_CALL_SLOW;
     hobject::PropValue* slot = hobject::ic_resolve_slot(ic, hobj);
     if (slot == null) return JIT_CALL_SLOW;
     TVal setter = hobject::hobject_access_setter(slot.get());
