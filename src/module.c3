@@ -2346,6 +2346,13 @@ fn bool module_run_body(Heap* heap, Vm* vm, ModuleDef* mod) {
             TVal? res = vm.execute_in_env(mod.func, mod.env);
             if (catch res) { failed = true; }
         }
+        // An interrupt (or the heap limit) is uncatchable: it unwinds an async
+        // body without settling its promise, which would otherwise read as a
+        // top-level await still pending and the module as evaluated.
+        if (heap.uncatchable_throw) {
+            if (pending != null) heap.decref(pending.as_header());
+            failed = true;
+        }
 
         if (failed) return module_record_eval_error(heap, vm, mod);
 
