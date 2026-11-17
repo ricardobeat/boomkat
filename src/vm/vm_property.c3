@@ -2083,7 +2083,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     if (!vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
                                 // The site's entry names the setter's holder, as a read's names a
                                 // getter's: the threaded store calls it from there (th_call_setter).
-                                if (ds.ic_base != null && rb.is_string() && rb.get_heapptr() == key && acc.owner != null
+                                hobject::ICEntry* set_ic = ds.ic_base == null ? null : ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base);
+                                bool cached = set_ic != null && set_ic.prop_flags.is_accessor && set_ic.has_proto
+                                    && set_ic.shape_id == hobj.shape_id && set_ic.key.borrow() == key
+                                    && hobject::ic_resolve_slot(set_ic, hobj) != null;
+                                if (set_ic != null && !cached && rb.is_string() && rb.get_heapptr() == key && acc.owner != null
                                     && hobj.get_class() == hobject::ObjClass.OBJECT) {
                                     target.classify_lean_call();
                                     ic_fill_read_heap(vm.heap, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, acc.owner);

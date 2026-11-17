@@ -1093,6 +1093,7 @@ fn void Asm.store_value_r2(&self, Jumps* miss = null, bool uncounted = false) {
 fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv, bool allow_regexp = false) {
     void* c = self.c;
     Layout* l = self.lay;
+    bool setter = key_reg < 0 && !self.wide && (self.w.op == Opcode.PUTPROPC || self.w.op == Opcode.PUTTHISC);
     self.unbox_object(R1, R0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, l.class_mask);
@@ -1141,6 +1142,14 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv, bool allow_
     void* absent_done = sljit_emit_jump(c, SLJIT_JUMP);
     // The entry does not fit the receiver: the store by lookup.
     miss.bind(sljit_emit_label(c));
+    void* accessor = null;
+    if (setter) {
+        // An inherited setter the entry names is called natively (vm::jit_put_setter).
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
+        accessor = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    }
     sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
     if (key_reg < 0) {
@@ -1151,6 +1160,17 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv, bool allow_
     }
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    if (setter) {
+        void* stored = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(accessor, sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+        self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_put_setter);
+        self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
+        sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
+        sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+        sljit_set_label(stored, sljit_emit_label(c));
+    }
     sljit_set_label(done, sljit_emit_label(c));
     sljit_set_label(absent_done, sljit_emit_label(c));
 }
