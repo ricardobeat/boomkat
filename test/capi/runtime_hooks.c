@@ -47,10 +47,10 @@ static void *watchdog(void *ctx) {
     return NULL;
 }
 
-static void expect_interrupt(bk_ctx ctx, const char *src) {
+static void expect_interrupt_as(bk_ctx ctx, const char *src, int flags) {
     pthread_t thread;
     assert(!pthread_create(&thread, NULL, watchdog, ctx));
-    bk_value v = bk_eval_ex(ctx, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(ctx, src, strlen(src), "<eval>", flags);
     if (v) {
         bk_free_value(ctx, v);
         assert(bk_run_jobs(bk_get_runtime(ctx)) == BK_ERR_INTERRUPT);
@@ -63,6 +63,8 @@ static void expect_interrupt(bk_ctx ctx, const char *src) {
     bk_clear_interrupt(bk_get_runtime(ctx));
     eval_ok(ctx, "if (1+1 !== 2) throw 'recovery';");
 }
+
+static void expect_interrupt(bk_ctx ctx, const char *src) { expect_interrupt_as(ctx, src, BK_EVAL_GLOBAL); }
 
 int main(void) {
     alarm(20);
@@ -97,6 +99,7 @@ int main(void) {
     expect_interrupt(ctx, "try { while (true) {} } finally { globalThis.cleaned = 1; }");
     eval_ok(ctx, "if (cleaned !== 1) throw 'finally';");
     expect_interrupt(ctx, "Promise.resolve().then(function() { while (true) {} });");
+    expect_interrupt_as(ctx, "let spins = 0; while (true) { spins++; }", BK_EVAL_MODULE);
     expect_interrupt(ctx, "var text = 'a'.repeat(40) + '!'; /^(a+)+$/.test(text);");
     expect_interrupt(ctx, "var rx = new RegExp('^(a+)+$'); rx.exec(text);");
     expect_interrupt(ctx, "text.search(/^(a+)+$/);");
