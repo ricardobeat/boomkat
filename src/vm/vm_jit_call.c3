@@ -1328,28 +1328,49 @@ $else
 $endif
 }
 
-// A CALL, CALL_UNDEF_THIS or CALL_GLOBAL whose callee is a builtin, through th_call_native
+// A CALL, CALL_UNDEF_THIS, CALL_GLOBAL or CALL_VAR whose callee is a builtin, through th_call_native
 // as the threaded burst runs it (identity fast paths such as charCodeAt, then
 // the builtin's own dispatch) instead of op_call. False when it declined before
 // running anything but clearing a plain call's receiver slot, as op_call clears
 // it too; otherwise `status` is what the operation function would return, with
 // the burst's throw and re-dispatch handoffs completed as vm_dispatch completes
 // them.
+// Store the binding a CALL_VAR's variable entry caches into `ra`: a data
+// property out of its TDZ, the entry rearmed for the current chain first.
+// False, with nothing written, when the entry does not answer.
+fn bool jit_var_callee(Dispatch* ds, Instruction* pc, TVal* ra) @private {
+    ColdCtx* cold = &ds.cold;
+    if (th_var_ic_moved(pc, cold) && !var_ic_rearm(th_ic_entry(pc, cold), ds.act.lex_env, ds.heap)) return false;
+    hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
+    if (vic == null || vic.prop_flags.is_accessor) return false;
+    TVal v = vic.slot_ptr.get();
+    if (env::is_tdz_sentinel(&v)) return false;
+    // As @lean_call_var stores it: an object callee is not counted, and a
+    // binding that can be reassigned during the call is tracked.
+    *ra = v;
+    if (!is_permanent_env(ds.vm, (EnvRecord*)vic.env)) track_heap_store(ds.act, ra, pc.a);
+    return true;
+}
+
 fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long* raw) {
     if (!jit_relay_ready) jit_relay_init();
     if (ds.ic_base == null || ds.var_ic_base == null) return false;
     Vm* vm = ds.vm;
     Instruction* pc = next - 1;
-    // A CALL_GLOBAL's site has stored the callee in its register (load_global_callee).
-    bool global = pc.op == Opcode.CALL_GLOBAL;
+    // A CALL_GLOBAL's or CALL_VAR's site has stored the callee in its register
+    // (load_global_callee, load_var_callee).
+    bool global = pc.op == Opcode.CALL_GLOBAL || pc.op == Opcode.CALL_VAR;
     bool plain = global || pc.op == Opcode.CALL_UNDEF_THIS;
     if (pc.op != Opcode.CALL && !plain) return false;
     uint callee = global ? pc.a : pc.b;
     TVal* regs = ds.regs_base;
-    if (th_lean_target(vm, regs[callee], regs + callee + 2, plain) != null) return false;
-    if (plain) clear_call_regs(vm, ds.act, regs, callee + 1, callee + 2);
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    // The thunk also reaches here when the site's load declined, so a
+    // CALL_VAR's callee comes from its entry, as @lean_call_var reads it.
+    if (pc.op == Opcode.CALL_VAR && !jit_var_callee(ds, pc, regs + callee)) return false;
+    if (th_lean_target(vm, regs[callee], regs + callee + 2, plain) != null) return false;
+    if (plain) clear_call_regs(vm, ds.act, regs, callee + 1, callee + 2);
     int builtin = jit_builtin_index(regs[callee]);
     // Function.prototype.call's site records the function it runs instead (th_call_redispatched).
     if (builtin >= 0 && builtin != (int)builtins::Builtin.FUNCTION_PROTO_CALL.ordinal) {
