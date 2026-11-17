@@ -1134,8 +1134,11 @@ fn void ReAsm.emit_giveback(&self, uint stub, uint slot, uint after) {
 
 // Every failure lands here: resume the innermost frame after restoring what the
 // failed attempt wrote, or, with no frame left, look for another candidate.
+// Resuming polls as an attempt does: a single attempt can backtrack without
+// bound, as `^(a+)+$` does against a long run of `a` with no match.
 fn void ReAsm.emit_backtrack(&self) {
     int sp = jit::reg_sp();
+    self.emit_poll();
     self.mov_u32(self.t0, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
     void* empty = self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0);
     // The innermost frame.
@@ -1314,9 +1317,10 @@ fn void ReAsm.emit_insn(&self, uint pc) {
     self.next(pc);
 }
 
-// The attempt loop: poll the interrupt, reset the state a failed attempt left
-// behind, remember where this attempt starts, and run the body.
-fn void ReAsm.emit_attempt(&self) {
+// Count one dispatch against the poll budget, polling the interrupt and leaving
+// with RE_TIMEOUT when it runs out and the interrupt fired. Clobbers the
+// scratch registers.
+fn void ReAsm.emit_poll(&self) {
     self.op2(jit::SLJIT_SUB, self.t0, 0, self.s_polls, 0, jit::SLJIT_IMM, 1);
     self.mov(self.s_polls, 0, self.t0, 0);
     void* counting = self.cmp(jit::SLJIT_NOT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0);
@@ -1328,6 +1332,12 @@ fn void ReAsm.emit_attempt(&self) {
     self.leave(re_native::RE_TIMEOUT);
     self.bind(no_timeout, self.label());
     self.bind(counting, self.label());
+}
+
+// The attempt loop: poll the interrupt, reset the state a failed attempt left
+// behind, remember where this attempt starts, and run the body.
+fn void ReAsm.emit_attempt(&self) {
+    self.emit_poll();
     // No frame survives a failed attempt, and the writes it made with none
     // behind them were never recorded: its records are dropped and its groups
     // reset outright. Group 0 is written before it is read, as is every
