@@ -599,6 +599,14 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
 // the callee did not take, which has done nothing.
 fn void Asm.emit_call_sub(&self, uint callee, uint result, uint resume, Jumps* generic) {
     void* c = self.c;
+    // Native calls never pass a back edge or the C helpers that poll the interrupt, so recursion
+    // such as fib would run on after an embedder asked it to stop. An embedded heap's call
+    // takes the generic path once an interrupt is requested, and that path reaches Vm.run's poll.
+    // A heap with no embedder has no one to request one, and its code skips the test.
+    if (self.hp.capi_runtime != null) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | self.heap, self.requested_off);
+        generic.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    }
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)result * TVal::size);
     self.mov(R4, 0, SLJIT_IMM, (long)(usz)(self.f.code + resume));

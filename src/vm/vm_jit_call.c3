@@ -184,6 +184,8 @@ fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
     Instruction* pc = next - 1;
     Vm* vm = ds.vm;
     jit::JitStats* st = &ds.heap.jit_stats;
+    // An interrupt that fired goes through the thunk to Vm.run, which raises it.
+    if (vm_call_poll_due(ds.heap)) return null;
     if (ds.jit_depth >= JIT_NATIVE_DEPTH_CAP) { st.calls_depth++; return null; }
     if (ds.ic_base == null || ds.var_ic_base == null) { st.calls_declined++; return null; }
     ds.curr_pc = next;

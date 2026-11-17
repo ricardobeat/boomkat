@@ -3795,6 +3795,13 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     self.spill_live(i, true);
     // A plain call's receiver is undefined, as th_publish_lean's clear_this makes it.
     if (!method) a.store(callee + 1, SLJIT_IMM, K_UNDEF);
+    // An interrupt an embedder requested leaves for the baseline code, whose call takes the generic
+    // path to Vm.run's poll (Asm.emit_call_sub).
+    void* requested = null;
+    if (a.hp.capi_runtime != null) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | a.heap, a.requested_off);
+        requested = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    }
     if (cf != null) {
         a.mov(R0, 0, SLJIT_MEM, (long)(usz)&cf.jit_code);
     } else {
@@ -3840,6 +3847,7 @@ fn void OptCg.emit_call_reg(&self, uint i, OptNode* n) {
     self.exit_stored(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.DEEP);
     self.exit_stored(no_code, i, OptExit.DECLINED);
     self.exit_stored(no_entry, i, OptExit.DECLINED);
+    if (requested != null) self.exit_stored(requested, i, OptExit.INTERRUPT);
     sljit_set_label(done, sljit_emit_label(c));
 }
 

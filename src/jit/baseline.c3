@@ -626,6 +626,7 @@ struct Asm {
     long pc_off;
     long regs_off;
     long budget_off;
+    long requested_off;
     long htmldda_off;
     Layout* lay;
     // The heap the code is compiled for: its shape table sizes NEWOBJ_SHAPE's object.
@@ -679,6 +680,7 @@ fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
         .pc_off = (char*)&dl.curr_pc - (char*)dl,
         .regs_off = (char*)&dl.regs_base - (char*)dl,
         .budget_off = (char*)&hl.bwd_gc_budget - (char*)hl,
+        .requested_off = (char*)&hl.interrupt_requested - (char*)hl,
         .htmldda_off = (char*)&hl.htmldda_obj - (char*)hl,
         .lay = layout(),
         .hp = h,
