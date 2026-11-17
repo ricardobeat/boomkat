@@ -4075,7 +4075,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 } else if (cap_lex_noname != null
                     && cap_lex_noname != ctor_var_env
                     && cap_lex_noname.flags.is_declarative) {
-                    new_act.lex_env = cap_lex_noname;
+                    // The fresh scope heads the chain when the captured scope
+                    // reaches the closure's var_env, as on every other entry.
+                    new_act.lex_env = resolve_call_lex_env(vm, hobj, target, ctor_var_env);
                     vm.heap.shade_root_env(new_act.lex_env);
                 } else {
                     new_act.lex_env = ctor_var_env;
