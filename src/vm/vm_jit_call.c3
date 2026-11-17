@@ -715,27 +715,17 @@ fn long jit_ret(Dispatch* ds, ulong next_arg) {
     return jit::BASELINE_RETURNED;
 }
 
-// Whether an installed interrupt hook wants a poll before the next native call.
-// Each call charges the poll budget as the restart-loop top does, so recursion
-// that never takes a back edge still reaches Vm.run's poll; until a charge
-// latches the poll, calls stay native.
-fn bool jit_interrupt_due(Heap* h) @inline {
-    if (h.capi_interrupt_fn == null && h.capi_runtime == null) return false;
-    vm_charge_interrupt(h);
-    return h.interrupt_due;
-}
-
 // The native entry of the frame a RESTART leaves current, loaded into ds as
 // Vm.run would load it before entering that entry, or null when the restart
-// goes to Vm.run: a native caller waits on the C stack, an interrupt poll is
-// due at the restart, a handoff is pending, the frame has no code yet
+// goes to Vm.run: a native caller waits on the C stack, an interrupt fired
+// (vm_call_poll_due) and the restart raises it, a handoff is pending, the frame has no code yet
 // (Vm.run counts the entry and compiles), or it lies below the frame the
 // innermost entry from C ran.
 fn void* jit_switch(Dispatch* ds) {
     Vm* vm = ds.vm;
     if (ds.jit_depth != 0 || ds.jit_floor != 0 || !ds.needs_restart || vm.activation_count == 0) return null;
     if (vm.threaded_handoff != ThreadedHandoff.NONE) return null;
-    if (jit_interrupt_due(vm.heap)) return null;
+    if (vm_call_poll_due(vm.heap)) return null;
     // A frame below the one this entry from C ran runs on an outer entry's native frames.
     Activation* top = &vm.activations[vm.activation_count - 1];
     if (top < ds.enter_act) return null;
@@ -1052,7 +1042,7 @@ fn long jit_enter_pushed(Dispatch* ds, Instruction* next, uint count_before) {
 fn long jit_try_enter_pushed(Dispatch* ds, Instruction* next, uint count_before) @private @inline {
     Vm* vm = ds.vm;
     if (vm.activation_count != count_before + 1 || ds.jit_depth >= JIT_NATIVE_DEPTH_CAP
-        || vm.threaded_handoff != ThreadedHandoff.NONE || jit_interrupt_due(vm.heap)) return JIT_NO_RAW;
+        || vm.threaded_handoff != ThreadedHandoff.NONE || vm_call_poll_due(vm.heap)) return JIT_NO_RAW;
     Activation* act = &vm.activations[vm.activation_count - 1];
     CompiledFunction* f = (CompiledFunction*)act.func;
     if (f == null || act.curr_pc != f.code || f.ic_entries == null || f.var_ic_entries == null) return JIT_NO_RAW;

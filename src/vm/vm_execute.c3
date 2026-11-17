@@ -2452,6 +2452,21 @@ fn void vm_charge_interrupt(Heap* h) @inline {
     }
 }
 
+// Charge a call against the interrupt budget and, when a poll is due, poll:
+// true when the interrupt fired. Calls that switch frames without a restart
+// (the switch's direct dispatch, threaded lean calls) then take the restart,
+// whose poll raises it: recursion such as `fib` takes no back edge, so without
+// this an interrupt could not stop it. A poll that finds nothing clears the
+// latch here, so a call restarts only to deliver an interrupt.
+fn bool vm_call_poll_due(Heap* h) @inline {
+    if (h.capi_interrupt_fn == null && h.capi_runtime == null) return false;
+    vm_charge_interrupt(h);
+    if (!h.interrupt_due) return false;
+    if (h.poll_interrupt()) return true;
+    h.interrupt_due = false;
+    return false;
+}
+
 // Poll the C-API interrupt handler at a VM safepoint (a backward branch or
 // the restart-loop top). Fire only when a charge latched interrupt_due; with
 // no handler installed or no charge pending, this is a null compare. Returns

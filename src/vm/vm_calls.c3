@@ -2319,6 +2319,13 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     publish_frame_top(vm, new_regs, new_nregs, nargs);
                     vm.valstack_bottom = new_act.bottom;
 
+                    // A due interrupt poll takes the restart, which loads the
+                    // new frame and polls.
+                    if (vm_call_poll_due(vm.heap)) {
+                        ds.needs_restart = true;
+                        return (TVal){};
+                    }
+
                     // Direct dispatch to new activation (avoid restart overhead)
                     ds.act = new_act;
                     // Reload the per-function dispatch state only when the
@@ -3353,6 +3360,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             // Save caller resume point before switching activations
             ds.act.curr_pc = ds.curr_pc;
+
+            // A due interrupt poll takes the restart, which loads the new frame
+            // and polls.
+            if (vm_call_poll_due(vm.heap)) {
+                ds.needs_restart = true;
+                return (TVal){};
+            }
 
             // Direct dispatch to new activation (avoid restart overhead)
             ds.act = new_act;
