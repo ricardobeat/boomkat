@@ -545,6 +545,8 @@ struct AccessorResult {
     TVal accessor_fn;
     // The object that owns the accessor (needed for `this` binding).
     HObject* this_obj;
+    // The object on the chain that holds the accessor property (find_accessor_proto).
+    HObject* owner;
     // Whether the first property is an accessor.
     bool found;
     // Whether any own property stopped the prototype walk. For a data
@@ -3408,7 +3410,7 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
             if (flags.is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
-                return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
+                return { .accessor_fn = accessor_fn, .this_obj = self, .owner = cur, .found = true, .property_found = true };
             }
             return { .property_found = true, .property_writable = flags.writable };
         }

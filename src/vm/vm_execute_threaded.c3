@@ -2966,6 +2966,27 @@ fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* reg
     return th_next(pc + 1, handlers, regs, cold);
 }
 
+// A cached store to an inherited setter: calls the lean setter the entry names with the receiver
+// as `this` and the value as its argument. The call's window lies above the frame's registers,
+// which keep the receiver and the value for the whole call; the setter's result lands in the
+// callee slot there and is dropped. Anything else bails to the switch.
+fn Instruction* th_call_setter(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                               HObject* hobj, hobject::ICEntry* ic, TVal* receiver, TVal* value) @private @noinline {
+    Vm* vm = cold.vm;
+    hobject::PropValue* slot = hobject::ic_resolve_slot(ic, hobj);
+    if (slot == null) return pc;
+    TVal setter = hobject::hobject_access_setter(slot.get());
+    uint callee_reg = max((uint)vm.current_func.num_regs, (uint)(vm.valstack_top - regs));
+    CompiledFunction* target = th_lean_target(vm, setter, regs + callee_reg + 2, false);
+    if (target == null || target.arguments_in_reg() || target.call_flags.rest_length_only) return pc;
+    if (th_call_gate(cold)) return pc;
+    TVal this_value = *receiver;
+    regs[callee_reg] = setter;
+    regs[callee_reg + 2] = *value;
+    return th_enter_lean(pc, handlers, regs, cold, target, callee_reg, callee_reg, 1, true, true,
+                         this_value, true);
+}
+
 // The cached store shared by PUTPROP and PUTPROPC: `key` is the interned
 // string the instruction names, `value` the register being stored.
 fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
@@ -2981,6 +3002,9 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
             return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, computed ? null : ic);
         }
         return th_put_absent(pc, handlers, regs, cold, hobj, ic, key, value);
+    }
+    if (ic.prop_flags.is_accessor && ic.has_proto && ic.key.borrow() == key && ic.shape_id == hobj.shape_id) {
+        return th_call_setter(pc, handlers, regs, cold, hobj, ic, target, value);
     }
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.

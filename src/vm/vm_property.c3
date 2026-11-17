@@ -2081,6 +2081,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (setter_obj.is_callable() && (*setter_obj.extra_ptr()).func.comp_func != null) {
                                 CompiledFunction* target = (*setter_obj.extra_ptr()).func.comp_func;
                                     if (!vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
+                                // The site's entry names the setter's holder, as a read's names a
+                                // getter's: the threaded store calls it from there (th_call_setter).
+                                if (ds.ic_base != null && rb.is_string() && rb.get_heapptr() == key && acc.owner != null
+                                    && hobj.get_class() == hobject::ObjClass.OBJECT) {
+                                    target.classify_lean_call();
+                                    ic_fill_read_heap(vm.heap, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, acc.owner);
+                                }
 
                                 // Stage the call frame above the caller's live registers
                                 // (see own-property setter path above).
