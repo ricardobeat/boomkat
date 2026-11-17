@@ -606,6 +606,26 @@ fn bool CompilerContext.can_fast_flat_array(&self,
     return true;
 }
 
+// GETPROP of a destructuring leaf into `bind_reg`. A getter it runs takes its
+// frame from the result register up (invoke_getter), but a binding's home
+// register can sit below live ones: the source, a parent group, persistent
+// pre-scan registers. Then the read lands in a fresh register above them all
+// and is copied down. moveelim keeps the copy, since the retarget would put
+// the frame back over them.
+fn void CompilerContext.emit_destruct_getprop(&self, ushort bind_reg, ushort src_reg, ushort key_reg) {
+    // The key is read before the getter runs, so it may lie in the frame.
+    uint top = (uint)self.next_reg;
+    if ((uint)key_reg + 1 == top) top = key_reg;
+    if ((uint)bind_reg + 1 >= top) {
+        self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)key_reg);
+        return;
+    }
+    ushort tmp = self.alloc_reg();
+    self.emit_abc(Opcode.GETPROP, (uint)tmp, (uint)src_reg, (uint)key_reg);
+    self.emit_abc(Opcode.LDREG, (uint)bind_reg, (uint)tmp, 0);
+    self.free_reg(tmp);
+}
+
 // Walks binds in declaration order, resolving source registers from arg slots
 // or parent group temps, and emits GETPROP (object patterns) or iterator
 // protocol (array patterns) to extract values into each bind's group_reg /
@@ -885,7 +905,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
                         self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
                         bind_reg = self.alloc_reg();
                     }
-                    self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)binds[di].computed_key_reg);
+                    self.emit_destruct_getprop(bind_reg, src_reg, binds[di].computed_key_reg);
                 } else {
                     if (binds[di].ast_target != 0) {
                         self.emit_deferred_target(&binds[di])!;
@@ -896,7 +916,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
                         self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
                         bind_reg = self.alloc_reg();
                     }
-                    self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)key_reg);
+                    self.emit_destruct_getprop(bind_reg, src_reg, key_reg);
                     self.free_reg(key_reg);
                     // See the computed-key branch above: the CHK_BRAND for a
                     // private-member target runs later, at PutValue time (the
