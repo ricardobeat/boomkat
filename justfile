@@ -598,15 +598,16 @@ test-jit-feedback:
     @make out/boomkat
     ./out/boomkat --jit --jit-dump-feedback --script test/jit/feedback_arith.js 2>&1 | grep "^feedback fn#\([0-9]\|10 +\)" | sed 's/ *$//' | diff -u test/jit/feedback_arith.expected -
 
-# Differential JIT run: local suites with and without --jit must agree.
+# Differential JIT run: local suites with and without --jit must agree. The
+# full-icu build is the one test-local runs, so its Intl and Temporal tests pass.
 test-jit-diff:
-    @make out/boomkat
-    bash scripts/run_jit_diff.sh ./out/boomkat
+    @make out/boomkat-full-icu
+    bash scripts/run_jit_diff.sh ./out/boomkat-full-icu
 
 # Optimizing tier: the local suites with every function optimized, and every exit reason forced.
 test-opt:
-    @make out/boomkat
-    JIT_FLAGS="--opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat
+    @make out/boomkat-full-icu
+    JIT_FLAGS="--opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat-full-icu
     bash scripts/opt_exit_check.sh
 
 # Differential JIT run over the main test262 areas.
