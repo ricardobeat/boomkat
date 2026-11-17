@@ -61,6 +61,17 @@ fn void RegSet.unset(&self, uint reg) {
     self.words[w] &= ~(1u << (reg % 32));
 }
 
+// Whether `set` holds a register above `floor` other than `except`.
+fn bool moveelim_live_above(RegSet* set, uint floor, uint except) {
+    for (uint w = (floor + 1) / 32; w < set.word_count; w++) {
+        uint bits = set.words[w];
+        if (w == (floor + 1) / 32) bits &= ~0u << ((floor + 1) % 32);
+        if (w == except / 32) bits &= ~(1u << (except % 32));
+        if (bits != 0) return true;
+    }
+    return false;
+}
+
 fn bool RegSet.test(&self, uint reg) {
     uint w = reg / 32;
     if (w >= self.word_count) return false;
@@ -979,6 +990,10 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         uint def_reg;
         if (!moveelim_get_def(producer, &def_reg)) { continue; }
         if (def_reg != rT) { continue; }   // not this LDREG's producer
+        // A getter that GETPROP runs takes its frame from the result register
+        // up (invoke_getter), so nothing above rDst may outlive the producer.
+        if ((pop == Opcode.GETPROP || pop == Opcode.GETPROPC || pop == Opcode.GETPROPC_CACHED)
+            && moveelim_live_above(&live_out[i], rDst, rT)) { continue; }
 
         bool accum = moveelim_accum_safe(pop);
 
