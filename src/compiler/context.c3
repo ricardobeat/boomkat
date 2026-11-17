@@ -1520,6 +1520,10 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             // the conditional `r=o`, whose A field ended the scan, so the copy
             // feeding SUB was propagated away and r stayed undefined on the
             // not-taken path.
+            // An unconditional forward jump does the same: the slots it skips run
+            // only on paths that reach them some other way. A `break` past a loop
+            // that rewrites rT, landing on code that reads it, lost its copy
+            // otherwise (wasm2js output, test/copyprop_forward_jump.js).
             //
             // A loop back-edge re-runs code ahead of the copy, so the forward walk
             // can step over a read that happens on the next iteration: the loop
@@ -1548,6 +1552,13 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
                         && fusion_reg_read_before_write(self.code, (uint)bt_any, i, rT)) {
                         rT_live = true;
                         break;
+                    }
+                    // An unconditional jump: this path resumes at its target, so
+                    // the slots before the target belong to other paths and a
+                    // write there is no kill.
+                    if (jop2 == Opcode.JUMP || jop2 == Opcode.BREAK || jop2 == Opcode.CONTINUE) {
+                        if (bt_any > join_pc) { join_pc = bt_any; }
+                        continue;
                     }
                     if (jop2 == Opcode.IF_TRUE || jop2 == Opcode.IF_FALSE) {
                         if ((uint)jns.a == rT) { rT_live = true; break; }
