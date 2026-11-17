@@ -3532,7 +3532,9 @@ fn void OptCg.emit_bitop(&self, uint i, OptNode* n) {
     int y;
     long yw;
     self.int_src(n.b, R1, &y, &yw);
-    int dst = self.int_dst(i, R2);
+    // A shift that can exit computes into the scratch register: its exit stores the operands from
+    // their registers, and the allocator may have given one of them to the result.
+    int dst = n.op == OptOp.SHR_I32 && n.cc == 0 ? R2 : self.int_dst(i, R2);
     switch (n.op) {
         case AND_I32: sljit_emit_op2(c, SLJIT_AND, dst, 0, x, 0, y, yw);
         case OR_I32:  sljit_emit_op2(c, SLJIT_OR, dst, 0, x, 0, y, yw);
