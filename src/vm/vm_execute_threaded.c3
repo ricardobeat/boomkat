@@ -1305,9 +1305,12 @@ fn Instruction* th_inc_lt_number(Instruction* pc, HandlerTable* handlers, TVal* 
 // BigInt handling or string coercion return to the switch, which owns every
 // path that can call user code or throw. Each handler releases the destination
 // only after the operand checks pass, so a refusal leaves the registers intact.
+// A boolean converts to 0 or 1 without calling anything, and wasm2js adds one
+// for every 64-bit carry (`hi + (lo >>> 0 < x >>> 0)`).
 macro bool th_numeric_operand(TVal* v, double* out) @private {
     if (v.is_fastint()) { *out = (double)v.get_fastint(); return true; }
     if (v.is_number()) { *out = v.get_number(); return true; }
+    if (v.is_boolean()) { *out = v.get_boolean() ? 1.0 : 0.0; return true; }
     return false;
 }
 
