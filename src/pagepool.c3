@@ -14,7 +14,8 @@
 // loop grew to 1.64 GB that way against 1.16 GB oldest-first, at no speed gain.
 module boomkat::pagepool;
 
-import std::core::mem::allocator;
+import std::core::mem::alloc;
+import std::core::mem::allocators;
 
 // SMALL_VM shrinks pages to fit in microcontroller RAM.
 const sz PAGE_SIZE = $feat(SMALL_VM) ? 4 * 1024 : 64 * 1024;
