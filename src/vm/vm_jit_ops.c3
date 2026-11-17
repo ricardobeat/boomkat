@@ -49,14 +49,20 @@ fn bool jit_instanceof(Dispatch* ds, Instruction* next) {
 }
 
 // An ADD whose operands are not both numbers, for the instruction before
-// `next`: the concatenations th_add_concat completes, with the operand classes
-// recorded as jit_relay records them.
+// `next`: a sum with a boolean operand, or the concatenations th_add_concat
+// completes, with the operand classes recorded as jit_relay records them.
 fn bool jit_add_concat(Dispatch* ds, Instruction* next) {
     if (ds.ic_base == null) return false;
     Instruction* pc = next - 1;
     TVal* regs = ds.regs_base;
     ds.curr_pc = next;
     note_feedback(ds, { .op = pc.op, .a = pc.a, .b = pc.b, .c = pc.c }, false);
+    double x;
+    double y;
+    if (th_numeric_operand(regs + pc.b, &x) && th_numeric_operand(regs + pc.c, &y)) {
+        regs[pc.a].set_number(x + y);
+        return true;
+    }
     return vm_concat_add(ds.vm, ds.act, regs + pc.a, regs + pc.b, regs + pc.c, (uint)pc.a, next, ds.code_end)
         == ConcatStatus.DONE;
 }
