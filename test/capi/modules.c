@@ -252,9 +252,71 @@ static void test_jsx(void) {
     if (failures == before) printf("PASS: bk_set_jsx\n");
 }
 
+/* A module still awaiting once its eval returns (here on a promise the host
+ * settles later) has no caller left to report a failure to: the rejection
+ * tracker sees it as an unhandled rejection with the thrown value, once. A
+ * synchronous failure comes back from the eval and is not reported again. */
+static int late_unhandled;
+static char late_reason[64];
+
+static void late_track(bk_ctx ctx, uint64_t id, bk_value promise, bk_value reason, int handled, void *opaque) {
+    (void)id; (void)promise; (void)opaque;
+    if (handled) return;
+    late_unhandled++;
+    bk_value msg = bk_get_property(ctx, reason, "message", 7);
+    if (bk_read_string(ctx, msg, late_reason, sizeof late_reason, NULL) != BK_OK) late_reason[0] = 0;
+    bk_free_value(ctx, msg);
+}
+
+static void late_module(bk_ctx js, const char *name, int settle_ok, int want_unhandled, const char *want_reason) {
+    bk_value resolve;
+    bk_value gate = bk_new_promise(js, &resolve, NULL);
+    bk_set_global_property(js, "gate", 4, gate);
+    const char *src = "const ok = await gate; if (!ok) throw new RangeError('late failure'); export const done = 1;";
+    late_unhandled = 0;
+    late_reason[0] = 0;
+    bk_value ns = bk_eval_ex(js, src, strlen(src), name, BK_EVAL_MODULE);
+    if (!ns) fail("an awaiting module returns its namespace", js);
+    bk_free_value(js, ns);
+    bk_value v = BK_BOOL(settle_ok);
+    bk_call(js, resolve, BK_UNDEFINED, &v, 1);
+    bk_run_jobs(bk_get_runtime(js));
+    if (late_unhandled != want_unhandled || strcmp(late_reason, want_reason) != 0) {
+        fprintf(stderr, "FAIL: %s: %d unhandled (%s), want %d (%s)\n", name, late_unhandled, late_reason,
+                want_unhandled, want_reason);
+        failures++;
+    }
+}
+
+static void test_late_module_failure(void) {
+    bk_ctx js = bk_new_context(bk_new_runtime(NULL), NULL);
+    int before = failures;
+    bk_set_promise_rejection_tracker(bk_get_runtime(js), late_track, NULL);
+    late_module(js, "late-ok.js", 1, 0, "");
+    late_module(js, "late-fail.js", 0, 1, "late failure");
+    /* Module jobs run at the host's checkpoint, so even `await null` fails late. */
+    late_unhandled = 0;
+    late_reason[0] = 0;
+    const char *tick = "await null; throw new RangeError('after a tick');";
+    bk_value ns = bk_eval_ex(js, tick, strlen(tick), "tick.js", BK_EVAL_MODULE);
+    bk_free_value(js, ns);
+    bk_run_jobs(bk_get_runtime(js));
+    if (late_unhandled != 1 || strcmp(late_reason, "after a tick") != 0) fail("a failure after a tick is tracked once", js);
+    /* A synchronous failure comes back from the eval and is not tracked as well. */
+    late_unhandled = 0;
+    const char *early = "throw new RangeError('early failure');";
+    if (bk_eval_ex(js, early, strlen(early), "early.js", BK_EVAL_MODULE) || bk_get_error_code(js) != BK_ERR_THROW)
+        fail("a synchronous failure comes back from the eval", js);
+    bk_run_jobs(bk_get_runtime(js));
+    if (late_unhandled != 0) fail("a failure the eval reported is not tracked again", js);
+    bk_free_runtime(bk_get_runtime(js));
+    if (failures == before) printf("PASS: late module failure\n");
+}
+
 int main(void) {
     test_strict();
     test_eval_module();
+    test_late_module_failure();
     test_define_module();
     test_names_survive_gc();
     test_names_survive_gc_with_files();

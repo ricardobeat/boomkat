@@ -1786,6 +1786,20 @@ fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
     return prom;
 }
 
+// A top-level module an embedder evaluated (embed::eval_module) that is still
+// evaluating asynchronously once its jobs drained: it waits on a timer or I/O,
+// and its status is the host's to check no longer, since the call has
+// returned. Its evaluation promise, which nothing has chained onto, then
+// reports a later rejection as an unhandled one through the host's rejection
+// tracker, instead of being dropped.
+fn void module_report_late_failure(Heap* heap, ModuleDef* mod) {
+    if (mod.status != ModuleStatus.EVALUATING_ASYNC) return;
+    HObject* prom = module_ensure_eval_promise(heap, mod);
+    if (prom == null || (*prom.extra_ptr()).promise.reactions_tail != null) return;
+    if (builtins::promise_get_state(prom, builtins::PROMISE_PENDING) != builtins::PROMISE_PENDING) return;
+    (*prom.extra_ptr()).promise.is_handled = false;
+}
+
 // Settle the module's persistent evaluation-completion promise (once, a
 // no-op if already settled or if evaluation never allocated one, e.g. a
 // JSON module or a plain synchronous body nobody awaited).

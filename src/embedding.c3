@@ -242,7 +242,9 @@ fn JsValue? JsContext.eval(&self, String source, String name = "<eval>", bool st
 
 // Compile, link and evaluate `source` as an ES module named `name`, top-level
 // `await` included. Returns the module namespace object. Relative imports
-// resolve against `name`.
+// resolve against `name`. A body still awaiting once the queued jobs ran (a
+// timer, I/O) returns its namespace now; should it throw later, its failure
+// reaches the rejection hook as an unhandled rejection.
 //
 // Faults: NOT_CREATED, SYNTAX_ERROR, JS_EXCEPTION, INTERNAL_ERROR, INTERRUPTED,
 // VALUE_TABLE_FULL
