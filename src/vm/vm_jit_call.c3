@@ -36,9 +36,28 @@ fn long jit_call(Dispatch* ds, ulong next_arg) {
     Instruction* next = (Instruction*)(usz)next_arg;
     uint old_floor = ds.jit_floor;
     void* entry = jit_call_enter(ds, next);
-    if (entry == null) return JIT_CALL_SLOW;
+    if (entry == null) return (next - 1).op == Opcode.NEW_OBJ ? jit_new_builtin_native(ds, next) : JIT_CALL_SLOW;
     if (entry == (void*)JIT_CALL_DONE) return 0;
     return jit_run_entered(ds, entry, old_floor, next);
+}
+
+// A NEW_OBJ jit_call_enter left to its thunk, run here when its constructor is
+// a builtin (jit_new_builtin), as jit_call_builtin_native runs a builtin CALL.
+// Returns as jit_call does.
+fn long jit_new_builtin_native(Dispatch* ds, Instruction* next) {
+    // An interrupt that fired goes through the thunk to Vm.run, which raises it.
+    if (vm_call_poll_due(ds.heap)) return JIT_CALL_SLOW;
+    Activation* act = ds.act;
+    CompiledFunction* func = ds.vm.current_func;
+    uint count_before = ds.vm.activation_count;
+    ds.curr_pc = next;
+    long raw = JIT_NO_RAW;
+    OpStatus status;
+    if (!jit_new_builtin(ds, next, &status, &raw)) return JIT_CALL_SLOW;
+    if (raw != JIT_NO_RAW) return raw;
+    if (status == NEXT && !ds.needs_restart && ds.act == act && ds.vm.current_func == func
+        && ds.curr_pc == next) return 0;
+    return jit::jit_call_status(ds, next, act, func, count_before, status);
 }
 
 // Run the native entry of a published callee frame (jit_call_enter) and resume the caller once
@@ -1191,6 +1210,50 @@ fn bool jit_call_builtin_method(Dispatch* ds, Instruction* next, OpStatus* statu
     return true;
 }
 
+// A NEW_OBJ of a builtin constructor, run as op_calls runs it: the builtin
+// allocates the instance from its new.target, which is the callee. Lightfuncs
+// and bound functions keep the generic path. False, having run nothing, for
+// anything else.
+fn bool jit_new_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long* raw) {
+    Instruction* pc = next - 1;
+    TVal* regs = ds.regs_base;
+    uint callee = pc.b;
+    TVal cv = regs[callee];
+    if (!cv.is_object()) return false;
+    HObject* ctor = (HObject*)cv.get_heapptr();
+    if (ctor == null || !ctor.is_callable() || !ctor.is_constructable()
+        || ctor.callable_kind() != hobject::CallableKind.BUILTIN_FN) return false;
+    int idx = (*ctor.extra_ptr()).func.builtin_fn_index;
+    Vm* vm = ds.vm;
+    if (idx < 0 || !builtin_fn_is_constructor(vm, (uint)idx)) return false;
+    Heap* heap = ds.heap;
+    if (heap.gc_safepoint_due(true)) return false;
+    Activation* act = ds.act;
+    act.curr_pc = next;
+    TVal* top = act.bottom + vm.current_func.num_regs + FRAME_SCRATCH_SLOTS;
+    if (top > vm.valstack_top) vm.valstack_top = top;
+    TVal result;
+    result.set_undefined();
+    builtins::BuiltinContext ctx = call_context(&ds.cold, callee, pc.c, &result, callee: ctor, new_target: ctor,
+                                                construct: true);
+    builtins::dispatch_builtin((uint)idx, &ctx);
+    // The builtin may have moved the value stack.
+    regs = act.bottom;
+    ds.regs_base = regs;
+    heap.jit_stats.calls_builtin++;
+    heap.jit_stats.calls_builtin_direct++;
+    if (@unlikely(ctx.should_throw)) {
+        vm.threaded_throw = ctx.throw_value;
+        vm.threaded_handoff = ThreadedHandoff.THROW;
+        return jit_builtin_handoff(ds, next, next, status, raw);
+    }
+    heap.store_builtin_result(regs + pc.a, &result);
+    track_heap_store(act, regs + pc.a, pc.a);
+    ds.curr_pc = next;
+    *status = NEXT;
+    return true;
+}
+
 // A builtin CALL a baseline call site makes of RegExp.prototype.exec or test
 // (`builtin`) on a RegExp builtins::regexp_plain accepts, with a string
 // argument: RegExpBuiltinExec runs without a builtin frame, and its value lands
@@ -1398,6 +1461,22 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
     if (ds.ic_base == null || ds.var_ic_base == null) return false;
     Vm* vm = ds.vm;
     Instruction* pc = next - 1;
+    switch (pc.op) {
+        case GETTHISC:
+        case GETPROPC:
+        case GETPROPC_CACHED:
+            // A getter site's builtin getter (Asm.getter_site): the getter in A and the receiver
+            // in A + 1, a method call with no arguments whose value replaces the getter. The
+            // site's entry is the property's, so no callee is noted on it. A decline has written
+            // nothing the read's thunk needs.
+            th_bind_ic_bias(&ds.cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+            Instruction* r = th_call_native(pc, &jit_stop_table, ds.regs_base, &ds.cold, pc.a, pc.a, 0) @inline;
+            return jit_builtin_handoff(ds, next, r, status, raw);
+        case NEW_OBJ:
+            return jit_new_builtin(ds, next, status, raw);
+        default:
+            break;
+    }
     // A CALL_GLOBAL's or CALL_VAR's site has stored the callee in its register
     // (load_global_callee, load_var_callee).
     bool global = pc.op == Opcode.CALL_GLOBAL || pc.op == Opcode.CALL_VAR;
