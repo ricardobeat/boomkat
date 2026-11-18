@@ -1225,14 +1225,11 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
         case hobject::PropLookupKind.PROP_DATA:
             return res.data_val;
         case hobject::PropLookupKind.PROP_ACCESSOR: {
-            // ECMA-262 §10.1.8.1 step 6: invoke the accessor's
-            // getter with `this` set to the object where the accessor was
-            // found (not the receiver). For prototype accessors this is
-            // critical, calling the getter with the derived instance as
-            // `this` would trip the common pattern of "if (this is not
-            // <Class>) throw".
+            // ECMA-262 §10.1.8.1 step 7: Call(getter, Receiver). The
+            // receiver is `obj`, not the object on its chain that holds the
+            // accessor.
             TVal getter_this;
-            getter_this.set_object(res.acc.this_obj);
+            getter_this.set_object(obj);
             if (ctx.vm == null) {
                 TVal undef; undef.set_undefined();
                 return undef;
@@ -2071,7 +2068,10 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
             if (iter_sym == null) { ctx.result_undefined(); return; }
             TVal iter_fn;
             iter_fn.set_undefined();
-            if (try found_iter_fn = iterable_obj.get_prop_proto(iter_sym, ctx.heap)) { iter_fn = found_iter_fn; }
+            // Through builtins_generic_get: @@iterator may be an accessor, whose
+            // getter the raw slot lookup would not call.
+            if (try found_iter_fn = builtins_generic_get(iterable_obj, iter_sym, ctx)) { iter_fn = found_iter_fn; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
             bool iter_callable = iter_fn.is_lightfunc() ||
                 (iter_fn.is_object() && iter_fn.get_heapptr() != null &&
                  ((HObject*)iter_fn.get_heapptr()).is_callable());

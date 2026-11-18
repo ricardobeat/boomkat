@@ -4273,7 +4273,9 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
     TVal iterator;
 
     if (iter_sym != null) {
-        TVal? iter_method_opt = iterable.get_prop_proto(iter_sym, ctx.heap);
+        // @@iterator may be an accessor, whose getter the raw slot lookup would not call.
+        TVal? iter_method_opt = builtins_generic_get(iterable, iter_sym, ctx);
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (try iter_method = iter_method_opt) {
             bool callable = false;
             if (iter_method.is_lightfunc()) {
