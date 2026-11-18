@@ -708,8 +708,8 @@ fn Opcode opt_cfg_refusal_op(CompiledFunction* f) {
     for (uint pc = 0; pc < f.code_count;) {
         bytecode::DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
         if (!d.valid || d.next_pc <= pc) return Opcode.NOP;
-        // The graph decoder takes these two for a consumer that knows their write (OptBuild.analyze).
-        if (!compiler::bytecode_cfg_control_supported(d.insn.op) && d.insn.op != Opcode.RESOLVEVAR && d.insn.op != Opcode.THROW_UNRESOLVED) return d.insn.op;
+        // The options OptBuild.analyze builds its graph with.
+        if (!compiler::bytecode_cfg_admits(d.insn.op, resolve: true, objects: true, tail_calls: true, scopes: true)) return d.insn.op;
         pc = d.next_pc;
     }
     return Opcode.NOP;

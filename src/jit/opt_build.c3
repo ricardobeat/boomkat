@@ -667,7 +667,7 @@ fn bool OptBuild.region_exit_sets(&self) {
     CompiledFunction* f = self.f;
     DecodedCfg* cfg = &self.cfg;
     DecodedCfg whole;
-    if (!compiler::bytecode_cfg_build(&whole, f.code, f.code_count, self.h, budget: OPT_REGION_LIVENESS_BUDGET, resolve: true, objects: true, tail_calls: true)) return false;
+    if (!compiler::bytecode_cfg_build(&whole, f.code, f.code_count, self.h, budget: OPT_REGION_LIVENESS_BUDGET, resolve: true, objects: true, tail_calls: true, scopes: true)) return false;
     defer compiler::bytecode_cfg_free(&whole);
     uint words = (f.num_regs + 32) / 32;
     uint nb = whole.block_count;
@@ -696,13 +696,12 @@ fn bool OptBuild.analyze(&self) {
     CompiledFunction* f = self.f;
     OptRegion* rg = &self.g.region;
     compiler::DecodedCfgBudget budget = rg.end != 0 ? OPT_REGION_CFG_BUDGET : compiler::DEFAULT_CFG_BUDGET;
-    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, budget: budget, resolve: true, objects: true, start: rg.start, end: rg.end, tail_calls: true)) {
+    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, budget: budget, resolve: true, objects: true, start: rg.start, end: rg.end, tail_calls: true, scopes: true)) {
         // Name the first instruction the graph decoder does not take (--opt-log).
         for (uint pc = rg.start; pc < (rg.end != 0 ? rg.end : f.code_count);) {
             DecodedBytecode view = bytecode::decode_bytecode(f.code, f.code_count, pc);
             if (!view.valid) break;
-            if (!compiler::bytecode_cfg_control_supported(view.insn.op) && view.insn.op != Opcode.RESOLVEVAR
-                && view.insn.op != Opcode.THROW_UNRESOLVED && !compiler::bytecode_cfg_object_op(view.insn.op)) {
+            if (!compiler::bytecode_cfg_admits(view.insn.op, resolve: true, objects: true, tail_calls: true, scopes: true)) {
                 self.refused_op = view.insn.op;
                 break;
             }
@@ -2960,7 +2959,10 @@ fn bool OptBuild.generic(&self) {
             case RET: case RETUNDEF: case SETALEN: case INITPROP: case INITELEM: case CHKOBJ: case REQUIRE_OBJ:
             case NOP: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL: case CHKGLOBALVAR:
             case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW: case THROW_UNRESOLVED:
-            case SETCELL: case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC:
+            case SETCELL: case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC: case PUSH_LEX: case POP_LEX:
+            case INITTZ:
+                // PUSH_LEX, POP_LEX and INITTZ change only the frame's lexical environment, which the scoped
+                // reads, the closures and the exits all take from the frame when they run.
                 break;
             default:
                 return self.refuse_op(op);

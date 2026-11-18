@@ -85,11 +85,13 @@ fn bool bytecode_cfg_fallthrough(Opcode op) {
     }
 }
 
-// The instructions `objects` admits: the compiler's own regexp, closure and cell objects, and the
-// element store and register-range fill of an array literal.
+// The instructions `objects` admits: the compiler's own regexp, closure and cell objects, the
+// element store and register-range fill of an array literal, and the keyed property definition of an
+// object literal.
 fn bool bytecode_cfg_object_op(Opcode op) @inline {
     return op == Opcode.NEWREGEXP || op == Opcode.CLOSURE || op == Opcode.NEWCELLS || op == Opcode.GETCELL
-        || op == Opcode.SETCELL || op == Opcode.MOVECELL || op == Opcode.INITELEM || op == Opcode.NEWARR_FILL;
+        || op == Opcode.SETCELL || op == Opcode.MOVECELL || op == Opcode.INITELEM || op == Opcode.NEWARR_FILL
+        || op == Opcode.INITPROP;
 }
 
 // Positive control-flow contract: exception handlers, suspension, indirect
@@ -120,6 +122,18 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
     }
 }
 
+// Whether bytecode_cfg_build takes `op` under the same options: the shared contract or one of the
+// opt-in groups. The refusal reports use it to name the instruction a failed build stopped at.
+fn bool bytecode_cfg_admits(Opcode op, bool forwarding = false, bool resolve = false, bool objects = false, bool tail_calls = false,
+    bool scopes = false) {
+    return bytecode_cfg_control_supported(op) || (forwarding && op == Opcode.APPLY_ARGS)
+        || (scopes && (op == Opcode.PUSH_LEX || op == Opcode.POP_LEX || op == Opcode.INITTZ
+            || op == Opcode.PUTLEX || op == Opcode.PUTLEX_C))
+        || (resolve && (op == Opcode.RESOLVEVAR || op == Opcode.THROW_UNRESOLVED))
+        || (objects && bytecode_cfg_object_op(op))
+        || (tail_calls && tailcall_base(op) != op);
+}
+
 // A single bounded allocation owns nodes and the PC map. Decoding and target
 // validation finish before a consumer sees a graph; failure releases everything.
 // split_calls marks real interpreter reentry boundaries while retaining normal
@@ -137,11 +151,16 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
 // target pc, appended after the instructions from cfg.exit_first on. An exit node is a NOP at its
 // target that ends its block with no successor. With `tail_calls` it may hold the tail forms of the
 // calls: each reads what the call it shadows reads, and falls through to its RET unless it reused
-// the frame, which a consumer that runs it as the VM does leaves at once.
+// the frame, which a consumer that runs it as the VM does leaves at once. With `scopes` it may hold
+// the block scope instructions: PUSH_LEX and POP_LEX, which change the frame's lexical environment,
+// and INITTZ, PUTLEX and PUTLEX_C, which declare a binding in it from register A (INITTZ in its
+// dead zone, reading no register; the roles take its A for a read of register 0). None writes a
+// register: for a consumer that runs them on the frame and reads no binding through a scope it has
+// resolved ahead of them.
 fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     heap::Heap* h = null, DecodedOpAllowed allowed = null, bool split_calls = false,
     DecodedCfgBudget budget = DEFAULT_CFG_BUDGET, bool forwarding = false, bool resolve = false,
-    bool objects = false, uint start = 0, uint end = 0, bool tail_calls = false) {
+    bool objects = false, uint start = 0, uint end = 0, bool tail_calls = false, bool scopes = false) {
     *cfg = {};
     bool region = end != 0;
     if (!region) end = count;
@@ -168,10 +187,7 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     for (uint pc = start; pc < end;) {
         DecodedBytecode view = bytecode::decode_bytecode(code, count, pc);
         if (!view.valid || view.next_pc > end || view.insn.op.ordinal >= Opcode::values.len
-            || (!bytecode_cfg_control_supported(view.insn.op) && !(forwarding && view.insn.op == Opcode.APPLY_ARGS)
-                && !(resolve && (view.insn.op == Opcode.RESOLVEVAR || view.insn.op == Opcode.THROW_UNRESOLVED))
-                && !(objects && bytecode_cfg_object_op(view.insn.op))
-                && !(tail_calls && tailcall_base(view.insn.op) != view.insn.op))
+            || !bytecode_cfg_admits(view.insn.op, forwarding, resolve, objects, tail_calls, scopes)
             || (allowed != null && !allowed(view.insn.op))) return false;
         if (cfg.instruction_count == budget.max_instructions) return false;
         uint index = cfg.instruction_count++;
