@@ -686,19 +686,57 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     return 0;
 }
 
+// The return of the outermost frame of a Vm.run, which a host call entered
+// (vm_call_lean, a callback or a handler): there is no caller register, so the
+// result goes to vm.return_val and the run halts with it, as op_ret's last pop
+// does. The frame must be as plain as th_return_outermost takes it, but may
+// hold tracked registers, which the pop clears, and return a heap value, which
+// vm.return_val keeps; during marking only one already marked. 0 takes the thunk.
+fn long jit_ret_outermost(Dispatch* ds, Activation* fa, Instruction* pc) @noinline {
+    Vm* vm = ds.vm;
+    CompiledFunction* f = (CompiledFunction*)fa.func;
+    if ((fa.flags & ~TH_LEAN_FRAME_FLAGS) != 0 || fa.cat != null || fa.forin != null
+        || f.maps_formals() || f.mapped_arguments() || vm.heap.gc_safepoint_due(false)) return 0;
+    TVal value;
+    if (pc.op == Opcode.RETUNDEF) {
+        value.set_undefined();
+    } else {
+        value = ds.regs_base[pc.a];
+        if (value.is_heap_allocated() && !th_can_publish(vm.heap, value)) return 0;
+    }
+    vm.heap.tval_copy_ref(&vm.return_val, &value);
+    // sweep_callee_regs's loop becomes a call to memset, which costs more than
+    // clearing the few registers a small callback has inline.
+    uint tracked = fa.heap_reg_count < f.num_regs ? fa.heap_reg_count : f.num_regs;
+    if (tracked <= 8) {
+        zero_regs_undefined(fa.bottom, 0, tracked);
+    } else {
+        sweep_callee_regs(vm, fa);
+    }
+    vm.activation_count = 0;
+    vm.gc_root_frame_count_changed();
+    fa.release_callee(vm.heap);
+    ds.halt_value = vm.return_val;
+    return (long)OpStatus.HALT.ordinal;
+}
+
 // RET and RETUNDEF as the threaded returns (th_leaf_return and
 // th_pop_frame, else th_return_general). For a frame generated code waits for
 // (Activation.native_ret), returns BASELINE_RETURNED with the caller current,
 // ds.curr_pc at its resume point and the waiter in ds.jit_waiter; a caller in
 // another realm takes the thunk. For a frame Vm.run entered, returns RESTART
-// with the caller's frame to be loaded, as op_ret's frame switch does. 0
-// takes the thunk.
+// with the caller's frame to be loaded, as op_ret's frame switch does. The
+// outermost frame of a host call returns HALT (jit_ret_outermost). 0 takes the
+// thunk.
 fn long jit_ret(Dispatch* ds, ulong next_arg) {
     Vm* vm = ds.vm;
     Activation* fa = ds.act;
     void* waiter = fa.native_ret;
     bool waiting = waiter != null;
-    if (!waiting && (ds.jit_floor != 0 || ds.jit_depth != 0 || vm.activation_count < 2)) return 0;
+    if (!waiting && (ds.jit_floor != 0 || ds.jit_depth != 0 || vm.activation_count < 2)) {
+        if (ds.jit_floor != 0 || ds.jit_depth != 0 || vm.activation_count != 1) return 0;
+        return jit_ret_outermost(ds, fa, (Instruction*)(usz)next_arg - 1);
+    }
     Activation* up = &vm.activations[vm.activation_count - 2];
     if (waiting && up.func != fa.func && (up.func == null || ((CompiledFunction*)up.func).realm != vm.heap.realm)) return 0;
     Instruction* pc = (Instruction*)(usz)next_arg - 1;

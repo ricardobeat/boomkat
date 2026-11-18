@@ -369,6 +369,20 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, Activation* act, uint credi
     if (!opt_try_compile(h, f, act) && f.opt_state == OPT_NONE) opt_reset_count(f);
 }
 
+// opt_note_entry for an entry from C (baseline_code), which a host calling a callback or handler
+// makes on every call: the entry of an optimized function, and one that leaves a function's count
+// short of a round, stay inline.
+macro void opt_note_host_entry(Heap* h, CompiledFunction* f, Activation* act) {
+    if (f.opt_code != null) {
+        opt_reset_count(f);
+        ((BaselineCode*)f.jit_code).touched = 1;
+    } else if (f.opt_state == OPT_NONE && f.opt_rounds == 0 && !h.opt.always && f.opt_entries + 1 < OPT_ENTRY_THRESHOLD) {
+        f.opt_entries++;
+    } else {
+        opt_note_entry(h, f, act);
+    }
+}
+
 // Fold f's completed rounds of entries into f.opt_rounds and say whether the rounds due are in. A
 // function whose body was discarded must earn a longer cool-off before each rebuild.
 fn bool opt_round_due(Heap* h, CompiledFunction* f) @inline {

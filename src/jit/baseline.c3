@@ -260,7 +260,7 @@ alias Thunk = fn long(Dispatch* ds, ulong next_pc);
 // Top-level code runs once, so it compiles only from a hot loop.
 fn void* baseline_code(Heap* h, CompiledFunction* f, Activation* act) @inline {
     if (f.jit_code != null) {
-        if (@unlikely(h.opt.enabled)) opt_note_entry(h, f, act);
+        if (@unlikely(h.opt.enabled)) opt_note_host_entry(h, f, act);
         return ((BaselineCode*)f.jit_code).exec;
     }
     if (f.jit_refused || is_top_level(f)) return null;
@@ -1332,7 +1332,10 @@ fn long jit_enter(Dispatch* ds, void* target, void* native_ret) @inline {
     ds.reg_floor = floor;
     ds.enter_sp = enter_sp;
     ds.enter_act = enter_act;
-    if (REG_CALLS && status != BASELINE_RETURNED) jit_forget_reg_returns(ds.vm, base);
+    // Only frames still above `base` can hold such a return.
+    if (REG_CALLS && status != BASELINE_RETURNED && base + 1 < ds.vm.activations + ds.vm.activation_count) {
+        jit_forget_reg_returns(ds.vm, base);
+    }
     return status;
 }
 

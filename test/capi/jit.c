@@ -55,6 +55,36 @@ static const char *CALL_NODES =
     "for(var k=0;k<4000;k++){var v=run(80)+fwd(plus,[1,2]);if(want<0)want=v;else if(v!==want)throw 'call changed';}"
     "fwd(plus,[2,3])===5";
 
+/* Functions the host calls (Array.prototype.map and friends), whose frames
+ * are the outermost of a run: compiled, they return to the host from their
+ * own code (vm::jit_ret_outermost) a number, a counted string, an object while
+ * the garbage keeps the collector marking, or undefined, or decline to the
+ * interpreter's return from a try/finally or with mapped arguments, or throw. */
+static const char *CALLBACK_RETURNS =
+    "function num(x){return x+1;}"
+    "function str(x,i){return 's'+i+'-'+x+'-'.repeat(40);}"
+    "function obj(x,i){return {i:i,big:new Array(8).fill(i)};}"
+    "function none(x){}"
+    "function fin(x){try{return x*2;}finally{x=0;}}"
+    "function mapped(x){arguments[0]=5;return x;}"
+    "function thrower(x){if(x===7)throw new RangeError('seven');return x;}"
+    "function desc(x,y){return y-x;}"
+    "function add(acc,x){return acc+x;}"
+    "var a=[];for(var i=0;i<64;i++)a.push(i);"
+    "var ok=true;"
+    "for(var k=0;k<300;k++){"
+    "var m=a.map(num);if(m[63]!==64)ok=false;"
+    "var s=a.map(str);if(s[10]!=='s10-10'+'-'.repeat(40)||s.length!==64)ok=false;"
+    "var o=a.map(obj);if(o[5].big[7]!==5||o[63].i!==63)ok=false;"
+    "var u=a.map(none);if(u[3]!==undefined)ok=false;"
+    "var f=a.map(fin);if(f[9]!==18)ok=false;"
+    "var p=a.map(mapped);if(p[9]!==5)ok=false;"
+    "try{a.forEach(thrower);ok=false;}catch(e){if(!(e instanceof RangeError)||e.message!=='seven')ok=false;}"
+    "if(a.slice().sort(desc)[0]!==63)ok=false;"
+    "if(a.reduce(add,0)!==2016)ok=false;"
+    "}"
+    "ok";
+
 int main(void) {
     bk_runtime runtime = bk_new_runtime(NULL);
     assert(runtime);
@@ -90,7 +120,9 @@ int main(void) {
     check(ctx, INLINED_APPLY);
     check(ctx, DEOPT_SHAPES);
     check(ctx, CALL_NODES);
+    check(ctx, CALLBACK_RETURNS);
     assert(bk_set_jit_opt(runtime, 0) == BK_OK);
+    check(ctx, CALLBACK_RETURNS);
     check(ctx, HOT_LOOP);
     check(ctx, DEOPT_SHAPES);
 
@@ -103,6 +135,7 @@ int main(void) {
     check(ctx, INLINE_CALLEE);
     check(ctx, INLINED_APPLY);
     check(ctx, CALL_NODES);
+    check(ctx, CALLBACK_RETURNS);
     assert(bk_set_jit_stress(runtime, 0) == BK_OK);
 
     /* Turning the runtime's JIT off releases the compiled bodies of both tiers
