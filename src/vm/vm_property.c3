@@ -27,6 +27,19 @@ fn TVal? vm_proxy_rethrow(Vm* vm, Dispatch* ds) @local {
     return (TVal){};
 }
 
+// Call an accessor's setter that the frame-staging paths cannot enter (a bound
+// function, a callable proxy, a builtin with no dispatch index) through the
+// host call, as a proxy trap is called, and rethrow what it throws here.
+fn TVal? putprop_host_setter(Vm* vm, Dispatch* ds, TVal setter_fn, HObject* hobj, TVal put_val) @noinline @local {
+    TVal this_tv;
+    this_tv.set_object(hobj);
+    TVal arg = put_val;
+    vm.heap.call_fn((void*)vm, setter_fn, &arg, 1, this_tv);
+    ds.regs_base = ds.act.bottom;
+    if (vm.heap.has_error) return vm_proxy_rethrow(vm, ds);
+    return (TVal){};
+}
+
 // Cold tail: TypeError for a property read on null/undefined. The bprintf +
 // error-object allocation keeps the message construction out of the dispatch
 // hot path, so this stays a call while the IC probe above it stays inline.
@@ -1834,6 +1847,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         return (TVal){};
                                     }
                                 }
+                                // Any other callable (a bound function, a callable proxy, a builtin with no
+                                // dispatch index) is called through the host call.
+                                if (setter_obj.is_callable()) return putprop_host_setter(vm, ds, setter_fn, hobj, put_val);
                             }
                         } else if (!exist_flags.writable) {
                             // ECMA-262 PrivateFieldSet skips [[Writable]] entirely: a frozen
@@ -2108,6 +2124,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     return (TVal){};
                                 }
                             }
+                            // Any other callable (a bound function, a callable proxy, a builtin with no
+                            // dispatch index) is called through the host call.
+                            if (setter_obj.is_callable()) return putprop_host_setter(vm, ds, acc.accessor_fn, hobj, put_val);
                         } else {
                             // ECMA-262 §8.12.5 [[Set]] step 4 / ECMA-262 §10.1.9.2 OrdinarySet
                             // step 3: if no accessor on the chain, walk the chain for a
