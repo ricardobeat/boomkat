@@ -745,9 +745,15 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
-    // An accessor or an absent read (whose entry carries the accessor bit as
-    // its marker) goes to the arm, whose helper settles it.
-    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    // An absent read (whose entry carries the accessor bit as its marker)
+    // goes to the arm, whose helper settles it. An accessor the entry names
+    // for this shape goes straight to the thunk: the arm's caches and chain
+    // walk only ever find data properties.
+    void* data = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_idx);
+    self.call.add(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, R0, 0, SLJIT_IMM, (long)hobject::IC_PROP_MISSING));
+    self.poly.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(data, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
     void* own = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     // A prototype owner, resolved as ic_resolve_slot does. An epoch entry
