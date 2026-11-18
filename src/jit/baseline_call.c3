@@ -42,6 +42,9 @@ const long CALL_METHOD = 1L << 18;
 // new object (emit_new_inline), which the frame takes as `this` with ACT_FLAG_CONSTRUCT and the
 // function as new.target.
 const long CALL_CONSTRUCT = 1L << 19;
+// A getter a property read calls (Asm.emit_getter_call): the site's entry names
+// the property, not a callee to note. Cleared for the entry.
+const long CALL_GETTER = 1L << 20;
 
 // Whether `f`'s call entry takes a construction: a plain constructor that reads its `this`. One
 // that never does builds nothing worth a path of its own, and its entry tests no receiver.
@@ -827,7 +830,7 @@ fn void Asm.emit_note_callee(&self) {
     Jumps known;
     known.add(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, m | R0, k.ic_prop_idx, m | R4, k.cf_func_index));
     // A NEW_OBJ's entry caches the constructor's prototype, and its site records the constructor.
-    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R3, 0, SLJIT_IMM, CALL_CONSTRUCT);
+    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R3, 0, SLJIT_IMM, CALL_CONSTRUCT | CALL_GETTER);
     known.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
     // R0 = the cache. The test of FB_CALL and the stores use R4, which is
     // rebuilt from the function slot at the end.
@@ -985,7 +988,7 @@ fn void Asm.emit_call_body(&self) {
     sljit_set_label(prim_done, sljit_emit_label(c));
     // Into the callee's call entry, in this native frame: the callee's frame returns to the call
     // site (Activation.native_ret), and a decline returns JIT_CALL_SLOW there.
-    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, ~CALL_METHOD);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, ~(CALL_METHOD | CALL_GETTER));
     sljit_emit_ijump(c, SLJIT_JUMP, R4, 0);
     // A lightfunc callee completes through the same helper:
     // vm::jit_call_builtin_native's th_call_native runs a lightfunc's builtin

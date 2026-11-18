@@ -44,6 +44,7 @@ struct Layout {
     long obj_array_len;
     long fn_capture_refs;
     long fn_comp_func;
+    long gs_getter;
     long cf_capture_count;
     long shape_gen;
     long ic_shape;
@@ -212,6 +213,7 @@ fn Layout* layout() {
     l.obj_array_len = (char*)&o.extra.array_length - base;
     l.fn_capture_refs = (char*)&o.extra.func.capture_refs - base;
     l.fn_comp_func = (char*)&o.extra.func.comp_func - base;
+    l.gs_getter = (char*)&o.extra.gs.getter - base;
     l.cf_capture_count = (char*)&cf.capture_count - base;
     l.shape_gen = (char*)&sh.generation - base;
     l.ic_shape = (char*)&ic.shape_id - base;
@@ -746,35 +748,50 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
     // An absent read (whose entry carries the accessor bit as its marker)
-    // goes to the arm, whose helper settles it. An accessor the entry names
-    // for this shape goes straight to the thunk: the arm's caches and chain
+    // goes to the arm, whose helper settles it: the arm's caches and chain
     // walk only ever find data properties.
     void* data = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_idx);
-    self.call.add(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, R0, 0, SLJIT_IMM, (long)hobject::IC_PROP_MISSING));
-    self.poly.add(sljit_emit_jump(c, SLJIT_JUMP));
+    self.poly.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, (long)hobject::IC_PROP_MISSING));
+    if (self.getter_site(ra)) {
+        self.emit_getter_call(ra, ic);
+    } else {
+        // An accessor the entry names for this shape goes to the thunk.
+        self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+    }
     sljit_set_label(data, sljit_emit_label(c));
+    self.emit_ic_owner(ic, &self.poly);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
+    self.poly_back = sljit_emit_label(c);
+    self.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+    self.publish(ra);
+}
+
+// The owner of the property entry `ic` names for the receiver in R1 (whose
+// shape the site has matched), into R1 with the entry in R2: the receiver
+// itself, or a prototype owner resolved as ic_resolve_slot does. An epoch
+// entry is replayed inline (ic_resolve_owner's epoch case: a plain receiver
+// whose prototype is the recorded first link and no prototype mutation
+// since); a receiver it does not describe takes `other`. Any other chain
+// takes the helper, and a chain it no longer validates the thunk.
+fn void Asm.emit_ic_owner(&self, long ic, Jumps* other) {
+    void* c = self.c;
+    Layout* l = self.lay;
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
     void* own = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    // A prototype owner, resolved as ic_resolve_slot does. An epoch entry
-    // is replayed inline (ic_resolve_owner's epoch case: a plain receiver
-    // whose prototype is the recorded first link and no prototype mutation
-    // since); a receiver it does not describe goes to the polymorphic arm,
-    // which ends in the megamorphic cache as th_get_cached's th_get_shared
-    // does (receivers of one shape with different prototypes alternate here).
-    // Any other chain takes the helper.
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
     Jumps general;
     general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_EPOCH & 0xFF));
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R2, l.ic_chain);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+    other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
-    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_first));
+    other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_first));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_current);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_value));
+    other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_value));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_owner);
     self.guard_not_proxy(R0, R4);
     void* resolved = sljit_emit_jump(c, SLJIT_JUMP);
@@ -786,11 +803,55 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     sljit_set_label(own, sljit_emit_label(c));
+}
+
+// Whether the read being emitted into `ra` calls a getter its entry names
+// natively, as th_call_getter does: GETTHISC, whose receiver the frame roots,
+// or GETPROPC(_CACHED) of a receiver register below `ra`, which the getter's
+// frame (from ra + 2 up, over registers dead past the read) leaves intact for
+// the thunk a declined call falls back to. An optimized body's GENERIC read
+// reloads every live value after it, as after a GENERIC call.
+fn bool Asm.getter_site(&self, uint ra) {
+    if (ra + 1 >= self.f.num_regs) return false;
+    switch (self.w.op) {
+        case GETTHISC: return true;
+        case GETPROPC:
+        case GETPROPC_CACHED: return self.w.b < ra;
+        default: return false;
+    }
+}
+
+// The getter call of a getter_site whose entry (R2, its slot index in R0
+// below IC_PROP_MISSING) names an accessor for the receiver's shape (the
+// object in R1): the getter into `ra`, the receiver into ra + 1, and a
+// method call with no arguments through the shared call subroutine, whose
+// result lands in `ra`; then on to the next instruction. A getter the
+// subroutine does not enter (a builtin, an undefined getter, a callee
+// without an entry, a primitive receiver of one reading `this`) takes the
+// thunk, which reads the receiver again and runs it. CALL_GETTER keeps the
+// subroutine from noting the callee in the entry, which names the property.
+fn void Asm.emit_getter_call(&self, uint ra, long ic) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    self.emit_ic_owner(ic, &self.call);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
-    self.poly_back = sljit_emit_label(c);
     self.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
-    self.publish(ra);
+    self.unbox_object(R0, R0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, l.gs_getter);
+    if (self.w.op == Opcode.GETTHISC) {
+        self.load_this(R1);
+    } else {
+        self.load(R1, self.w.b);
+    }
+    // Plain stores, as th_call_getter makes them: the getter is reachable
+    // from its owner and the receiver from its register or the frame.
+    self.store(ra + 1, R1);
+    self.store(ra, R0);
+    self.track_heap_store(ra + 1);
+    self.mov(R3, 0, SLJIT_IMM, CALL_METHOD | CALL_GETTER);
+    self.emit_call_sub(ra, ra, self.next, &self.call);
+    self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
 }
 
 // Another receiver shape at a read site, as th_get_other_shape and
