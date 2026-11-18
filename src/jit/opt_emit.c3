@@ -4189,6 +4189,6 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     for (uint pos = 0; pos < blocks; pos++) {
         if (g.blocks[pos].osr) bc.entries[g.blocks[pos].pc] = (void*)sljit_shim_label_addr(cg.osr_labels[pos]);
     }
-    if (h.jit_stats.dump_feedback) dump_code_map(f, bc, true);
+    if (h.jit_stats.dump_feedback) dump_code_map(f, bc, true, false);
     return bc;
 }

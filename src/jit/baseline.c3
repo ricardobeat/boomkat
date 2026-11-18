@@ -940,7 +940,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(a.labels[i]);
     }
     bc.thunk_insns = a.thunk_insns;
-    if (h.jit_stats.dump_feedback) dump_code_map(f, bc, false);
+    if (h.jit_stats.dump_feedback) dump_code_map(f, bc, false, h.jit_stats.dump_code);
     return bc;
 }
 
@@ -2505,7 +2505,7 @@ fn void baseline_dump_feedback(Heap* h) {
 // finishes (--jit-dump-feedback): "map fn#<index> n<instructions> <start> <end> <call entry>
 // <subroutines> [opt]" then "ents fn#<index> <address:op:pc of each instruction word>". Code
 // freed later may be reused by another compile, whose lines come after.
-fn void dump_code_map(CompiledFunction* cf, BaselineCode* bc, bool opt) {
+fn void dump_code_map(CompiledFunction* cf, BaselineCode* bc, bool opt, bool bytes) {
     uint fi = cf.func_index;
     // One write: a large function's line would otherwise take a write per instruction, which
     // shows in the profile it is for.
@@ -2517,6 +2517,10 @@ fn void dump_code_map(CompiledFunction* cf, BaselineCode* bc, bool opt) {
     for (usz i = 0; i < cf.code_count; i++) {
         usz at = (usz)bc.entries[i];
         if (at >= (usz)bc.exec && at < (usz)bc.exec + bc.code_bytes) out.appendf(" %x:%s:%d", at, cf.code[i].op, i);
+    }
+    if (bytes) {
+        out.appendf("\nbcode fn#%d %x ", fi, (usz)bc.exec);
+        foreach (b : ((char*)bc.exec)[:bc.code_bytes]) out.appendf("%02x", b);
     }
     io::eprintn(out.str_view());
 }
