@@ -2066,6 +2066,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.gen_function(ast_scope)!;
     CompiledFunction* func = inner_ctx.finish()!;
     attach_function_info(func, name, is_named_expr, src_start, end, inner_ctx.is_async, inner_ctx.lexer.source);
+    self.inner_scope_func = func;
+    self.inner_scope = ast_scope;
     return func;
 }
 

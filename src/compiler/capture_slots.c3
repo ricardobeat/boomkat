@@ -65,6 +65,7 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
     mem::clear(slots, (sz)child.const_count * uint::size);
     bool lexical = !self.is_global && !self.has_direct_eval && !self.has_with_stmt
         && !self.outer_with && !self.capture_all;
+    uint child_scope = self.inner_scope_func == child ? self.inner_scope : 0;
     for (uint ci = 0; lexical && ci < candidates; ci++) {
         uint name = child.capture_names[ci];
         ScopeEntry* entry = self.scope_entry_of(child.constants[name].get_heapptr());
@@ -74,7 +75,10 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
         bool outer = !found && entry == null && child.capture_count < 64
             && self.outer_function_binds(child.constants[name]);
         if (!found && !outer) continue;
-        if (outer) child.capture_fixed |= 1UL << child.capture_count;
+        if (outer || (entry != null && child.capture_count < 64
+            && self.binds_lexical_unshadowed(child_scope, child.constants[name]))) {
+            child.capture_fixed |= 1UL << child.capture_count;
+        }
         child.capture_names[child.capture_count++] = name;
         slots[name] = child.capture_count;
     }
@@ -222,6 +226,34 @@ fn bool CompilerContext.outer_function_binds(&self, TVal name) {
     // Past a reparsed function, its template's record speaks for the functions around it.
     return idx.unknown_outer && idx.reparsed != null && idx.reparsed.lazy_outer_known
         && (idx.outer.data[atom] & ast::OUTER_FIXED) != 0;
+}
+
+// True when the nearest scope around the closure of AST scope `child_scope` that binds the name is
+// one of this function's, binding it as a let, const or class, with no `with` or direct eval
+// between. Such a binding is in its scope's record (in its TDZ until initialized) from the scope's
+// entry, before any closure in it exists, and no scope between can gain the name, so the closure
+// resolves it once, without a shadowing guard, even when its scope chain passes block or class
+// scopes on the way.
+fn bool CompilerContext.binds_lexical_unshadowed(&self, uint child_scope, TVal name) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use || child_scope == 0 || self.func_ast_scope == 0) return false;
+    uint atom = idx.tree.atoms.find(self.name_text((HString*)name.get_heapptr()));
+    if (atom == 0 || atom == idx.res.atom_arguments) return false;
+    const ushort DYNAMIC = ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS;
+    for (uint s = idx.res.scopes.data[child_scope].parent; s != 0; s = idx.res.scopes.data[s].parent) {
+        ast::Scope* sc = &idx.res.scopes.data[s];
+        if (sc.kind == ast::ScopeKind.WITH || (sc.flags & DYNAMIC) != 0) return false;
+        if (sc.func != self.func_ast_scope) return false;
+        uint b = idx.res.lookup(s, atom);
+        if (b == 0) continue;
+        switch (idx.res.bindings.data[b].kind) {
+            case LET: case CONST: case CLASS:
+                return true;
+            default:
+                return false;
+        }
+    }
+    return false;
 }
 
 // True when this function's top-level scope binds the name as a var or a

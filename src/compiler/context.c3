@@ -464,6 +464,10 @@ struct CompilerContext {
     // The AST scope of the function being compiled, set when its captures are
     // indexed; zero before that and for code the resolver did not see.
     uint func_ast_scope;
+    // The AST scope of the function compile_inner_function last returned (inner_scope_func), for
+    // resolve_capture_candidates.
+    CompiledFunction* inner_scope_func;
+    uint inner_scope;
 
     // Eval mode: expression statements save their value to eval_acc_reg as eval's completion
     // value. Set only on the eval source's top-level context, the only one that allocates
