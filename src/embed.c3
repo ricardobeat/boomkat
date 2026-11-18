@@ -1484,6 +1484,8 @@ fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
     // run_module returns 1 for a thrown value and 2 for a failed link, which
     // parks a SyntaxError when an import does not resolve.
     if (rc != 0) return module_failure(rt, rc == 1 ? BK_ERR_THROW : BK_ERR_SYNTAX);
+    // A body still awaiting reports its failure later, as an unhandled rejection.
+    esm::module_report_late_failure(rt.heap, mod);
 
     HObject*? ns = esm::build_namespace_object(rt.heap, mod);
     if (catch err = ns) {

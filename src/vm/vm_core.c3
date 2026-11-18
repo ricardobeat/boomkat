@@ -519,6 +519,31 @@ fn bool scan_activation_root_unit(Vm* vm, heap::Heap* h, Activation* act, bool s
 // Call handling (matches duk_js_call.c)
 // ============================================================================
 
+// A getter invoke_getter cannot enter with a frame (a bound function, a
+// callable proxy, a builtin with no dispatch index), called through the host
+// call as a proxy trap is. Its result lands in `result_reg`; a throw is thrown
+// here, or flagged as invoke_getter's builtin path flags an uncaught one.
+fn bool invoke_getter_host(Vm* vm, TVal getter_fn, TVal* this_val, uint result_reg,
+                           Activation* act, Instruction** curr_pc, bool* needs_restart) @noinline {
+    TVal result = vm.heap.call_fn((void*)vm, getter_fn, null, 0, *this_val);
+    TVal* dst = act.bottom + result_reg;
+    if (vm.heap.has_error) {
+        TVal errv = vm.heap.error_value;
+        vm.heap.has_error = false;
+        if (!vm_throw_value(vm, errv, act, curr_pc, needs_restart)) {
+            vm.has_error = true;
+            vm.heap.has_error = true;
+            vm.heap.tval_copy_ref(&vm.return_val, &errv);
+            dst = act.bottom + result_reg;
+            vm.heap.set_reg_undefined(dst);
+        }
+        return false;
+    }
+    vm.heap.tval_copy_ref(dst, &result);
+    if (result.is_heap_allocated()) track_heap_store(act, dst, result_reg);
+    return false;
+}
+
 // Invoke a getter function found on the prototype chain.
 // Sets up an ECMAScript call frame for the getter with `this` = this_obj,
 // and result register = result_reg (in the caller's frame).
@@ -581,7 +606,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     }
 
     CompiledFunction* target = (*func_obj.extra_ptr()).func.comp_func;
-    if (target == null) return false;
+    if (target == null) return invoke_getter_host(vm, getter_fn, this_val, result_reg, act, curr_pc, needs_restart);
     if (!(vm_materialize(vm, target, act, curr_pc, needs_restart) ?? false)) return false;
     // The threaded getter call only enters functions already classified.
     target.classify_lean_call();
