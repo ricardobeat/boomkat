@@ -608,6 +608,8 @@ struct Asm {
     CompiledFunction* direct_cf;
     // The call entry's register label (emit_call_entry), for Asm.finish.
     void* reg_label;
+    // frame_state_possible of the function, once a return has asked: 1 no, 2 yes.
+    char frame_state;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;

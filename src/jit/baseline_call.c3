@@ -1066,11 +1066,41 @@ fn void Asm.emit_return(&self, Jumps* helper) {
     } else {
         self.mov(R0, 0, SLJIT_IMM, K_UNDEF);
     }
+    if (self.frame_state == 0) self.frame_state = frame_state_possible(self.f) ? 2 : 1;
+    if (!self.opt && self.frame_state == 1) self.emit_site_return();
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = RETURN_SUB });
     // The subroutine's only nonzero status is BASELINE_RETURNED: the frame is gone, the result is
     // in R1, and R2 is the site that stores it.
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     self.return_to(R2);
+}
+
+// The return subroutine's plain case of a frame a call entry pushed, inline in a RET or RETUNDEF
+// with the result in R0: the pop and the return to the call site (emit_return_body), which stores
+// the result. Anything else falls through to the subroutine with R0 kept. Only for a frame that
+// can hold no catcher or for-in state.
+fn void Asm.emit_site_return(&self) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    Jumps sub;
+    long lean = (long)((vm::TH_LEAN_FRAME_FLAGS & ~vm::ACT_FLAG_JIT_CALLED) | vm::ACT_FLAG_LAZY);
+    self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~lean & 0xFFFFFFFF);
+    sub.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED));
+    void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+    self.emit_result_object(&sub);
+    sljit_set_label(inert, sljit_emit_label(c));
+    self.mov(R2, 0, m | self.la, k.act_native_ret);
+    void* stale = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | self.ds, l.ds_act, self.la, 0);
+    self.mov(m | self.ds, l.ds_act, SLJIT_IMM, 0);
+    sljit_set_label(stale, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_SUB, self.la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
+    self.mov(R1, 0, R0, 0);
+    self.mov(R0, 0, SLJIT_IMM, BASELINE_RETURNED);
+    self.return_to(R2);
+    sub.bind(sljit_emit_label(c));
 }
 
 // Return to the native_ret in `r`, keeping R0 and R1. The record of a register call returns
