@@ -596,6 +596,44 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
     self.emit_call_sub(callee, self.w.a, self.next, generic);
 }
 
+// The function a CALL, CALL_UNDEF_THIS, CALL_GLOBAL or CALL_VAR of baseline code has only ever
+// called, as OptBuild.direct_callee takes one (opt_direct_targets), or null. The site tests its
+// callee for it (emit_mono_guard) and enters the function's direct label as optimized code does,
+// past the call subroutine and the feedback it records, which already names the function.
+fn CompiledFunction* Asm.mono_callee(&self) {
+    if (self.opt || self.direct_cf != null || self.f.ic_entries == null) return null;
+    OptCallees set;
+    if (!opt_direct_targets(self.hp, self.f, self.next - 1, &set) || set.count != 1) return null;
+    return set.fns[0];
+}
+
+// The tests of a mono_callee site, as emit_check_callee makes them for optimized code: the
+// function in register `callee` is a function object of `cf` whose scope a call entry takes, and
+// a method call's receiver an object unless `cf` ignores it, which the direct label does not test.
+// Anything else joins `miss` with nothing written.
+fn void Asm.emit_mono_guard(&self, CompiledFunction* cf, uint callee, Jumps* miss) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    int m = SLJIT_MEM;
+    self.load(R0, callee);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    self.mov(R4, 0, m | R0, 0, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want));
+    self.mov(R4, 0, m | R0, k.fn_builtin, SLJIT_MOV_S32);
+    miss.add(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0));
+    self.mov(R4, 0, m | R0, self.lay.fn_comp_func);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)(usz)cf));
+    self.emit_scope_test(R0, R4, miss);
+    if (self.w.op != Opcode.CALL || cf.ignores_this()) return;
+    self.load(R0, callee + 1);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+}
+
 // The call of the function in register `callee`, R3 its packed count and kind, through the shared
 // call subroutine, or the direct label of the callee optimized code proved (direct_cf): the result
 // into register `result`, the frame resuming at instruction `resume`. `generic` collects a call

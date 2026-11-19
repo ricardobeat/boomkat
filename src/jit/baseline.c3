@@ -1412,6 +1412,16 @@ fn bool Asm.emit_call(&self) {
         if (global && self.direct_cf == null) self.load_global_callee(&generic);
         if (scoped && self.direct_cf == null) self.load_var_callee(&generic);
         if (self.direct_cf == null && self.leaf_site()) self.emit_leaf_call(&done);
+        CompiledFunction* mono = self.mono_callee();
+        if (mono != null) {
+            Jumps other;
+            self.emit_mono_guard(mono, global || scoped ? self.w.a : self.w.b, &other);
+            self.direct_cf = mono;
+            self.emit_direct_call(&generic);
+            self.direct_cf = null;
+            done.add(sljit_emit_jump(c, SLJIT_JUMP));
+            other.bind(sljit_emit_label(c));
+        }
         self.emit_direct_call(&generic);
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         generic.bind(sljit_emit_label(c));
