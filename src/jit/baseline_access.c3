@@ -750,12 +750,12 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     // Baseline code tests the accessor bit and has_proto together and leaves an entry with either
     // for its cold path, so that an own data read takes no branch.
     long has_proto_shift = (l.ic_has_proto - l.ic_flags) * 8;
-    if (!self.opt && !std::core::env::BIG_ENDIAN && (l.ic_flags & 3) == 0 && has_proto_shift > 0 && has_proto_shift < 32) {
+    if (self.cold_ok && !std::core::env::BIG_ENDIAN && (l.ic_flags & 3) == 0 && has_proto_shift > 0 && has_proto_shift < 32) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_flags);
         sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R0, 0, SLJIT_IMM, l.accessor_mask | 0xFFL << has_proto_shift);
-        self.cold.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
-        self.cold_back = sljit_emit_label(c);
-        self.cold_ic = ic;
+        Jumps cold;
+        cold.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
+        self.add_cold(GET, sljit_emit_label(c), ic, &cold);
     } else {
         self.emit_get_kinds(ra, ic, &self.poly);
     }

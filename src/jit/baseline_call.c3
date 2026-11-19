@@ -681,7 +681,14 @@ fn void Asm.emit_call_sub(&self, uint callee, uint result, uint resume, Jumps* g
             generic.add(no_code);
             generic.add(no_entry);
             sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
-            self.emit_call_return(result, generic);
+            if (self.call_status != null) {
+                // A mono_callee site's other statuses go to its cold path (emit_call_cold).
+                self.call_status.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED));
+                self.emit_call_result(result);
+                self.count(&self.stats.fast_hits[0], self.w.op);
+            } else {
+                self.emit_call_return(result, generic);
+            }
             return;
         }
         sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
@@ -702,6 +709,17 @@ fn void Asm.emit_call_return(&self, uint result, Jumps* generic) {
     void* c = self.c;
     // The callee's frame returned here (Activation.native_ret).
     void* returned = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED);
+    void* done = self.emit_call_status(generic);
+    sljit_set_label(returned, sljit_emit_label(c));
+    self.emit_call_result(result);
+    sljit_set_label(done, sljit_emit_label(c));
+    self.count(&self.stats.fast_hits[0], self.w.op);
+}
+
+// A call status in R0 other than BASELINE_RETURNED (emit_call_return): a decline to `generic`, a
+// status other than a builtin's completion to the shared exit, and the jump a completion takes.
+fn void* Asm.emit_call_status(&self, Jumps* generic) {
+    void* c = self.c;
     // A declining call entry has used the window register.
     void* entered = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW);
     self.mov(self.regs, 0, SLJIT_MEM | self.la, call_layout().act_bottom);
@@ -709,15 +727,16 @@ fn void Asm.emit_call_return(&self, uint result, Jumps* generic) {
     sljit_set_label(entered, sljit_emit_label(c));
     // A builtin the subroutine completed.
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
-    void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    // The return left the caller's record in the record register and the result in R1, whose
-    // store the subroutine has cleared as Asm.publish would.
-    sljit_set_label(returned, sljit_emit_label(c));
+    return sljit_emit_jump(c, SLJIT_JUMP);
+}
+
+// The result of a callee frame that returned here (emit_call_return): the return left the
+// caller's record in the record register and the result in R1, whose store the subroutine has
+// cleared as Asm.publish would.
+fn void Asm.emit_call_result(&self, uint result) {
     self.mov(self.regs, 0, SLJIT_MEM | self.la, call_layout().act_bottom);
     self.store(result, R1);
     self.track_heap_store(result);
-    sljit_set_label(done, sljit_emit_label(c));
-    self.count(&self.stats.fast_hits[0], self.w.op);
 }
 
 // Whether the APPLY_ARGS being emitted is the `f.apply(x, arguments)` of a forwarding function,

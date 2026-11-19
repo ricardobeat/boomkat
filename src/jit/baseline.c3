@@ -536,11 +536,38 @@ struct Stub {
     char alt_len;
     char poly_len;
     char cold_len;
+    // The instruction's cold paths, from Asm.colds.
+    uint cold_at;
     // Where the polymorphic arm resumes the inline path.
     void* poly_back;
-    // Where a cached read's cold path (Asm.emit_get_cold) resumes it, and the read's entry.
-    void* cold_back;
-    long cold_ic;
+}
+
+enum ColdKind : char {
+    GET,              // a cached read's entry for anything but an own data property (Asm.emit_get_cold)
+    CALL,             // the rest of a mono_callee call site (Asm.emit_call_cold)
+}
+
+// A common path's jumps to code that emit_stubs places with the instruction's other stubs, in up
+// to three groups from Asm.cold_jumps, where that code resumes it, and its operand: a read's entry.
+struct Cold {
+    uint at;
+    char[3] len;
+    ColdKind kind;
+    void* back;
+    long arg;
+}
+
+// Record a cold path of the instruction being emitted (ColdKind), entered by the jump groups `a`,
+// `b` and `c`.
+fn void Asm.add_cold(&self, ColdKind kind, void* back, long arg, Jumps* a, Jumps* b = null, Jumps* c = null) {
+    Cold cold = { .at = (uint)self.cold_jumps.len(), .kind = kind, .back = back, .arg = arg };
+    Jumps*[3] groups = { a, b, c };
+    for (uint g = 0; g < 3; g++) {
+        if (groups[g] == null) continue;
+        cold.len[g] = (char)groups[g].len;
+        for (uint k = 0; k < groups[g].len; k++) self.cold_jumps.push(groups[g].at[k]);
+    }
+    self.colds.push(cold);
 }
 
 // Load `n` jumps of the stub pool, starting at `at`, into `j`.
@@ -614,11 +641,13 @@ struct Asm {
     void* reg_label;
     // frame_state_possible of the function, once a return has asked: 1 no, 2 yes.
     char frame_state;
-    // A cached read's jump to its cold path, which emit_stubs emits with the instruction's other
-    // out-of-line paths (Asm.emit_get_cold), and where and with which entry it resumes.
-    Jumps cold;
-    void* cold_back;
-    long cold_ic;
+    // Cold paths of the instruction being emitted, then of each stub's (Stub.cold_at), and
+    // whether the code being emitted may add one: the main path of a baseline instruction.
+    List{Cold} colds;
+    List{void*} cold_jumps;
+    bool cold_ok;
+    // A mono_callee site's statuses other than a return, for its cold path (emit_call_cold).
+    Jumps* call_status;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;
@@ -703,6 +732,8 @@ fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
     a.gotos.init(mem);
     a.stubs.init(mem);
     a.stub_jumps.init(mem);
+    a.colds.init(mem);
+    a.cold_jumps.init(mem);
     a.subs.init(mem);
     for (uint i = 0; i < count;) {
         a.starts[i] = true;
@@ -718,6 +749,8 @@ fn void Asm.release(&self) {
     self.gotos.free();
     self.stubs.free();
     self.stub_jumps.free();
+    self.colds.free();
+    self.cold_jumps.free();
     self.subs.free();
 }
 
@@ -795,7 +828,8 @@ fn void Asm.emit_insn(&self, uint i) {
     self.call.len = 0;
     self.alt.len = 0;
     self.poly.len = 0;
-    self.cold.len = 0;
+    uint cold_at = (uint)self.colds.len();
+    self.cold_ok = !self.opt;
     if (self.emit_call()) {
     } else if (self.emit_alloc()) {
     } else if (self.emit_fast(self.consts_fixed)) {
@@ -804,15 +838,15 @@ fn void Asm.emit_insn(&self, uint i) {
         self.thunk_insns++;
         self.emit_thunk_call(i);
     }
-    if (self.call.len != 0 || self.alt.len != 0 || self.poly.len != 0 || self.cold.len != 0) {
+    self.cold_ok = false;
+    uint cold_len = (uint)self.colds.len() - cold_at;
+    if (self.call.len != 0 || self.alt.len != 0 || self.poly.len != 0 || cold_len != 0) {
         self.stubs.push({ .insn = i, .at = (uint)self.stub_jumps.len(), .call_len = (char)self.call.len,
                           .alt_len = (char)self.alt.len, .poly_len = (char)self.poly.len,
-                          .cold_len = (char)self.cold.len, .poly_back = self.poly_back,
-                          .cold_back = self.cold_back, .cold_ic = self.cold_ic });
+                          .cold_len = (char)cold_len, .cold_at = cold_at, .poly_back = self.poly_back });
         for (uint k = 0; k < self.call.len; k++) self.stub_jumps.push(self.call.at[k]);
         for (uint k = 0; k < self.alt.len; k++) self.stub_jumps.push(self.alt.at[k]);
         for (uint k = 0; k < self.poly.len; k++) self.stub_jumps.push(self.poly.at[k]);
-        for (uint k = 0; k < self.cold.len; k++) self.stub_jumps.push(self.cold.at[k]);
     }
 }
 
@@ -825,11 +859,21 @@ fn void Asm.emit_stubs(&self) {
         self.call.load(&self.stub_jumps, stub.at, stub.call_len);
         self.alt.len = 0;
         Jumps cold_poly;
-        if (stub.cold_len != 0) {
-            Jumps cold;
-            cold.load(&self.stub_jumps, stub.at + stub.call_len + stub.alt_len + stub.poly_len, stub.cold_len);
-            cold.bind(sljit_emit_label(c));
-            self.emit_get_cold(stub.cold_ic, stub.cold_back, &cold_poly);
+        for (uint k = 0; k < stub.cold_len; k++) {
+            Cold* cold = &self.colds[(sz)stub.cold_at + k];
+            Jumps[3] groups;
+            uint at = cold.at;
+            for (uint g = 0; g < 3; g++) {
+                groups[g].load(&self.cold_jumps, at, cold.len[g]);
+                at += cold.len[g];
+            }
+            switch (cold.kind) {
+                case GET:
+                    groups[0].bind(sljit_emit_label(c));
+                    self.emit_get_cold(cold.arg, cold.back, &cold_poly);
+                case CALL:
+                    self.emit_call_cold(&groups[0], &groups[1], &groups[2]);
+            }
         }
         if (stub.alt_len != 0) {
             Jumps alt;
@@ -1436,6 +1480,21 @@ fn bool Asm.emit_call(&self) {
         if (scoped && self.direct_cf == null) self.load_var_callee(&generic);
         if (self.direct_cf == null && self.leaf_site()) self.emit_leaf_call(&done);
         CompiledFunction* mono = self.mono_callee();
+        if (mono != null && self.cold_ok) {
+            // A callee that returns runs on into the next instruction; the site's other cases are
+            // out of line (emit_call_cold).
+            Jumps other;
+            Jumps status;
+            self.emit_mono_guard(mono, global || scoped ? self.w.a : self.w.b, &other);
+            self.direct_cf = mono;
+            self.call_status = &status;
+            self.emit_direct_call(&generic);
+            self.call_status = null;
+            self.direct_cf = null;
+            self.add_cold(CALL, null, 0, &status, &other, &generic);
+            done.bind(sljit_emit_label(c));
+            return true;
+        }
         if (mono != null) {
             Jumps other;
             self.emit_mono_guard(mono, global || scoped ? self.w.a : self.w.b, &other);
@@ -1449,14 +1508,35 @@ fn bool Asm.emit_call(&self) {
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         generic.bind(sljit_emit_label(c));
     }
+    self.emit_helper_call();
+    done.bind(sljit_emit_label(c));
+    return true;
+}
+
+// A call through vm::jit_call, which runs it whatever the callee.
+fn void Asm.emit_helper_call(&self) {
+    void* c = self.c;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
-    done.bind(sljit_emit_label(c));
-    return true;
+}
+
+// The cold path of a mono_callee call site (emit_call), with the instruction's other stubs: the
+// direct call's statuses other than a return (`status`), any other callee through the call
+// subroutine (`other`), and the helper call (`generic`), each going on to the next instruction.
+fn void Asm.emit_call_cold(&self, Jumps* status, Jumps* other, Jumps* generic) {
+    void* c = self.c;
+    status.bind(sljit_emit_label(c));
+    self.go(self.emit_call_status(generic), self.next);
+    other.bind(sljit_emit_label(c));
+    self.emit_direct_call(generic);
+    self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
+    generic.bind(sljit_emit_label(c));
+    self.emit_helper_call();
+    self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
 }
 
 // Whether the call being emitted (a CALL, CALL_UNDEF_THIS, CALL_GLOBAL or CALL_VAR, or the tail
