@@ -429,7 +429,9 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
             TVal key = f.constants[w.c];
             if (!key.is_string()) return false;
             self.load(R0, w.b);
-            self.emit_get(w.a, ic, (long)(usz)key.get_heapptr(), -1, true, false, key.get_heapptr() == self.length_key);
+            // The entry of a constant key holds that key or none (every fill passes the
+            // instruction's own), so a filled entry needs no comparison of the key, as GETTHISC's.
+            self.emit_get(w.a, ic, (long)(usz)key.get_heapptr(), -1, false, false, key.get_heapptr() == self.length_key);
         case GETPROP:
         case GETPROP_CACHE:
             // GETPROP_CACHE writes its key back coerced, which leaves an
