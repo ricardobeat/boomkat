@@ -255,12 +255,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     // A call optimized code proved (Asm.emit_direct_call) fast-calls the direct label, past the
     // tests of the realm, the argument count and the receiver kind (entry_takes).
     self.set_frame();
-    self.direct_label = sljit_emit_label(c);
-    sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM | reg_sp(), SUB_RET_OFF);
-    self.mov(bottom, 0, R1, 0);
-    self.mov(packed, 0, R3, 0);
     Jumps proven;
-    proven.add(sljit_emit_jump(c, SLJIT_JUMP));
     // A register call (OptCg.emit_call_reg) fast-calls the register label with the direct label's
     // arguments: the same path on a native frame of its own, whose return address its record
     // returns through (Trampoline.reg_ret pops the frame), as does a decline. The frame must lie
@@ -304,6 +299,12 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, forbidden);
         decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     }
+    proven.add(sljit_emit_jump(c, SLJIT_JUMP));
+    // The direct label, which most calls take (Asm.mono_callee), falls through to the frame.
+    self.direct_label = sljit_emit_label(c);
+    sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM | reg_sp(), SUB_RET_OFF);
+    self.mov(bottom, 0, R1, 0);
+    self.mov(packed, 0, R3, 0);
     proven.bind(sljit_emit_label(c));
     // The record after the caller's, which takes the result slot (R2) once there is room for it.
     self.mov(vm, 0, m | ds, k.ds_vm);
@@ -381,21 +382,23 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     self.mov(m | la, l.act_this, undef, 0);
     // A method call (R4 is 0) takes the receiver slot's value as `this`; so does a construction,
     // whose new.target, the function, jit_fill writes.
+    // A plain call or a construction leaves the method call's path with a branch; a construction
+    // (entry_constructs) is settled after the jump into the body and comes back.
+    void* not_method = null;
+    void* receiver = null;
+    void* bound = null;
     if (takes_this) {
-        Jumps bound;
-        if (!entry_constructs(f)) {
-            bound.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0));
-        } else {
-            void* method = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0);
-            bound.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, CALL_CONSTRUCT));
-            self.mov(R4, 0, SLJIT_IMM, vm::ACT_FLAG_CONSTRUCT);
-            sljit_set_label(method, sljit_emit_label(c));
-        }
+        not_method = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
+        receiver = sljit_emit_label(c);
         self.mov(R1, 0, m | bottom, -(long)TVal::size);
         self.mov(m | la, l.act_this, R1, 0);
         sljit_emit_op2(c, SLJIT_OR, R1, 0, R4, 0, SLJIT_IMM, vm::ACT_FLAG_THIS_VALID | vm::ACT_FLAG_JIT_CALLED | vm::ACT_FLAG_LAZY);
         self.mov(m | la, k.act_flags, R1, 0, SLJIT_MOV_U32);
-        bound.bind(sljit_emit_label(c));
+        bound = sljit_emit_label(c);
+        if (!entry_constructs(f)) {
+            sljit_set_label(not_method, bound);
+            not_method = null;
+        }
     }
     // Locals and the scratch slots start undefined, surplus arguments included
     // unless they are kept for forwarding.
@@ -444,6 +447,14 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     void* pending = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0);
     void* body = sljit_emit_label(c);
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.labels[0]);
+    // A construction takes the receiver slot's new object as `this` with ACT_FLAG_CONSTRUCT; a
+    // plain call binds none.
+    if (not_method != null) {
+        sljit_set_label(not_method, sljit_emit_label(c));
+        sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, CALL_CONSTRUCT), bound);
+        self.mov(R4, 0, SLJIT_IMM, vm::ACT_FLAG_CONSTRUCT);
+        sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), receiver);
+    }
     // Heap.safepoint_gc_on_call's countdown, inline unless it expires or a full collection waits.
     sljit_set_label(pending, sljit_emit_label(c));
     if (!$feat(GC_STRESS)) {
@@ -663,6 +674,16 @@ fn void Asm.emit_call_sub(&self, uint callee, uint result, uint resume, Jumps* g
         void* no_code = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
         self.mov(R0, 0, SLJIT_MEM | R0, k.bc_direct_entry);
         void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+        if (!self.opt) {
+            // Baseline code (Asm.mono_callee): a callee whose code is gone takes the helper,
+            // which the stored resume point does not disturb, and the call needs no jump over a
+            // subroutine call.
+            generic.add(no_code);
+            generic.add(no_entry);
+            sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
+            self.emit_call_return(result, generic);
+            return;
+        }
         sljit_emit_ijump(c, SLJIT_FAST_CALL, R0, 0);
         proven = sljit_emit_jump(c, SLJIT_JUMP);
         void* sub = sljit_emit_label(c);
@@ -671,6 +692,14 @@ fn void Asm.emit_call_sub(&self, uint callee, uint result, uint resume, Jumps* g
     }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = CALL_SUB });
     if (proven != null) sljit_set_label(proven, sljit_emit_label(c));
+    self.emit_call_return(result, generic);
+}
+
+// The call site's side of a call through the subroutine or a direct label, with its status in
+// R0: the result of a callee frame that returned here into register `result`, a builtin's
+// completion, a decline to `generic`, or a status for the shared exit.
+fn void Asm.emit_call_return(&self, uint result, Jumps* generic) {
+    void* c = self.c;
     // The callee's frame returned here (Activation.native_ret).
     void* returned = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED);
     // A declining call entry has used the window register.
@@ -1089,13 +1118,18 @@ fn void Asm.emit_site_return(&self) {
     self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~lean & 0xFFFFFFFF);
     sub.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED));
-    void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
-    self.emit_result_object(&sub);
-    sljit_set_label(inert, sljit_emit_label(c));
+    // RETUNDEF's undefined needs no test.
+    if (self.w.op == Opcode.RET) {
+        void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+        self.emit_result_object(&sub);
+        sljit_set_label(inert, sljit_emit_label(c));
+    }
     self.mov(R2, 0, m | self.la, k.act_native_ret);
-    void* stale = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | self.ds, l.ds_act, self.la, 0);
-    self.mov(m | self.ds, l.ds_act, SLJIT_IMM, 0);
-    sljit_set_label(stale, sljit_emit_label(c));
+    // A frame state synced for this record is cleared (emit_return_body), with no branch.
+    self.mov(R3, 0, m | self.ds, l.ds_act);
+    sljit_emit_op2u(c, SLJIT_SUB | SLJIT_SET_Z, R3, 0, self.la, 0);
+    sljit_emit_select(c, SLJIT_EQUAL, R3, SLJIT_IMM, 0, R3);
+    self.mov(m | self.ds, l.ds_act, R3, 0);
     sljit_emit_op2(c, SLJIT_SUB, self.la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
     self.mov(R1, 0, R0, 0);
     self.mov(R0, 0, SLJIT_IMM, BASELINE_RETURNED);
@@ -1108,12 +1142,16 @@ fn void Asm.emit_site_return(&self) {
 // itself, the return the processor predicts for its call.
 fn void Asm.return_to(&self, int r) {
     void* c = self.c;
-    if (REG_CALLS) {
-        void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, r, 0, SLJIT_IMM, (long)(usz)trampoline().reg_ret);
-        self.mov(r, 0, SLJIT_MEM | reg_sp(), jit_frame().link_off);
-        sljit_shim_adjust_sp(c, REG_FRAME_BYTES);
-        sljit_set_label(other, sljit_emit_label(c));
+    if (!REG_CALLS) {
+        sljit_emit_op_src(c, SLJIT_FAST_RETURN, r, 0);
+        return;
     }
+    // The return to a call site first, so that it takes no branch; the register call's after it.
+    void* reg_call = sljit_emit_cmp(c, SLJIT_EQUAL, r, 0, SLJIT_IMM, (long)(usz)trampoline().reg_ret);
+    sljit_emit_op_src(c, SLJIT_FAST_RETURN, r, 0);
+    sljit_set_label(reg_call, sljit_emit_label(c));
+    self.mov(r, 0, SLJIT_MEM | reg_sp(), jit_frame().link_off);
+    sljit_shim_adjust_sp(c, REG_FRAME_BYTES);
     sljit_emit_op_src(c, SLJIT_FAST_RETURN, r, 0);
 }
 
