@@ -1137,11 +1137,13 @@ fn void Asm.emit_site_return(&self) {
     self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~lean & 0xFFFFFFFF);
     sub.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED));
-    // RETUNDEF's undefined needs no test.
+    // RETUNDEF's undefined needs no test. An inert result runs on with no branch, and a heap
+    // value takes the cold path (emit_result_cold).
+    Jumps heap;
+    void* back = null;
     if (self.w.op == Opcode.RET) {
-        void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
-        self.emit_result_object(&sub);
-        sljit_set_label(inert, sljit_emit_label(c));
+        heap.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_STRING_START));
+        back = sljit_emit_label(c);
     }
     self.mov(R2, 0, m | self.la, k.act_native_ret);
     // A frame state synced for this record is cleared (emit_return_body), with no branch.
@@ -1153,7 +1155,26 @@ fn void Asm.emit_site_return(&self) {
     self.mov(R1, 0, R0, 0);
     self.mov(R0, 0, SLJIT_IMM, BASELINE_RETURNED);
     self.return_to(R2);
-    sub.bind(sljit_emit_label(c));
+    void* to_sub = sljit_emit_label(c);
+    sub.bind(to_sub);
+    if (back != null) {
+        if (self.cold_ok) {
+            self.add_cold(RESULT, back, (long)(usz)to_sub, &heap);
+        } else {
+            heap.bind(sljit_emit_label(c));
+            self.emit_result_cold(back, to_sub);
+        }
+    }
+}
+
+// The heap result R0 of an inline return (emit_site_return): an object while the collector is not
+// marking back to the return at `back`, and anything else to the subroutine's at `sub`.
+fn void Asm.emit_result_cold(&self, void* back, void* sub) {
+    void* c = self.c;
+    Jumps other;
+    self.emit_result_object(&other);
+    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), back);
+    other.bind(sub);
 }
 
 // Return to the native_ret in `r`, keeping R0 and R1. The record of a register call returns
