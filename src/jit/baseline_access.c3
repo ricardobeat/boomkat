@@ -577,6 +577,23 @@ fn void Asm.guard_not_tdz(&self) {
 fn void Asm.publish(&self, uint ra) {
     void* c = self.c;
     Layout* l = self.lay;
+    if (self.early_publish(ra)) {
+        // Baseline code stores first, so that an object while the collector is not marking runs
+        // on with no taken branch; anything else but an inert value takes the cold path
+        // (emit_publish_cold).
+        self.store(ra, R0);
+        void* inert_early = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+        Jumps cold;
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, k_obj_op(), k_obj_w());
+        cold.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, span_op(), span_w()));
+        sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
+        cold.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
+        self.track_heap_store(ra);
+        void* back = sljit_emit_label(c);
+        sljit_set_label(inert_early, back);
+        self.add_cold(PUBLISH, back, ra, &cold);
+        return;
+    }
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
     // An object while the collector is not marking is the common case: store it
     // and raise the watermark here, as the subroutine does.
@@ -597,6 +614,32 @@ fn void Asm.publish(&self, uint ra) {
     self.store(ra, R0);
     sljit_set_label(done, sljit_emit_label(c));
     sljit_set_label(done_obj, sljit_emit_label(c));
+}
+
+// Whether baseline code may store the value it publishes into `ra` before the publish's tests
+// (Asm.publish): only where the slow path the publish may take, which runs the instruction again,
+// reads no register `ra` overwrites.
+fn bool Asm.early_publish(&self, uint ra) {
+    if (!self.cold_ok) return false;
+    switch (self.w.op) {
+        case LDREG:
+        case GETPROPC:
+        case GETPROPC_CACHED:
+            return ra != self.w.b;
+        case GETTHISC:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The cold path of an early_publish, entered with the heap value R0 stored into `ra` and not an
+// object, or any while the collector marks: the register cleared, so that a collection the slow
+// path runs never scans a value the publish has not settled, then the publish as such and back.
+fn void Asm.emit_publish_cold(&self, uint ra, void* back) {
+    self.store(ra, SLJIT_IMM, K_UNDEF);
+    self.publish(ra);
+    sljit_set_label(sljit_emit_jump(self.c, SLJIT_JUMP), back);
 }
 
 // The publish subroutine: store the heap value R0 into the register whose

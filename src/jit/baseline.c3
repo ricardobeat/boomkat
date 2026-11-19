@@ -546,10 +546,12 @@ enum ColdKind : char {
     GET,              // a cached read's entry for anything but an own data property (Asm.emit_get_cold)
     CALL,             // the rest of a mono_callee call site (Asm.emit_call_cold)
     STRING_RECEIVER,  // a cached read's receiver that is not an object (Asm.emit_string_receiver)
+    PUBLISH,          // a heap value but an object, or any while marking (Asm.emit_publish_cold)
 }
 
 // A common path's jumps to code that emit_stubs places with the instruction's other stubs, in up
-// to three groups from Asm.cold_jumps, where that code resumes it, and its operand: a read's entry.
+// to three groups from Asm.cold_jumps, where that code resumes it, and its operand: a read's entry
+// or a published register.
 struct Cold {
     uint at;
     char[3] len;
@@ -874,6 +876,9 @@ fn void Asm.emit_stubs(&self) {
                     self.emit_get_cold(cold.arg, cold.back, &cold_poly);
                 case CALL:
                     self.emit_call_cold(&groups[0], &groups[1], &groups[2]);
+                case PUBLISH:
+                    groups[0].bind(sljit_emit_label(c));
+                    self.emit_publish_cold((uint)cold.arg, cold.back);
                 case STRING_RECEIVER:
                     groups[0].bind(sljit_emit_label(c));
                     self.emit_string_receiver();
