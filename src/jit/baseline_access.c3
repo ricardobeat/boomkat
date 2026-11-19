@@ -789,19 +789,19 @@ fn void Asm.emit_ic_owner(&self, long ic, Jumps* other) {
     other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
     other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_first));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_current);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    // The epoch an entry records is always the heap's (vm::ic_fill_read_heap), and its owner,
+    // like every link, a plain property object (hobject::plain_property_object): no proxy.
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.heap, l.heap_proto_epoch);
     other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_value));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_owner);
-    self.guard_not_proxy(R0, R4);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R4, l.epoch_owner);
     void* resolved = sljit_emit_jump(c, SLJIT_JUMP);
     general.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
     self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ic_owner);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    sljit_set_label(resolved, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+    sljit_set_label(resolved, sljit_emit_label(c));
     sljit_set_label(own, sljit_emit_label(c));
 }
 
