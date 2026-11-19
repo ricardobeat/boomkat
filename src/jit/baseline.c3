@@ -535,8 +535,12 @@ struct Stub {
     char call_len;
     char alt_len;
     char poly_len;
+    char cold_len;
     // Where the polymorphic arm resumes the inline path.
     void* poly_back;
+    // Where a cached read's cold path (Asm.emit_get_cold) resumes it, and the read's entry.
+    void* cold_back;
+    long cold_ic;
 }
 
 // Load `n` jumps of the stub pool, starting at `at`, into `j`.
@@ -610,6 +614,11 @@ struct Asm {
     void* reg_label;
     // frame_state_possible of the function, once a return has asked: 1 no, 2 yes.
     char frame_state;
+    // A cached read's jump to its cold path, which emit_stubs emits with the instruction's other
+    // out-of-line paths (Asm.emit_get_cold), and where and with which entry it resumes.
+    Jumps cold;
+    void* cold_back;
+    long cold_ic;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;
@@ -786,6 +795,7 @@ fn void Asm.emit_insn(&self, uint i) {
     self.call.len = 0;
     self.alt.len = 0;
     self.poly.len = 0;
+    self.cold.len = 0;
     if (self.emit_call()) {
     } else if (self.emit_alloc()) {
     } else if (self.emit_fast(self.consts_fixed)) {
@@ -794,12 +804,15 @@ fn void Asm.emit_insn(&self, uint i) {
         self.thunk_insns++;
         self.emit_thunk_call(i);
     }
-    if (self.call.len != 0 || self.alt.len != 0 || self.poly.len != 0) {
+    if (self.call.len != 0 || self.alt.len != 0 || self.poly.len != 0 || self.cold.len != 0) {
         self.stubs.push({ .insn = i, .at = (uint)self.stub_jumps.len(), .call_len = (char)self.call.len,
-                          .alt_len = (char)self.alt.len, .poly_len = (char)self.poly.len, .poly_back = self.poly_back });
+                          .alt_len = (char)self.alt.len, .poly_len = (char)self.poly.len,
+                          .cold_len = (char)self.cold.len, .poly_back = self.poly_back,
+                          .cold_back = self.cold_back, .cold_ic = self.cold_ic });
         for (uint k = 0; k < self.call.len; k++) self.stub_jumps.push(self.call.at[k]);
         for (uint k = 0; k < self.alt.len; k++) self.stub_jumps.push(self.alt.at[k]);
         for (uint k = 0; k < self.poly.len; k++) self.stub_jumps.push(self.poly.at[k]);
+        for (uint k = 0; k < self.cold.len; k++) self.stub_jumps.push(self.cold.at[k]);
     }
 }
 
@@ -811,6 +824,13 @@ fn void Asm.emit_stubs(&self) {
         self.decode(stub.insn);
         self.call.load(&self.stub_jumps, stub.at, stub.call_len);
         self.alt.len = 0;
+        Jumps cold_poly;
+        if (stub.cold_len != 0) {
+            Jumps cold;
+            cold.load(&self.stub_jumps, stub.at + stub.call_len + stub.alt_len + stub.poly_len, stub.cold_len);
+            cold.bind(sljit_emit_label(c));
+            self.emit_get_cold(stub.cold_ic, stub.cold_back, &cold_poly);
+        }
         if (stub.alt_len != 0) {
             Jumps alt;
             alt.load(&self.stub_jumps, stub.at + stub.call_len, stub.alt_len);
@@ -818,9 +838,10 @@ fn void Asm.emit_stubs(&self) {
             self.poly_back = stub.poly_back;
             self.emit_alt();
         }
-        if (stub.poly_len != 0) {
+        if (stub.poly_len != 0 || cold_poly.len != 0) {
             Jumps poly;
             poly.load(&self.stub_jumps, stub.at + stub.call_len + stub.alt_len, stub.poly_len);
+            for (uint k = 0; k < cold_poly.len; k++) poly.add(cold_poly.at[k]);
             poly.bind(sljit_emit_label(c));
             self.emit_poly_arm(stub.poly_back);
         }

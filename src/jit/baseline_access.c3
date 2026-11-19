@@ -747,6 +747,31 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
         self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, 0));
     }
     self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
+    // Baseline code tests the accessor bit and has_proto together and leaves an entry with either
+    // for its cold path, so that an own data read takes no branch.
+    long has_proto_shift = (l.ic_has_proto - l.ic_flags) * 8;
+    if (!self.opt && !std::core::env::BIG_ENDIAN && (l.ic_flags & 3) == 0 && has_proto_shift > 0 && has_proto_shift < 32) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_flags);
+        sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R0, 0, SLJIT_IMM, l.accessor_mask | 0xFFL << has_proto_shift);
+        self.cold.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
+        self.cold_back = sljit_emit_label(c);
+        self.cold_ic = ic;
+    } else {
+        self.emit_get_kinds(ra, ic, &self.poly);
+    }
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
+    self.poly_back = sljit_emit_label(c);
+    self.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+    self.publish(ra);
+}
+
+// A cached read's entry `ic` (in R2, the receiver in R1, its shape matched) for anything but an own
+// data property: an accessor's getter call or the thunk, an absent read to `poly`, and an inherited
+// data property's owner into R1, after which the read continues.
+fn void Asm.emit_get_kinds(&self, uint ra, long ic, Jumps* poly) {
+    void* c = self.c;
+    Layout* l = self.lay;
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
     // An absent read (whose entry carries the accessor bit as its marker)
@@ -754,7 +779,7 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     // walk only ever find data properties.
     void* data = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_idx);
-    self.poly.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, (long)hobject::IC_PROP_MISSING));
+    poly.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, (long)hobject::IC_PROP_MISSING));
     if (self.getter_site(ra)) {
         self.emit_getter_call(ra, ic);
     } else {
@@ -762,12 +787,36 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
         self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
     }
     sljit_set_label(data, sljit_emit_label(c));
-    self.emit_ic_owner(ic, &self.poly);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
-    self.poly_back = sljit_emit_label(c);
-    self.prop_base(R0, R1);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
-    self.publish(ra);
+    self.emit_ic_owner(ic, poly);
+}
+
+// The cold path of a cached read (Asm.emit_get), out of line with the instruction's other stubs,
+// for an entry `ic` (in R2) with the accessor bit or has_proto: emit_get_kinds laid out so that an
+// inherited data property an epoch describes runs straight back to the read at `back`, with the
+// owner in R1 and the entry in R2. An absent read joins `poly`.
+fn void Asm.emit_get_cold(&self, long ic, void* back, Jumps* poly) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
+    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R0, 0, SLJIT_IMM, l.accessor_mask);
+    void* accessor = sljit_emit_jump(c, SLJIT_NOT_EQUAL);
+    // A data property, so has_proto is set: inherited.
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
+    void* general = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_EPOCH & 0xFF);
+    self.emit_epoch_owner(poly);
+    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), back);
+    sljit_set_label(general, sljit_emit_label(c));
+    self.emit_owner_helper(ic);
+    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), back);
+    // An accessor, or an absent read (whose entry carries the accessor bit as its marker).
+    sljit_set_label(accessor, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_idx);
+    poly.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, R0, 0, SLJIT_IMM, (long)hobject::IC_PROP_MISSING));
+    if (self.getter_site(self.w.a)) {
+        self.emit_getter_call(self.w.a, ic);
+    } else {
+        self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+    }
 }
 
 // The owner of the property entry `ic` names for the receiver in R1 (whose
@@ -783,8 +832,20 @@ fn void Asm.emit_ic_owner(&self, long ic, Jumps* other) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
     void* own = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
-    Jumps general;
-    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_EPOCH & 0xFF));
+    void* general = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_EPOCH & 0xFF);
+    self.emit_epoch_owner(other);
+    void* resolved = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(general, sljit_emit_label(c));
+    self.emit_owner_helper(ic);
+    sljit_set_label(resolved, sljit_emit_label(c));
+    sljit_set_label(own, sljit_emit_label(c));
+}
+
+// An epoch entry's replay (emit_ic_owner) for the entry in R2 and the receiver in R1: the owner
+// into R1, or `other`. Clobbers R0 and R4.
+fn void Asm.emit_epoch_owner(&self, Jumps* other) {
+    void* c = self.c;
+    Layout* l = self.lay;
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R2, l.ic_chain);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
@@ -796,15 +857,17 @@ fn void Asm.emit_ic_owner(&self, long ic, Jumps* other) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.heap, l.heap_proto_epoch);
     other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_value));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R4, l.epoch_owner);
-    void* resolved = sljit_emit_jump(c, SLJIT_JUMP);
-    general.bind(sljit_emit_label(c));
+}
+
+// The owner of any other chain through vm::jit_ic_owner, for the entry `ic` (in R2) and the
+// receiver in R1: into R1 with the entry back in R2, or the thunk when the chain no longer holds.
+fn void Asm.emit_owner_helper(&self, long ic) {
+    void* c = self.c;
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
     self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ic_owner);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
-    sljit_set_label(resolved, sljit_emit_label(c));
-    sljit_set_label(own, sljit_emit_label(c));
 }
 
 // Whether the read being emitted into `ra` calls a getter its entry names
