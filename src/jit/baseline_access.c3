@@ -711,12 +711,17 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
         // A string primitive reads through String.prototype, whose entry the
         // site holds (th_getpropc); a symbol and any other value go to the thunk.
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, k_obj_op(), k_obj_w());
-        void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, span_op(), span_w());
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
-        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
-        self.guard_flags_clear(R1, l.symbol_mask, R2);
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.heap, l.heap_string_proto);
-        sljit_set_label(object, sljit_emit_label(c));
+        if (self.cold_ok) {
+            // Baseline code takes the string out of line (emit_string_receiver), and an object
+            // falls through.
+            Jumps other;
+            other.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
+            self.add_cold(STRING_RECEIVER, sljit_emit_label(c), 0, &other);
+        } else {
+            void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, span_op(), span_w());
+            self.emit_string_receiver();
+            sljit_set_label(object, sljit_emit_label(c));
+        }
     } else {
         self.unbox_object(R1, R0);
     }
@@ -764,6 +769,18 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     self.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
     self.publish(ra);
+}
+
+// A cached read's receiver R0 that is not an object (emit_get): a string reads through
+// String.prototype, whose entry the site holds (th_getpropc), into R1; a symbol and any other value
+// go to the thunk.
+fn void Asm.emit_string_receiver(&self) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
+    self.guard_flags_clear(R1, l.symbol_mask, R2);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.heap, l.heap_string_proto);
 }
 
 // A cached read's entry `ic` (in R2, the receiver in R1, its shape matched) for anything but an own

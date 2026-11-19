@@ -545,6 +545,7 @@ struct Stub {
 enum ColdKind : char {
     GET,              // a cached read's entry for anything but an own data property (Asm.emit_get_cold)
     CALL,             // the rest of a mono_callee call site (Asm.emit_call_cold)
+    STRING_RECEIVER,  // a cached read's receiver that is not an object (Asm.emit_string_receiver)
 }
 
 // A common path's jumps to code that emit_stubs places with the instruction's other stubs, in up
@@ -873,6 +874,10 @@ fn void Asm.emit_stubs(&self) {
                     self.emit_get_cold(cold.arg, cold.back, &cold_poly);
                 case CALL:
                     self.emit_call_cold(&groups[0], &groups[1], &groups[2]);
+                case STRING_RECEIVER:
+                    groups[0].bind(sljit_emit_label(c));
+                    self.emit_string_receiver();
+                    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), cold.back);
             }
         }
         if (stub.alt_len != 0) {
