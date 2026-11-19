@@ -544,6 +544,7 @@ struct Stub {
 
 enum ColdKind : char {
     GET,              // a cached read's entry for anything but an own data property (Asm.emit_get_cold)
+    GET_INHERITED,    // one for anything but an inherited data property an epoch describes
     CALL,             // the rest of a mono_callee call site (Asm.emit_call_cold)
     STRING_RECEIVER,  // a cached read's receiver that is not an object (Asm.emit_string_receiver)
     PUBLISH,          // a heap value but an object, or any while marking (Asm.emit_publish_cold)
@@ -872,8 +873,9 @@ fn void Asm.emit_stubs(&self) {
             }
             switch (cold.kind) {
                 case GET:
+                case GET_INHERITED:
                     groups[0].bind(sljit_emit_label(c));
-                    self.emit_get_cold(cold.arg, cold.back, &cold_poly);
+                    self.emit_get_cold(cold.arg, cold.back, &cold_poly, cold.kind == GET_INHERITED);
                 case CALL:
                     self.emit_call_cold(&groups[0], &groups[1], &groups[2]);
                 case PUBLISH:

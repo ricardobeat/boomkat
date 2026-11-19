@@ -795,15 +795,29 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
         self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, 0));
     }
     self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
-    // Baseline code tests the accessor bit and has_proto together and leaves an entry with either
-    // for its cold path, so that an own data read takes no branch.
+    // Baseline code tests the accessor bit, chain_len and has_proto together, and takes the kind
+    // of property the entry names as the code is made with no branch: an inherited data property
+    // an epoch describes (a method, most often), or else an own data property. Any other entry
+    // takes the cold path (emit_get_cold).
+    long chain_shift = (l.ic_chain_len - l.ic_flags) * 8;
     long has_proto_shift = (l.ic_has_proto - l.ic_flags) * 8;
-    if (self.cold_ok && !std::core::env::BIG_ENDIAN && (l.ic_flags & 3) == 0 && has_proto_shift > 0 && has_proto_shift < 32) {
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_flags);
-        sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R0, 0, SLJIT_IMM, l.accessor_mask | 0xFFL << has_proto_shift);
+    if (self.cold_ok && !std::core::env::BIG_ENDIAN && (l.ic_flags & 3) == 0 && chain_shift > 0
+        && has_proto_shift > 0 && has_proto_shift < 32) {
+        hobject::ICEntry* e = (hobject::ICEntry*)ic;
+        bool inherited = e.has_proto && e.chain_len == hobject::IC_CHAIN_EPOCH && !e.prop_flags.is_accessor;
         Jumps cold;
-        cold.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
-        self.add_cold(GET, sljit_emit_label(c), ic, &cold);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_flags);
+        if (inherited) {
+            $assert bool::size == 1;
+            sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask | 0xFFL << chain_shift | 0xFFL << has_proto_shift);
+            cold.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM,
+                                    (long)hobject::IC_CHAIN_EPOCH << chain_shift | 1L << has_proto_shift));
+            self.emit_epoch_owner(&self.poly);
+        } else {
+            sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R0, 0, SLJIT_IMM, l.accessor_mask | 0xFFL << has_proto_shift);
+            cold.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
+        }
+        self.add_cold(inherited ? GET_INHERITED : GET, sljit_emit_label(c), ic, &cold);
     } else {
         self.emit_get_kinds(ra, ic, &self.poly);
     }
@@ -851,12 +865,23 @@ fn void Asm.emit_get_kinds(&self, uint ra, long ic, Jumps* poly) {
 }
 
 // The cold path of a cached read (Asm.emit_get), out of line with the instruction's other stubs,
-// for an entry `ic` (in R2) with the accessor bit or has_proto: emit_get_kinds laid out so that an
-// inherited data property an epoch describes runs straight back to the read at `back`, with the
-// owner in R1 and the entry in R2. An absent read joins `poly`.
-fn void Asm.emit_get_cold(&self, long ic, void* back, Jumps* poly) {
+// for an entry `ic` (in R2) with the accessor bit or has_proto, or with `own` any entry: an own
+// data property straight back to the read at `back`, then emit_get_kinds laid out so that an
+// inherited data property an epoch describes runs straight back too, with the owner in R1 and the
+// entry in R2. An absent read joins `poly`.
+fn void Asm.emit_get_cold(&self, long ic, void* back, Jumps* poly, bool own) {
     void* c = self.c;
     Layout* l = self.lay;
+    if (own) {
+        // The read's inline path took an inherited property: an own data property reads the
+        // receiver itself.
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
+        void* accessor = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
+        sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), back);
+        sljit_set_label(accessor, sljit_emit_label(c));
+    }
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
     sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R0, 0, SLJIT_IMM, l.accessor_mask);
     void* accessor = sljit_emit_jump(c, SLJIT_NOT_EQUAL);
