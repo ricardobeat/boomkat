@@ -108,7 +108,7 @@ const String[DUR_UNIT_COUNT] DUR_UNITS_DISPLAY = {
     "secondsDisplay", "millisecondsDisplay", "microsecondsDisplay", "nanosecondsDisplay",
 };
 
-//the prototype is read from NewTarget before any option is touched.
+// The prototype is read from NewTarget before any option is touched.
 fn void builtin_intl_duration_format(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "DurationFormat requires new");
