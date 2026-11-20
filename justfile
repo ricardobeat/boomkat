@@ -499,6 +499,21 @@ bench-memory-compare:
 	@echo "=== CURRENT BUILD ==="
 	@bash scripts/run_memory_bench.sh
 
+# ── Website ──────────────────────────────────────────────────────────────────
+
+# Publish web/ and docs/site/ to https://tomasi.studio/boomkat/ (goes live immediately)
+publish-site:
+    rm -rf .site && mkdir -p .site/boomkat
+    cp web/index.html .site/boomkat/
+    cp -R docs/site .site/boomkat/docs
+    scripts/publish-site.sh boomkat boomkat .site
+    rm -rf .site
+
+# Roll https://tomasi.studio/boomkat/ back to the previous deploy
+rollback-site:
+    bunny sites deployments publish --previous --force --site boomkat
+    scripts/publish-site.sh boomkat boomkat
+
 # ── Help ─────────────────────────────────────────────────────────────────────
 
 # List available commands
