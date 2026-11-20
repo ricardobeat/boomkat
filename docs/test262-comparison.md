@@ -30,7 +30,7 @@ test262 at `3655e746` (upstream main, 2026-08-10). 38,002 tests.
 ## What this measures, and what it does not
 
 **The scope is the strict-mode subset**, which is 38,002 of the corpus's 53,578
-tests. The 15,576 excluded fall out as:
+tests. The 15,576 excluded tests break down as:
 
 | Reason | Count |
 |--------|------:|
@@ -49,61 +49,54 @@ This snapshot selects a strict-mode subset. Its ranking describes conformance
 within that shared scope, with Intl, modules, sloppy scripts and several
 proposals excluded.
 
-The two failure profiles are also different in kind. A mature engine's failures
-are edge cases inside features it fully implements, plus proposals at varying
-stages. boomkat's 18 snapshot failures belong to the groups below. Equal rates
-do not mean equal breadth.
+The failure profiles differ across engines: a mature engine's failures are edge
+cases in implemented features and in-progress proposals, whereas boomkat's 18
+snapshot failures fall into the four groups below.
 
-### Fairness of the comparison
+### Harness adjustments
 
 Every engine runs byte-identical input: the same harness prelude, the same
-`"use strict"` insertion, the same per-test files. No per-engine allowances.
+`"use strict"` insertion, and the same per-test files, with no per-engine
+allowances. Two adjustments apply to all engines:
 
-Two adjustments were needed to keep it honest:
-
-- **Parse-phase negative tests.** Engines report syntax errors differently --
-  Hermes prints `error: invalid expression`, not the token `SyntaxError`. The
-  classifier originally scored all of those as failures, costing Hermes 3,757
-  tests (52.84% -> 62.72%). The rule now accepts any parse failure for a
-  parse-phase test expecting SyntaxError, provided the engine names no *other*
-  error type. It is engine-agnostic: boomkat and qjs re-ran to byte-identical
-  scores.
+- **Parse-phase negative tests.** Engines format syntax errors differently;
+  Hermes prints `error: invalid expression` rather than `SyntaxError`.
+  Scoring those as failures originally cost Hermes 3,757 tests (52.84% ->
+  62.72%). The classifier accepts any parse failure for a parse-phase test
+  expecting `SyntaxError`, provided the engine names no other error type.
+  Re-running boomkat and qjs under this rule produced identical scores.
 
 - **`Iterator.prototype.join`.** These 18 tests were filtered for boomkat (an
-  unimplemented Stage-3 proposal) after the other engines had already been
-  scored on them, and they are not neutral -- jsc/v8/sm pass all 18, qjs fails
-  16. Every row above excludes them, so all eight engines are scored on the
-  same 38,002. Leaving them in would have flattered boomkat and penalised qjs
-  (99.22% vs the 99.26% shown here).
+  unimplemented Stage-3 proposal) after the other engines had been scored on
+  them (jsc, v8, and sm pass all 18; qjs fails 16). Every row above excludes
+  them so all eight engines are scored on the same 38,002 tests (including them
+  would put qjs at 99.22% instead of 99.26%).
 
 ### Caveats
 
-- **Run dates differ.** v8, JavaScriptCore and Duktape were measured before two
-  later harness fixes (the parse-phase rule above, and CR-only frontmatter
-  parsing). Both fixes only ever *add* passes, so those three rows are
-  marginally understated -- by at most a test or two each. Re-run before
-  quoting them anywhere load-bearing.
+- **Run dates differ.** v8, JavaScriptCore, and Duktape were measured before two
+  harness fixes (the parse-phase rule above and CR-only frontmatter parsing).
+  Both fixes only add passes, so those three rows may be understated by one or
+  two tests. Re-run before citing them.
 - Versions are recorded where the binary reports one. Nova and Duktape build
   from source without a queryable version string.
-- Nova and Hermes needed `$262` shims written for them; Hermes has no host
-  detach hook, so `detachArrayBuffer` is absent rather than faked, and the
-  tests needing it fail honestly.
+- Nova and Hermes required `$262` shims. Hermes has no host detach hook, so
+  `detachArrayBuffer` is omitted and tests requiring it fail.
 
 ## boomkat's 18 snapshot failures
 
-This snapshot predates sloppy mode (`plans/083-sloppy-mode.md`), so the
-sloppy-mode groups below — `Function`-constructor duplicate params, primitive
-`this` boxing, sloppy indirect eval — are implemented now; the counts are the
-snapshot's.
+This snapshot predates sloppy mode, so the sloppy-mode groups below
+(`Function`-constructor duplicate params, primitive `this` boxing, sloppy
+indirect eval) are implemented now; the counts are from the snapshot.
 
 Sixteen exercise sloppy-mode semantics and two exercise cross-realm behavior.
 Both surfaces are implemented.
 
-| Count | Group | Why it fails |
+| Count | Group | Why it failed |
 |------:|-------|--------------|
-| 10 | Duplicate params in the `Function` constructor | `Function()` bodies are sloppy unless they carry their own `"use strict"`. The four marked `onlyStrict` test that a strict *caller* still produces a sloppy *body* -- the test's own description is "allowed if body not strict". |
+| 10 | Duplicate params in the `Function` constructor | `Function()` bodies are sloppy unless they carry their own `"use strict"`. The four marked `onlyStrict` test that a strict caller still produces a sloppy body. |
 | 4 | `this`-boxing in `Function.prototype.apply`/`call` | `Function("this.touched = true").apply(1)` expects the primitive `1` to become a `Number` wrapper. Strict mode leaves `this` primitive, so the assignment throws. |
-| 2 | Indirect eval is always sloppy | `(0,eval)('var static; with({}){}')` and `eval('arguments = 42')`. Both `onlyStrict`; one is literally named `always-non-strict.js`. |
+| 2 | Indirect eval is always sloppy | `(0,eval)('var static; with({}){}')` and `eval('arguments = 42')`. Both are `onlyStrict` (one is `always-non-strict.js`). |
 | 2 | Cross-realm | `$262.createRealm()` and shared-heap realms are implemented. |
 
 ## Reproducing

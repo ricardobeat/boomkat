@@ -1,9 +1,9 @@
 # Engine scope
 
-What this engine implements, what it does not, and why. For the test262 numbers
-themselves see `test262_results/latest.json`; for how those compare against
-other engines see `test262-comparison.md`; for what the suite actually skips
-see `SKIP_DIRS` / `SKIP_FILES` / `UNSUPPORTED_PATTERN` in
+What this engine implements, what it does not, and why. For how a historical
+strict-mode snapshot compared against other engines see
+[test262-comparison.md](test262-comparison.md); for what the suite actually
+skips see `SKIP_DIRS` / `SKIP_FILES` / `UNSUPPORTED_PATTERN` in
 `scripts/run_test262.py`, which carry their reasoning inline and are the
 authority.
 
@@ -16,12 +16,11 @@ API.
 
 Both execution modes. Strictness is per function: scripts, ordinary function
 bodies and dynamic `Function()` bodies default to sloppy, modules and class
-code are strict, and a `"use strict"` prologue raises a unit to strict
-(`plans/083-sloppy-mode.md`).
+code are strict, and a `"use strict"` prologue raises a unit to strict.
 
 ## In scope, and implemented
 
-The ES5/ES6 core, plus the later additions that ordinary code now assumes:
+ES5/ES6 core and later ECMAScript additions:
 
 - Objects, prototypes, property descriptors, accessors, `Reflect`, `Proxy`
 - Classes, private fields and methods, static blocks
@@ -54,9 +53,8 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   function declarations as `if` bodies, B.3.5 initializers in for-in heads,
   B.3.9 runtime errors for function call assignment targets, legacy octals and
   octal escapes are in. So are `Date.prototype.getYear`/`setYear` and
-  `toGMTString` (B.2.4/B.2.6). Absent: the
-  `String.prototype` HTML methods, the `RegExp` legacy statics, and the legacy
-  eval-code and global-code var-hoisting rules.
+  `toGMTString` (B.2.4/B.2.6). Absent: the `String.prototype` HTML methods and
+  the `RegExp` legacy statics.
 - **ECMA-402.** The small Intl profile supplies English NumberFormat, PluralRules,
   DateTimeFormat, RelativeTimeFormat, ListFormat, DurationFormat and DisplayNames.
   DateTimeFormat resolves all sixteen calendars supported by Temporal, including
@@ -106,13 +104,13 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   blocks, `Atomics.notify` wakes waiters in other agents, and `Atomics.waitAsync`
   promises settle (and time out) through the host's event loop, which the CLI
   and the test262 runner run. test262 drives the second agent through
-  `$262.agent`, which the CLI and runner install. The C embedding API does not
-  yet hand a buffer from one runtime to another. `CanBlockIsFalse` tests run
-  with the main agent unable to suspend.
+  `$262.agent`, which the CLI and runner install. The C embedding API shares
+  buffers across runtimes through `bk_shared_block_retain`,
+  `bk_shared_block_release`, and `bk_adopt_shared_block`. `CanBlockIsFalse`
+  tests run with the main agent unable to suspend.
 
-## Two notes for anyone editing the skip list
+## Editing the skip list
 
-A skip is a claim that behavior is out of scope. It is not a place to park a
-bug: an in-scope test that fails is a real bug, not a `SKIP_FILES` entry.
-
-When you implement something, remove its skip in the same change.
+Skip entries mark out-of-scope behavior, not bugs. An in-scope test failure
+should be fixed rather than added to `SKIP_FILES`. Remove a skip entry in the
+same change that implements the feature.

@@ -1,29 +1,67 @@
+# Build flags
+
+Compile-time feature flags (`-D <FLAG>`) and compiler options used across targets in [project.json](../project.json).
+
+## Runtime and VM
+
 | Flag | Purpose |
 |---|---|
 | `NONANBOX` | Disable NaN-boxing and use the 16-byte tagged union `TVal` (`just build-nonanbox`) |
-| `NOSHAPECACHE` | Stale README entry; the flag and `just build-noshape` recipe are absent from the current source |
-| `HEAP_VERIFY` | Validate GC roots at yield/resume (`just build-verify`) |
-| `GC_STRESS` | Force frequent collection for stress runs |
-| `ENV_STRICT` | Validate VM environment access for functions compiled with register-local bindings (`boomkat_envstrict` target) |
 | `THREADED_DISPATCH` | Enable threaded VM dispatch; enabled in the default CLI target |
+| `SMALL_VM` | Use the smaller, size-optimized VM dispatch loop |
+| `STRICT_ONLY` | Compile out sloppy-mode support (`boomkat_slim`, `boomkat_tiny`) |
+| `BYTECODE_ONLY` | Omit parser and compiler; execute precompiled bytecode images only (`boomkat_tiny`) |
+| `BYTECODE_GENERATOR` | Enable bytecode image serialization (`boomkat_tiny_compile`) |
+
+## Features and profiles
+
+| Flag | Purpose |
+|---|---|
+| `PRINT` | Register global `print` |
+| `CONSOLE` | Register `console` |
 | `NO_INSPECT` | Use the smaller console value formatter |
 | `INTL` | Enable native Intl services with English formatting |
 | `INTL_FULL` | Add bundled formatting locales and full collation data |
-| `INTL_COLLATOR` | Enable Collator; requires Intl, uses root data without INTL_FULL |
-| `NO_INTL_DATE` | Disable Intl date formatting |
-| `TEMPORAL` | Enable Temporal |
+| `INTL_COLLATOR` | Enable `Intl.Collator`; requires `INTL`, uses root data without `INTL_FULL` |
+| `NO_INTL_DATE` | Disable `Intl.DateTimeFormat` |
+| `NO_INTL_NAMES` | Disable `Intl.DisplayNames` |
+| `TEMPORAL` | Enable `Temporal` |
+| `CORE_BUILTINS_ONLY` | Restrict built-ins to the minimal core set |
+| `NO_BIGINT` | Omit `BigInt` |
+| `NO_BUFFERS` | Omit `ArrayBuffer`, `TypedArray`, and `DataView` |
+| `NO_COLLECTIONS` | Omit `Map`, `Set`, `WeakMap`, and `WeakSet` |
+| `NO_ITERATOR_HELPERS` | Omit `Iterator.prototype` helper methods |
+| `NO_JSX` | Omit JSX parsing and lowering |
+| `NO_MODULE_LOADING` | Omit ES module loading |
+| `NO_NORMALIZE` | Omit `String.prototype.normalize` |
+| `NO_PROXY` | Omit `Proxy` and `Reflect` |
+| `NO_REGEXP` | Omit `RegExp` |
+| `NO_SHARED_MEMORY` | Omit `SharedArrayBuffer` and `Atomics` |
+| `NO_TYPESCRIPT` | Omit TypeScript syntax stripping and desugaring |
+| `NO_WEAKREF` | Omit `WeakRef` and `FinalizationRegistry` |
+
+## Diagnostics, verification, and profiling
+
+| Flag | Purpose |
+|---|---|
+| `HEAP_VERIFY` | Validate GC roots at yield/resume (`just build-verify`) |
+| `GC_STRESS` | Force frequent collection for stress runs |
+| `GC_VERIFY` | Check incremental GC reachability and ownership |
+| `SCAN_POISON` | Poison freed scanned storage and detect stale references |
+| `POOL_BYPASS` | Bypass allocation pools so ASan can detect freed-block access |
+| `ENV_STRICT` | Validate VM environment access for functions compiled with register-local bindings (`boomkat_envstrict` target) |
+| `MEMBER_STRICT` | Validate compiler member-expression tracking |
 | `TRACE_VM` | Enable bytecode disassembly and VM tracing |
 | `OP_PROFILE` | Enable opcode profiling |
 | `GC_PROFILE` | Enable GC profiling |
 | `RELEX_STATS` | Count lexer rescanning |
 | `FRONTEND_STATS` | Time frontend phases and count liveness sweeps/bitsets (`boomkat_relexstats`) |
-| `MEMBER_STRICT` | Validate compiler member-expression tracking |
-| `GC_VERIFY` | Check incremental GC reachability and ownership |
-| `SCAN_POISON` | Poison freed scanned storage and detect stale references |
-| `POOL_BYPASS` | Bypass allocation pools so ASan can detect freed-block access |
-| `PRINT` | Register global `print` |
-| `CONSOLE` | Register `console` |
 | `TEST262_HELPERS` | Enable test262 harness helpers |
+
+## Compiler options
+
+| Option | Purpose |
+|---|---|
 | `-O0` | Disable optimization for debugging (`just build-debug <target>`) |
 | `"sanitize": "address"` | Enable AddressSanitizer in a build target (`just build-asan` builds the test262 runner) |
 | `"debug-info": "full"` | Emit full debug information; used by the debug and profiling targets |

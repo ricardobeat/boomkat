@@ -824,7 +824,7 @@ Three caches sit above property lookup:
   or an existing property's index or flags change. Adding a property does not.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
   `(shape_id, key)` for own properties and `(shape_id, key, prototype)` for
-  inherited ones, since fresh objects of every class share the empty shape. It is a lossy single-slot table, so a collision simply
+  inherited ones, since fresh objects of every class share the empty shape. It is a lossy single-slot table, so a collision
   evicts. It caches own properties and those on the immediate prototype, since
   it cannot detect a change to a deeper one.
 
@@ -1156,7 +1156,7 @@ them and incref and decref against them do nothing.
 The megamorphic property cache maps `(shape_id, key)` (`(shape_id, key,
 prototype)` for an inherited property) to a resolved
 `(proto, prop_idx, value)`, shared across all call sites to skip repeated
-prototype-chain walks. It is a lossy single-slot table, so a collision simply
+prototype-chain walks. It is a lossy single-slot table, so a collision
 evicts. It is allocated apart from the `Heap` struct to keep that struct small.
 
 A read site's inline cache entry describes a data property or an accessor found
@@ -1469,7 +1469,7 @@ Date time setters share argument coercion and clock updates in one runtime
 worker. Array find methods and string padding share compile-time macros so
 direction and result kind remain constant in their execution loops.
 
-### English Intl services
+### Intl services
 
 Size-focused builds default to `intl=none`, `temporal=false`, and
 `collator=false`. `--intl=small` enables the English services;

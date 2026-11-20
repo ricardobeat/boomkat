@@ -5,7 +5,7 @@
 `scripts/check_release_version.py` checks all three values and, on a tag build,
 requires the Git tag to equal `v<VERSION>`.
 
-The release workflow accepts `v0.0*` tags. A tag push starts the version check,
+The release workflow accepts `v[0-9]*` tags. A tag push starts the version check,
 all release gates, and native build jobs. GitHub publishes the release only when
 every job passes. A manual run builds downloadable workflow artifacts without
 publishing a GitHub release.
@@ -18,12 +18,12 @@ publishing a GitHub release.
 3. Commit the version change, then create and push the matching annotated tag.
 
 `just release <version>` does steps 1 to 3 and creates the tag without pushing
-it. For the committed `0.0.0` version, the manual commands are:
+it. For the committed `0.3.0` version, the manual commands are:
 
 ```sh
-python3 scripts/check_release_version.py --tag v0.0.0
-git tag -a v0.0.0 -m 'Boomkat v0.0.0'
-git push origin v0.0.0
+python3 scripts/check_release_version.py --tag v0.3.0
+git tag -a v0.3.0 -m 'Boomkat v0.3.0'
+git push origin v0.3.0
 ```
 
 Tag pushes publish externally. Review the version, commit, and release notes

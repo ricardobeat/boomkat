@@ -5,8 +5,7 @@ against QuickJS, quickjs-ng, and Duktape v2.7.0. boomkat's column is grounded
 in the source (`src/builtins/`, `src/compiler/`); see
 [engine-scope.md](engine-scope.md) for scope and exclusions.
 
-Checked against Boomkat's source and skip rules on 2026-10-13. The
-comparison columns cover QuickJS upstream, quickjs-ng 0.15.1, and Duktape
+The comparison columns cover QuickJS upstream, quickjs-ng 0.15.1, and Duktape
 2.7.0. A checkmark means the feature exists; conformance rates belong in
 [test262-comparison.md](test262-comparison.md), whose results are a historical
 snapshot.
@@ -40,7 +39,7 @@ snapshot.
 | ES modules (`import`/`export`, namespace objects) | ✅ | ✅ | ✅ | ❌ |
 | Dynamic `import()`, `import.meta` | ✅ | ✅ | ✅ | ❌ |
 | Top-level `await` | ✅ | ✅ | ✅ | ❌ |
-| Import attributes (`with { type: "json" }`) | ✅ | ✅ | ✅ | ❌ |
+| Import attributes (`with { type: "json" \| "text" \| "bytes" }`) | ✅ | ✅ | ✅ | ❌ |
 | `import defer` | ✅ | ❌ | ❌ | ❌ |
 | Decorators | ❌ | ❌ | ❌ | ❌ |
 | `using`/`await using`, explicit resource management | ✅ | ❌ | ✅ | ❌ |
@@ -129,7 +128,7 @@ or unsupported calendar can exclude a test of an implemented feature.
 
 Scripts, ordinary function bodies and dynamic `Function()` bodies run sloppy;
 modules and class code are strict, and a `"use strict"` prologue raises a unit
-to strict ([plan 083](../plans/083-sloppy-mode.md)).
+to strict.
 
 | | Status |
 |---|---|
@@ -144,8 +143,9 @@ to strict ([plan 083](../plans/083-sloppy-mode.md)).
 | Function calls as assignment targets | ✅ runtime ReferenceError in sloppy code |
 | `flags: [noStrict]` tests | ✅ run |
 
-Legacy function `.caller` stack inspection remains excluded. Strict functions
-retain the restricted `caller`/`arguments` accessors.
+Sloppy functions expose their active caller through `.caller` (hiding strict,
+generator, and async callers). Strict and newer function kinds retain the
+restricted `caller`/`arguments` throwing accessors.
 
 ### Annex B
 
@@ -176,7 +176,7 @@ registers `.compile()`, but the runner excludes tests tagged `legacy-regexp`.
 | ECMA-402 | Optional small/full builds; bundled formatting locales, collation, segmentation and locale queries; dictionary segmentation excluded |
 | Explicit resource management | Full: `using`/`await using` declarations, DisposableStack, AsyncDisposableStack, SuppressedError and the @@dispose/@@asyncDispose symbols |
 | Cross-realm | Shared-heap realms with independent globals and intrinsics; `$262.createRealm` supported |
-| Multi-agent | Agents are threads with their own runtime; `$262.agent` supported; the C API cannot share a buffer between runtimes yet |
+| Multi-agent | Agents are threads with their own runtime; `$262.agent` supported; the C API shares buffers across runtimes via shared blocks |
 | Await dictionaries | `Promise.allKeyed` and `Promise.allSettledKeyed` |
 | ShadowRealm, decorators | Not implemented yet |
 | `export defer` | Excluded by feature token |

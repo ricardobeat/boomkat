@@ -163,6 +163,7 @@ an exception taken earlier. It measures and fills like `bk_read_string`.
 returns it without throwing. `bk_to_cstring` performs JS string coercion and returns UTF-8
 storage, including a trailing NUL. Its optional length includes embedded NUL
 bytes and excludes the terminator. Release it with `bk_free_cstring`.
+
 ## Strings
 
 A JS string is a sequence of UTF-16 code units and may hold lone surrogates.
@@ -339,15 +340,24 @@ it returns.
 uncatchable across native reentry.
 
 `bk_set_function_list` installs a `bk_fn_def` table terminated by `BK_FN_END`.
-`BK_CTOR` allows construction; `bk_get_new_target` returns borrowed `new.target`,
-and `bk_is_constructor_call` identifies a constructor call.
+`bk_register_fn` installs one callback on a target object, or as a global when
+the target is 0. `BK_CTOR` allows construction; `bk_argc`, `bk_arg`, `bk_this`,
+and `bk_get_new_target` read the current call from anywhere inside the callback,
+including helpers it calls, and borrow it like `argv` does (arguments past
+`argc` read as `BK_UNDEFINED`). `bk_is_constructor_call` identifies a
+constructor call.
+
+```c
+bk_register_fn(js, 0, "add", add, 2, 0, NULL);
+```
 
 A C function's `data` reaches the callback as its `opaque`. With no finalizer,
 `data` is borrowed for the runtime's lifetime. With one, the function owns it:
 `finalize(data, finalize_opaque)` runs exactly once, when the function object is
 freed, when the runtime is destroyed, or right away when creation fails. That
 makes closures cheap: functions made from the same callback share one engine
-slot and differ only in their data.
+slot and differ only in their data. `bk_fn_def` carries the same two fields;
+`bk_register_fn` borrows its `opaque`.
 
 ```c
 static void free_box(void *data, void *opaque) { (void)opaque; free(data); }
@@ -601,8 +611,8 @@ a hook that reports a non-configurable property and later drops it is the
 host's bug.
 
 Internally an exotic instance is a proxy over the ordinary instance, so the
-engine's fast paths, which already step aside for proxies, need no further
-checks, and classes without hooks pay nothing. Each instance costs one extra
+engine's fast paths, which already bypass proxies, need no extra checks, and
+classes without hooks have no overhead. Each instance costs one extra
 object. `bk_get_instance_payload` and the other class calls see through the
 wrapper.
 
@@ -630,8 +640,7 @@ Initialize a slot with `bk_slot_init`, store with `bk_slot_set` and read with
 `bk_slot_get`, which returns a handle like any other call. `bk_slot_clear`
 releases the value; a finalizer, which must not call the engine, drops its
 slots without clearing them. A slot whose owner stops tracing it must not be
-read again. `bk_fn_def` carries the same two fields; `bk_register_fn` borrows its
-`opaque`.
+read again.
 
 ### Joint collection
 
@@ -672,19 +681,22 @@ A joint cycle started inside a callback keeps everything the running frames
 hold, as `bk_gc` there does; collect from the event loop to free the most.
 [test/capi/joint_gc.c](../test/capi/joint_gc.c) is a complete host.
 
+### Embedder data slots
+
 Runtimes and contexts each carry `BK_DATA_SLOTS` (4) embedder pointers, set
 with `bk_set_runtime_data`/`bk_set_context_data` and read with the matching
 getters. Slots 0 to 2 belong to the host; slot 3 is reserved for the C++
 layer, so a C++ host and a C library can share a context.
 
-`bk_register_fn` installs one callback on a target object, or as a global when
-the target is 0. `bk_argc`, `bk_arg`, `bk_this` and `bk_get_new_target` read
-the current call from anywhere inside the callback, including helpers it calls,
-and borrow it like `argv` does; arguments past `argc` read as `BK_UNDEFINED`.
+## Native add-ons
 
-```c
-bk_register_fn(js, 0, "add", add, 2, 0, NULL);
-```
+A native add-on is a shared library that exports one entry point,
+`int bk_init_addon(BkAddonCtx *ctx, const BkAddonApi *api)`, defined in
+[boomkat_addon.h](../include/boomkat_addon.h). Add-ons link against no engine
+symbols; everything they need arrives through the `BkAddonApi` table, versioned
+by `BK_ADDON_ABI_VERSION`. Payloads that retain JS values store them in opaque
+`BK_TVAL_SIZE`-byte slots and report them from `gc_mark`. See
+[deflate_addon.c](../src/addons/deflate/deflate_addon.c) for a complete example.
 
 ## Native C3
 
@@ -714,9 +726,7 @@ Live owners must stay at stable addresses and must not be copied. Repeated
 `create` returns `ALREADY_CREATED` without replacing the live owner; `destroy`
 is idempotent, and creation can follow destruction.
 
-`context.create()` owns a private runtime; `context.create(&runtime)` borrows an
-explicit owner. Destroy borrowed contexts before their owner. Runtime controls
-include interrupts, module loading, and rejection tracking.
+Runtime controls include interrupts, module loading, and rejection tracking.
 Context methods cover evaluation, calling, properties, scoped roots, and
 `get_exception`. A native callback takes `JsCtx`, which wraps the builtin call
 frame directly; `arg`, `this_value`, `ret`, and throw helpers avoid C ABI
