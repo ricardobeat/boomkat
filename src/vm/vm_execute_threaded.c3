@@ -3422,7 +3422,7 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
         // A base constructor's [[Construct]] answers its `this` unless the
-        // body returned an object (ES2015 §9.2.2 step 13).
+        // body returned an object (ES2026 §10.2.2 [[Construct]]).
         bool construct = (fa.flags & ACT_FLAG_CONSTRUCT) != 0;
         if (construct && (is_undefined || !value.is_object())) {
             if (!fa.this_binding.is_object()) return pc;

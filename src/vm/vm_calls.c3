@@ -88,9 +88,8 @@ fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local
     return (TVal){};
 }
 
-// Mapped-index helpers for sloppy parameter-mapped `arguments`
-// (ECMA-262 §9.4.4.8, plans/083 Phase 3.1). A mapped index i aliases parameter
-// slot i of the owning activation: reads fall back to the parameter
+// Mapped-index helpers for sloppy parameter-mapped `arguments` (ES2026
+// §10.4.4.7). A mapped index i aliases parameter slot i of the owning activation: reads fall back to the parameter
 // registers, writes update them, so the two stay in sync in both directions.
 // The map is consulted OUTSIDE finish_arguments_object, because every lookup
 // must see the parameter's CURRENT value, not a snapshot taken when the
@@ -159,7 +158,7 @@ fn bool args_is_mapped(HObject* args_obj, uint idx) @inline {
     return (*args_obj.mapped_bits_ptr() & (1UL << idx)) != 0;
 }
 
-// Drop index `idx` from the [[ParameterMap]] (ECMA-262 §10.4.4.2 step 7.1.1 /
+// Drop index `idx` from the [[ParameterMap]] (ES2026 §10.4.4.2 /
 // 7.2.2.1). After this the parameter and the property are independent.
 fn void mapped_args_unmap(HObject* args_obj, uint idx) @inline {
     if (idx >= 64) return;
@@ -323,7 +322,7 @@ fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
 }
 
 // Finish initializing a strict `arguments` exotic object: set .length,
-// .callee, and @@iterator (ECMA-262 §9.4.4.7 CreateUnmappedArgumentsObject).
+// .callee, and @@iterator (ES2026 §10.4.4.6 CreateUnmappedArgumentsObject).
 // Per spec, @@iterator must be the *same function object* as
 // %Array.prototype.values%, so callers must go through this helper rather
 // than re-deriving the value property-by-property at each call site.
@@ -359,7 +358,7 @@ fn bool set_arguments_map(HObject* args_obj, HObject* callee, uint nargs) {
     bool mapped = callee_maps_arguments(callee);
     uint mapped_formals = mapped ? (uint)(*callee.extra_ptr()).func.comp_func.num_args : 0;
     // Seed the [[ParameterMap]]: each provided argument that matches a formal
-    // parameter is mapped (ECMA-262 §10.4.4.2 step 14). Capped at 64 indices.
+    // parameter is mapped (ES2026 §10.4.4.7). Capped at 64 indices.
     *args_obj.mapped_bits_ptr() = 0;
     if (mapped) {
         uint map_count = nargs < mapped_formals ? nargs : mapped_formals;
@@ -380,7 +379,7 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
     // codepath uses array_len_ptr.
     *args_obj.array_len_ptr() = nargs;
     bool mapped = set_arguments_map(args_obj, callee, nargs);
-    // `length` precedes `callee` (ECMA-262 §10.4.4.6 step 3, §10.4.4.7 step 7).
+    // `length` precedes `callee` (ES2026 §10.4.4.6, §10.4.4.7).
     HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
         TVal length_tv;
@@ -402,7 +401,7 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
         // through hobject_create_accessors instead).
         vm.heap.decref_tval(&callee_tv);
     } else if (vm.heap.throw_type_error != null) {
-        // ECMA-262 §9.4.4.7 step 6: callee is a non-configurable accessor whose
+        // ES2026 §10.4.4.6: callee is a non-configurable accessor whose
         // getter and setter are both %ThrowTypeError% (the same frozen intrinsic
         // Function.prototype's caller/arguments poison pills use), and it is
         // enumerable: false, configurable: false. Reads and writes through the
@@ -426,7 +425,7 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
 }
 
 // Creates the arguments object for a call to `callee` with `args[0..nargs)`
-// (ECMA-262 §10.4.4.6 / §10.4.4.7). A mapped object with few arguments reuses
+// (ES2026 §10.4.4.6 / §10.4.4.7). A mapped object with few arguments reuses
 // the shape the first such object built and fills its slots directly.
 fn HObject* new_arguments_object(Vm* vm, HObject* callee, TVal* args, uint nargs) {
     Heap* h = vm.heap;
@@ -830,7 +829,7 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
                         }
                         return false;
                     }
-                    // ECMA-262 §7.3.26 PrivateBrandAdd step 4:
+                    // ES2026 §7.3.28 PrivateMethodOrAccessorAdd:
                     // If O.[[Extensible]] is false, throw TypeError.
                     if (!this_hobj.is_extensible()) {
                         if (!vm_throw_error(vm, vm.heap.type_err_proto,
@@ -1693,7 +1692,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // Classify the callee for the threaded call entry, which
                     // only enters functions already classified.
                     target_fast.classify_lean_call();
-                    // ECMA-262 §9.2.1 step 1: class constructors cannot be called without 'new'
+                    // ES2026 §10.2.1: class constructors cannot be called without 'new'
                     if (target_fast.is_class_ctor()) {
                         *handled = true;
                         char[256] name_buf;
@@ -1810,7 +1809,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // already attached the eval body's var_env (global
                         // for indirect, caller's var_env for direct) to the
                         // func object, so DECLVAR in sloppy eval must leak
-                        // straight into that env per ECMA-262 §19.2.1.2.
+                        // straight into that env per ES2026 §19.2.1.3.
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
                         if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env, (*hobj_fast.extra_ptr()).func.comp_func.scope_capacity())) { fast_var_env = fv_f; }
                     } else {
@@ -1825,7 +1824,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     new_act.var_env = fast_var_env;
                     vm.heap.shade_root_env(new_act.var_env);
                     // Captured block scope + named-function-expression name
-                    // binding (ECMA-262 §14.1.20), shared with every other call
+                    // binding (ES2026 §15.2.5), shared with every other call
                     // path; see resolve_call_lex_env.
                     //
                     // Inline both outcomes resolve_call_lex_env can produce
@@ -1853,7 +1852,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         vm.heap.shade_root_env(new_act.lex_env);
                     } else if (cap_lex_fast != null && cap_lex_fast.is_with()
                             && fast_var_env != (*hobj_fast.extra_ptr()).func.var_env) {
-                        // `with`-splice (ECMA-262 §13.11.1): chain the closure's
+                        // `with`-splice (ES2026 §14.11.2): chain the closure's
                         // own fresh scope above the captured with-env so reads
                         // inside the closure walk own bindings, then
                         // with-properties (prototype walk), then the enclosing
@@ -1948,7 +1947,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // captured at their closure creation (§9.2.1).
                     //
                     // Eval functions (is_eval_fn) inherit new.target from
-                    // their direct caller (ECMA-262 §18.2.1.1 PerformEval +
+                    // their direct caller (ES2026 §19.2.1.1 PerformEval +
                     // §13.3.5.1 EvaluateNewTarget). compile_eval rejected
                     // new.target in eval-from-script / eval-from-arrow, so
                     // any eval body that contains NEWTARGET was compiled
@@ -1982,7 +1981,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // it directly. Arrows use lexical captured_this and must take
                     // the full path. Sloppy non-arrow calls take the coercion path
                     // so an undefined receiver becomes the global object
-                    // (ECMA-262 §10.4.3), observable as `Function('return this;')()`
+                    // (ES2026 §10.2.1.2), observable as `Function('return this;')()`
                     // for dynamic bodies and as the script top-level `this` for
                     // ordinary sloppy functions.
                     // A sloppy callee that cannot observe its `this` skips the
@@ -1995,10 +1994,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     if (target_fast.is_arrow() && env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this)) {
                         arrow_live_this = super_walk_live_this(vm, ds.act);
                     }
-                    // ECMA-262 §10.4.3: for non-arrow compiled functions whose
-                    // body is sloppy, coerce null/undefined thisArg → global
-                    // object. Replaces the legacy FuncFlags.subst_global_this;
-                    // plans/083 phase 2 derives the predicate from is_strict.
+                    // ES2026 §10.2.1.2: for non-arrow sloppy functions, coerce
+                    // null/undefined thisArg to the global object.
                     {
                         TVal* this_src = target_fast.is_arrow()
                             ? (env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this) ? &arrow_live_this : &(*hobj_fast.extra_ptr()).func.captured_this)
@@ -2012,7 +2009,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                                     this_src = &coerced_this;
                                 }
                             } else if (!this_src.is_object()) {
-                                // ECMA-262 §10.4.1.2: a sloppy callee boxes a
+                                // ES2026 §10.2.1.2: a sloppy callee boxes a
                                 // primitive thisArg (ToObject). The box's
                                 // alloc ref transfers to this_binding; the
                                 // generic tail below would copy_ref and leak.
@@ -2039,7 +2036,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     }
                     }
 
-                    // Proper tail call (ECMA-262 §14.8): retire the caller's
+                    // Proper tail call (ES2026 §15.10): retire the caller's
                     // activation instead of stacking a new one, so unbounded
                     // recursion in tail position runs in constant stack.
                     //
@@ -2691,7 +2688,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            // ECMA-262 §9.2.1 step 1: class constructors cannot be called without 'new'
+            // ES2026 §10.2.1: class constructors cannot be called without 'new'
             if (target.is_class_ctor()) {
                 char[256] name_buf;
                 uint copy_len = target.name_len < 255 ? target.name_len : 255;
@@ -2703,7 +2700,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            // === Generator function handling (ECMA-262 §25.3) ===
+            // === Generator function handling (ES2026 §27.5) ===
             HObject* async_prom = null;
             if (target.is_generator()) {
                 // Resume path: .next()/.throw()/.return() set heap.resume_gen
@@ -2731,7 +2728,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
 
                     // .throw() on SUSPENDED_START: exception before any body code
-                    // (ECMA-262 §25.3.3.4 step 8: resume with abrupt throw completion)
+                    // (ES2026 §27.5.3.4: resume with abrupt throw completion)
                     if (gs.state == GEN_SUSPENDED_START && gs.resume_kind == THROW) {
                         gs.state = GEN_COMPLETED;
                         vm.heap.resume_gen = null;
@@ -2797,7 +2794,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     new_act_r.flags |= ACT_FLAG_THIS_OWNED;
                     // new.target stays null, set by activation_begin: a
                     // generator/async function can never itself be a `new`
-                    // target, since ECMA-262 §14.4 gives generator and async function
+                    // target, since ES2026 §15.5 gives generator and async function
                     // objects no [[Construct]].
 
                     // Copy saved registers to valstack
@@ -2925,7 +2922,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // suspend at the GEN_START opcode and return the generator object.
                 // This ensures FunctionDeclarationInstantiation side-effects
                 // (throwing defaults, destructuring errors) happen at call time
-                // per ECMA-262 §27.5.3.2.
+                // per ES2026 §27.5.3.2.
 
                 // Calculate register layout
                 uint frame_start = callee_reg + 2;
@@ -2989,7 +2986,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     ds.regs_base[result_reg].set_undefined();
                     return (TVal){};
                 }
-                // ECMA-262 §25.3.3 GeneratorFunction instance creation step 1:
+                // ES2026 §27.5.3.1 GeneratorStart:
                 // OrdinaryCreateFromConstructor(functionObject, "%GeneratorPrototype%").
                 // Deferred to GEN_START (after FunctionDeclarationInstantiation/
                 // param-init has run) rather than resolved here: a default
@@ -3073,7 +3070,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     new_act_g.flags |= ACT_FLAG_DIRECT_EVAL;
                 }
                 {
-                    // ECMA-262 §10.4.1.2: for non-arrow sloppy calls, coerce
+                    // ES2026 §10.2.1.2: for non-arrow sloppy calls, coerce
                     // null/undefined this → global object and any other
                     // primitive → ToObject wrapper. Applied here at generator
                     // CREATION; GEN_START snapshots this binding and later
@@ -3184,7 +3181,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // var_env for direct eval) directly to the func object — a fresh
             // child scope would shadow that, so DECLVAR in `var x = ...` would
             // bind a local instead of leaking to the enclosing env as
-            // ECMA-262 §19.2.1.2 EvalDeclarationInstantiation requires.
+            // ES2026 §19.2.1.3 EvalDeclarationInstantiation requires.
             if (target.needs_env() && !target.is_eval_fn()) {
                 if (try fv_c2 = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env, target.scope_capacity())) { call_var_env2 = fv_c2; }
             }
@@ -3206,7 +3203,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // activation_begin already cleared the pooled slot's stale value.
             // Arrows resolve new.target lexically from their captured value.
             //
-            // Eval functions are special (ECMA-262 §18.2.1.1 PerformEval step
+            // Eval functions are special (ES2026 §19.2.1.1 PerformEval step
             // 11, plus §13.3.5.1 EvaluateNewTarget): an eval body has no
             // own [[NewTarget]]; it inherits the new.target of its direct
             // caller (the function whose body contains the eval call). For
@@ -3253,7 +3250,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // calling activation's this_binding. Exception: a still-TDZ
             // captured value (arrow defined before super() ran) must be
             // re-resolved live; see super_walk_live_this().
-            // ECMA-262 §10.4.3: for non-arrow sloppy calls, coerce null/undefined
+            // ES2026 §10.2.1.2: for non-arrow sloppy calls, coerce null/undefined
             // this → global object.
             if (target.is_arrow()) {
                 TVal arrow_this2 = (*hobj.extra_ptr()).func.captured_this;
@@ -3265,7 +3262,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 TVal raw_this = ds.regs_base[callee_reg + 1];
                 bool boxed_this = false;
                 if (!target.is_arrow() && !target.is_strict()) {
-                    // ECMA-262 §10.4.1.2: sloppy callee coerces undefined/null
+                    // ES2026 §10.2.1.2: sloppy callee coerces undefined/null
                     // this → global object, any other primitive → ToObject.
                     if (raw_this.is_undefined() || raw_this.is_null()) {
                         if (vm.global_env != null && vm.global_env.bindings != null) {
@@ -3619,7 +3616,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &sc_this_tval);
                 track_heap_store(ds.act, &ds.regs_base[callee_reg + 1], callee_reg + 1);
 
-                // Private class fields (ECMA-262 §9.2.2 step 8
+                // Private class fields (ES2026 §10.2.2
                 // InitializeInstanceElements): a BASE superclass invoked via
                 // super() runs its OWN brand stamp + field init right after
                 // creating `this`, exactly like the direct-`new` path in
@@ -3901,7 +3898,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             } else if (hobj.callable_kind() == hobject::CallableKind.BUILTIN_FN) {
                 if ((*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                     uint fn_idx = (uint)(*hobj.extra_ptr()).func.builtin_fn_index;
-                    // ECMA-262 §10.3: built-in functions are constructors only when
+                    // ES2026 §10.3: built-in functions are constructors only when
                     // specified. `new String.prototype.charAt` must throw here;
                     // the flags.constructable default cannot express this (see
                     // builtin_fn_is_constructor).
@@ -3942,7 +3939,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
             if (!vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
 
-            // Arrow functions cannot be used as constructors (ECMA-262 §14.2.2)
+            // Arrow functions cannot be used as constructors (ES2026 §15.3.4)
             if (target.is_arrow()) {
                 if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
                 return (TVal){};
@@ -3950,7 +3947,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             // Step 1: create the new object, skipped for derived constructors, which get
             // an uninitialized `this` until super() allocates and sets it.
-            // ECMA-262 §9.2.2 step 5: "derived" constructors do not OrdinaryCreateFromConstructor
+            // ES2026 §10.2.2: "derived" constructors do not OrdinaryCreateFromConstructor
             // here; super() does it inside the base class [[Construct]].
             TVal this_tval;
             if (target.is_derived_ctor()) {
@@ -3981,7 +3978,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
                 this_tval.set_object(new_obj);
 
-                // Private class fields (ECMA-262 §9.2.2 step 8 InitializeInstanceElements,
+                // Private class fields (ES2026 §10.2.2 InitializeInstanceElements,
                 // called for BASE constructors right after `this` is created).
                 if (!vm_init_private_members(vm, (*hobj.extra_ptr()).func.lex_env, (*hobj.extra_ptr()).func.var_env,
                         target, this_tval, ds.act, &ds.curr_pc, &ds.needs_restart)!) {
@@ -4034,7 +4031,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             new_act.var_env = ctor_var_env;
             vm.heap.shade_root_env(new_act.var_env);
             // Named function expressions get the function name bound
-            // immutably in a fresh declarative env (ECMA-262 §14.1.20), spliced
+            // immutably in a fresh declarative env (ES2026 §15.2.5), spliced
             // OUTER to the constructor's own body scope so a body
             // var/let/param of the same name shadows it (§9.2.13).
             if (target.is_namebinding()) {
@@ -4057,7 +4054,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // constructor's CLOSURE captures func.lex_env = classScope but
                 // NEW_OBJ was unconditionally resetting it to ctor_var_env.
                 //
-                // `with` splice (ECMA-262 §13.11.1): when the closure was created
+                // `with` splice (ES2026 §14.11.2): when the closure was created
                 // inside a `with`, the captured lex_env is a with-env. Read
                 // accesses inside the constructor must walk that with-env
                 // ABOVE the fresh function scope: own var bindings live in
