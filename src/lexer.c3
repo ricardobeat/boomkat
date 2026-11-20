@@ -164,13 +164,13 @@ struct Token {
     // A legacy octal escape that was DECODED (sloppy Annex B semantics).
     // Strict-lexed strings only latch has_octal_escape; this flag lets the
     // parser reject a prologue that was scanned sloppy but later flips
-    // strict via a following "use strict" (ECMA-262 §12.9.4.1).
+    // strict via a following "use strict" (ES2026 §12.9.4.1).
     bool has_decoded_octal;
     bool is_template;
     bool has_invalid_escape;
     // True when this identifier/keyword token was written with at least one
     // Unicode escape (`\uXXXX` / `\u{H+}`). Meta-property productions such as
-    // `import.meta` (ECMA-262 §13.3.12) require their terminal words to appear
+    // `import.meta` (ES2026 §13.3.12) require their terminal words to appear
     // literally, an escaped `import` or `meta` is a SyntaxError, so the
     // parser inspects this after re-reading the word token.
     bool has_escape;
@@ -503,14 +503,14 @@ struct Lexer {
     // which is only a comment-starter at the beginning of a line.
     bool at_line_start;
     // True when `<!--` and `-->` are comment starters. This is the AnnexB
-    // §B.1.1 HTML-like comment grammar, which ECMA-262 §12.5 makes available in
+    // §B.1.1 HTML-like comment grammar, which ES2026 §12.5 makes available in
     // Script code only: in a Module they must stay real tokens so the source
     // is a SyntaxError. Defaults to true (script) and is cleared for a module
     // compilation; there is nothing to gate at runtime, `eval` in a module is
     // still eval of a Script.
     bool html_comments;
     // Set when a `/*` comment ran to end-of-input with no closing `*/`.
-    // ECMA-262 §12.4 gives no production for an unterminated MultiLineComment,
+    // ES2026 §12.4 gives no production for an unterminated MultiLineComment,
     // so it is a SyntaxError; without this the trailing text was silently
     // swallowed and the source compiled as if it ended before the `/*`.
     // skip_whitespace_and_comments cannot fail (it returns void and runs from
@@ -787,7 +787,7 @@ fn uint Lexer.remaining(&self) {
 // multi-line comments (/* ... */), and AnnexB §B.1.3 HTML-like comments
 // (`<!--` and `-->`).
 //
-// HTML-like comments are Script-only (ECMA-262 §12.5), so they are gated on
+// HTML-like comments are Script-only (ES2026 §12.5), so they are gated on
 // `html_comments`, which a module compilation clears.
 fn void Lexer.skip_whitespace_and_comments(&self) {
     self.seen_line_term = false;
@@ -923,7 +923,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
                 }
                 self.advance_char();
             }
-            // ECMA-262 §12.4: if a MultiLineComment contains a line terminator
+            // ES2026 §12.4: if a MultiLineComment contains a line terminator
             // code point, the entire comment is considered a LineTerminator
             // for parsing by the syntactic grammar, so it triggers ASI
             // (seen_line_term) and permits a following `-->`
@@ -1211,7 +1211,7 @@ fn Token? Lexer.scan_number(&self) {
         if (!exp_prev_was_digit) return LEX_ERROR~;
     }
 
-    // Legacy octal — 0777 is 511 in sloppy code (ECMA-262 §B.1.1). When the span
+    // Legacy octal — 0777 is 511 in sloppy code (ES2026 §B.1.1). When the span
     // is a pure legacy octal (digits 0-7 only, no fractional dot, no exponent),
     // the value is base-8 and js_atod does not see it at all.
     bool resolved = false;
@@ -1291,7 +1291,7 @@ fn Token? Lexer.scan_number(&self) {
             if (sc == '.' || sc == 'e' || sc == 'E') { has_dot_or_exp = true; break; }
         }
         if (has_dot_or_exp) return LEX_ERROR~;
-        // ECMA-262 §11.8.3.1: a decimal BigInt literal must be `0n` or a
+        // ES2026 §12.9.3: a decimal BigInt literal must be `0n` or a
         // NonZeroDigit-led sequence.  A leading `0` followed by more digits
         // (legacy-octal-like `00n`/`07n` or non-octal `08n`/`012n`) is a
         // SyntaxError.  (0x/0o/0b prefixes are handled in earlier paths.)
@@ -1305,14 +1305,10 @@ fn Token? Lexer.scan_number(&self) {
         return tok;
     }
 
-    // ECMA-262 §12.9.3: "The SourceCharacter immediately following a
-    // NumericLiteral must not be an IdentifierStart or DecimalDigit." Every
-    // digit is already consumed above, so only IdentifierStart can appear
-    // here. `3in []` used to lex as `3` then the `in` keyword and parse
-    // happily; `3if` only failed because `if` cannot continue an expression.
-    // A `\` here is the start of a unicode-escaped identifier, which
-    // is_identifier_start cannot see (next_token pairs the two tests the same
-    // way).
+    // ES2026 §12.9.3: the SourceCharacter immediately following a
+    // NumericLiteral must not be an IdentifierStart or DecimalDigit (e.g.
+    // `3in []`). `\` starts a unicode-escaped identifier, which
+    // is_identifier_start does not see.
     if (!self.at_end()) {
         uint follow_cp = self.peek_codepoint();
         if (is_identifier_start(follow_cp) || follow_cp == '\\') {
@@ -1530,7 +1526,7 @@ fn Token? Lexer.scan_string(&self) {
                     if (esc >= '1' && esc <= '7' && !self.strict_mode) {
                         decoded_octal = true;
                         uint oval2 = (uint)(esc - '0');
-                        // ECMA-262 §B.1.2 LegacyOctalEscapeSequence: a leading
+                        // ES2026 §B.1.2 LegacyOctalEscapeSequence: a leading
                         // 4-7 admits at most ONE more octal digit (\400 is
                         // \40 followed by "0"), a leading 0-3 admits two.
                         int max_more = (esc <= '3') ? 2 : 1;
@@ -1612,7 +1608,7 @@ fn Token? Lexer.scan_identifier(&self) {
     self.pos = start_pos;
     char[] name = self.scan_ident_body_decoded()!;
 
-    // Per ECMA-262 §12.6.1, an IdentifierName written via Unicode escapes that
+    // Per ES2026 §12.7.1, an IdentifierName written via Unicode escapes that
     // resolves to a reserved word still behaves like that reserved word, a
     // parser trying to use it as a binding identifier (var \u{62}reak) must
     // reject it just like the unescaped form. The fast path above already

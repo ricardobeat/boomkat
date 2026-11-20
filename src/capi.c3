@@ -1153,7 +1153,7 @@ fn int vm_fault(Runtime* rt) {
 }
 
 // Shared by the named and indexed getters. A primitive base reads through its
-// wrapper with the primitive as receiver (GetV, ECMA-262 §7.3.3).
+// wrapper with the primitive as receiver (GetV, ES2026 §7.3.3).
 fn ulong get_key(void* ctxp, ulong obj_id, HString* k) {
     Runtime* rt = rt_of(ctxp);
     TVal ov;
@@ -2514,7 +2514,7 @@ fn int call_builtin(Runtime* rt, builtins::Builtin which, TVal this_value, TVal*
     return BK_OK;
 }
 
-// LengthOfArrayLike (ECMA-262 §7.3.18): ToLength(Get(obj, "length")).
+// LengthOfArrayLike (ES2026 §7.3.18): ToLength(Get(obj, "length")).
 fn int length_of(Runtime* rt, HObject* obj, ulong* out) {
     TVal ov; ov.set_object(obj);
     TVal got;
@@ -2761,7 +2761,7 @@ fn int bk_set_prototype(void* ctxp, ulong obj_id, ulong proto_id) @export("bk_se
     return call_builtin(rt, builtins::Builtin.OBJECT_SETPROTOTYPEOF, undefined, &args, 2, &out);
 }
 
-// InstanceofOperator (ECMA-262 §13.10.2): @@hasInstance when present, else
+// InstanceofOperator (ES2026 §13.10.2): @@hasInstance when present, else
 // OrdinaryHasInstance.
 fn int bk_instanceof(void* ctxp, ulong value_id, ulong ctor_id, int* out) @export("bk_instanceof") {
     Runtime* rt = rt_of(ctxp);
