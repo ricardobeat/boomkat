@@ -562,9 +562,8 @@ struct AccessorResult {
 // value directly; an accessor property holds a pointer to a GETTER_SETTER
 // object. Shape.PropFlags.is_accessor says which a reader is looking at.
 //
-// A distinct type with no implicit conversion either way, so every access
-// states what it does and the compiler finds every store: a store into an
-// object that may be old must pass the write barrier (plans/093).
+// A distinct type with no implicit conversion either way, so every store into
+// an object that may be old must pass the write barrier:
 //
 //   get()            read the value
 //   set_untraced(v)  store a value the collector does not trace
@@ -892,10 +891,8 @@ struct HObjectProxy {
 }
 
 // The lookup index MAP, SET, WEAKMAP, and WEAKSET keep over their dense part,
-// null until the collection is large enough to want one. These four keep their
-// entries in array_part, so this is the only payload they need; every other
-// class used to pay for the pointer. It is not the same thing as prop_hash,
-// which indexes named properties and can be live on a Map at the same time.
+// null until the collection is large enough to need one. Distinct from
+// prop_hash, which indexes named properties and can be live at the same time.
 struct HObjectCollHash {
     CollHashInfo* info;
 }
@@ -2037,11 +2034,10 @@ const uint DENSE_GROW_SLACK = 1u << 16;    // how far past array_size an index m
 // `undefined` (those stores take the named-table path, which records presence
 // properly), so within the dense part the sentinel means "absent".
 //
-// ARGUMENTS objects are the exception and are still wrong here: their slots
-// are filled at call time from the actual arguments, `undefined` included, so
-// an `undefined` argument reads back as an absent index. Fixing that needs
-// per-index presence tracking, since `delete arguments[i]` must still produce
-// a real hole; see plans/084 §11.
+// ARGUMENTS objects are an exception: their slots are filled from actual
+// arguments (`undefined` included), so an `undefined` argument reads as absent.
+// Fixing that requires per-index presence tracking so `delete arguments[i]`
+// still produces a hole.
 fn bool HObject.dense_idx_present(&self, uint idx) {
     if (idx >= self.array_size) return false;
     return !self.array_part()[idx].get().is_undefined();

@@ -60,7 +60,6 @@ fn void block_retain(char* data) {
     atomic::fetch_add(&block_header(data).refs, 1u, RELAXED);
 }
 
-// Drops one reference and frees the block when it was the last.
 fn void block_release(char* data) {
     BlockHeader* header = block_header(data);
     if (atomic::fetch_sub(&header.refs, 1u, ACQUIRE_RELEASE) == 1) libc::free(header);
@@ -425,7 +424,7 @@ fn bool wait_async(Heap* heap, HObject* promise, char* block, char* cell, uint w
     return true;
 }
 
-// A free slot in the heap's waiter array, growing it when none is.
+// Returns a free slot in the heap's waiter array, growing it if full.
 fn uint async_slot(Heap* heap) @private {
     for (uint i = 0; i < heap.async_waiter_count; i++) {
         if (heap.async_waiters[i].node == null && heap.async_waiters[i].promise == null) return i;
@@ -497,7 +496,6 @@ fn HObject* take_ready(Heap* heap, bool* timed_out) {
     return promise;
 }
 
-// Asynchronous waiters this heap still has pending.
 fn uint async_pending(Heap* heap) {
     uint n = 0;
     for (uint i = 0; i < heap.async_waiter_count; i++) {

@@ -1641,9 +1641,8 @@ bitstruct FuncFlags : uint {
 
     // ---- Function-specific flags (bits 7+) ----
 
-    // Per-function strict mode. Set from CompilerContext.is_strict at
-    // finish() time. Initial compiler default for top-level scripts is
-    // sloppy under plans/083; modules stay strict; "use strict" raises it.
+    // Per-function strict mode, set from CompilerContext.is_strict at finish().
+    // Top-level scripts default to sloppy; modules and "use strict" are strict.
     bool  is_strict    : 7;
     // Function is a named function expression.
     bool  is_namebinding: 8;

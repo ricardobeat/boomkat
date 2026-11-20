@@ -1,11 +1,5 @@
-// Frontend phase and liveness counters (feature FRONTEND_STATS).
-//
-// A stats build answers two questions that a leaf-only sample profile cannot:
-// how much compile time goes into the initial full eval AST/resolution pass
-// versus deferred body materialization, and whether register liveness is
-// paying for too many sweeps, too many bits, or too many calls.
-//
-// Gated on FRONTEND_STATS. Default builds omit every counter and increment.
+// Frontend phase timing and register-liveness counters, gated on FRONTEND_STATS.
+// Default builds omit every counter and increment.
 module boomkat::frontendstats;
 
 import std::io;
