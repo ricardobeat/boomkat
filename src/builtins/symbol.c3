@@ -18,7 +18,7 @@ import boomkat::hobject;
 // Symbols are NOT inserted into the string table (they are unique), and their
 // identity lives in the `is_symbol` flag rather than in the stored characters.
 //
-// `has_desc` distinguishes `Symbol()` (no description, ES2019 §19.4.3.5
+// `has_desc` distinguishes `Symbol()` (no description, ES2026 §20.4.3.2
 // returns undefined) from `Symbol("")` (an explicit empty-string description);
 // the `has_desc` flag records which.
 fn HString* create_symbol_string(Heap* heap, HString* desc, bool has_desc = true) {
@@ -139,7 +139,7 @@ fn HString* symbol_registry_get_key(Heap* heap, HString* sym) {
 
 // Ensure the well-known @@toStringTag symbol exists.
 // Returns the symbol HString* (usable as a property key).
-// Well-known symbols are NOT in the global symbol registry per ES2020 §19.4,
+// Well-known symbols are NOT in the global symbol registry per ES2026 §20.4,
 // only symbols created by Symbol.for live there. Heap-level cache keeps it
 // unique across the engine.
 fn HString* ensure_cached_symbol(Heap* heap, HString** slot, char[] desc) {
@@ -210,7 +210,7 @@ fn HString* ensure_dispose_symbol(Heap* heap) => ensure_cached_symbol(heap, &hea
 fn HString* ensure_asyncdispose_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.asyncdispose_symbol, "Symbol.asyncDispose");
 
 // ============================================================================
-// Symbol constructor (ES6 §19.4.1)
+// Symbol constructor (ES2026 §20.4.1)
 // ============================================================================
 fn void builtin_symbol(BuiltinContext* ctx) {
     // Symbol is not constructable with new
@@ -244,7 +244,7 @@ fn void builtin_symbol(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Symbol.for(key), ES6 §19.4.2.1
+// Symbol.for(key), ES2026 §20.4.2.2
 // ============================================================================
 fn void builtin_symbol_for(BuiltinContext* ctx) {
     // A missing argument is `undefined`, so Symbol.for() registers the key
@@ -280,7 +280,7 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Symbol.keyFor(sym), ES6 §19.4.2.5
+// Symbol.keyFor(sym), ES2026 §20.4.2.6
 // ============================================================================
 fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
     // A missing argument is `undefined`, which is not a Symbol, so
@@ -300,7 +300,7 @@ fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
     }
 }
 
-// Symbol.prototype.description getter, ES2019 §19.4.3.5
+// Symbol.prototype.description getter, ES2026 §20.4.3.2
 // Returns the description string of the Symbol, or undefined.
 fn void builtin_symbol_proto_description_get(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -342,7 +342,7 @@ fn void builtin_symbol_proto_description_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Symbol.prototype.toString(), ES6 §19.4.3.2
+// Symbol.prototype.toString(), ES2026 §20.4.3.3
 // ============================================================================
 fn void builtin_symbol_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -385,7 +385,7 @@ fn void builtin_symbol_proto_toString(BuiltinContext* ctx) {
 
 
 // ============================================================================
-// Symbol.prototype.data.valueOf(), ES6 §19.4.3.3
+// Symbol.prototype.valueOf(), ES2026 §20.4.3.4
 // ============================================================================
 fn void builtin_symbol_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -431,7 +431,7 @@ fn bool symbol_proto_toprimitive_is_original(Heap* heap) {
 }
 
 // ============================================================================
-// Symbol.prototype[Symbol.toPrimitive](hint), ES6 §19.4.3.5
+// Symbol.prototype[Symbol.toPrimitive](hint), ES2026 §20.4.3.5
 // ============================================================================
 fn void builtin_symbol_proto_toprimitive(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -483,7 +483,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (!register_builtin_members(proto, heap, METHODS[..])) return false;
     }
 
-    // Register Symbol.prototype[Symbol.toPrimitive], ES6 §19.4.3.5
+    // Register Symbol.prototype[Symbol.toPrimitive], ES2026 §20.4.3.5
     // This is a function that returns the this value (the symbol itself).
     // Installed as a real function object (not a lightfunc) so it carries the
     // spec-mandated own `.name` = "[Symbol.toPrimitive]" and `.length` = 1
@@ -528,7 +528,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
-    // Register Symbol.prototype.description as a getter accessor (ES2019 §19.4.3.5)
+    // Register Symbol.prototype.description as a getter accessor (ES2026 §20.4.3.2)
     // Getter function returns the description string or undefined.
     {
         HString* desc_key = builtin_intern_string(heap, "description");
@@ -613,7 +613,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     ctor.put_prop(keyfor_key, keyfor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Symbol.toStringTag as a well-known symbol property
-    // Per ES6 §19.4.2.14: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.15: non-writable, non-enumerable, non-configurable
     HString* tostrtag_sym = ensure_tostringtag_symbol(heap);
     if (tostrtag_sym != null) {
         HString* tostrtag_key = builtin_intern_string(heap, "toStringTag");
@@ -623,7 +623,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.iterator as a well-known symbol property: non-writable,
-    // non-enumerable, non-configurable (ES6 §19.4.2.12).
+    // non-enumerable, non-configurable (ES2026 §20.4.2.5).
     HString* iter_sym = ensure_iterator_symbol(heap);
     if (iter_sym != null) {
         HString* iter_key = builtin_intern_string(heap, "iterator");
@@ -635,7 +635,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.toPrimitive as a well-known symbol property: non-writable,
-    // non-enumerable, non-configurable (ES6 §19.4.2.6).
+    // non-enumerable, non-configurable (ES2026 §20.4.2.14).
     HString* toprim_sym = ensure_toprimitive_symbol(heap);
     if (toprim_sym != null) {
         HString* toprim_key = builtin_intern_string(heap, "toPrimitive");
@@ -647,7 +647,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.isConcatSpreadable as a well-known symbol property
-    // Per ES6 §19.4.2.3: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.4: non-writable, non-enumerable, non-configurable
     HString* concat_sym = ensure_concatspreadable_symbol(heap);
     if (concat_sym != null) {
         HString* concat_key = builtin_intern_string(heap, "isConcatSpreadable");
@@ -659,7 +659,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.hasInstance as a well-known symbol property
-    // Per ES6 §19.4.2.2: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.3: non-writable, non-enumerable, non-configurable
     HString* hasinst_sym = ensure_hasinstance_symbol(heap);
     if (hasinst_sym != null) {
         HString* hasinst_key = builtin_intern_string(heap, "hasInstance");
@@ -671,7 +671,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.match as a well-known symbol property
-    // Per ES6 §19.4.2.5: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.7: non-writable, non-enumerable, non-configurable
     HString* match_sym = ensure_match_symbol(heap);
     if (match_sym != null) {
         HString* match_key = builtin_intern_string(heap, "match");
@@ -683,7 +683,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.search as a well-known symbol property
-    // Per ES6 §19.4.2.8: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.11: non-writable, non-enumerable, non-configurable
     HString* search_sym = ensure_search_symbol(heap);
     if (search_sym != null) {
         HString* search_key = builtin_intern_string(heap, "search");
@@ -695,7 +695,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.replace as a well-known symbol property
-    // Per ES6 §19.4.2.7: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.10: non-writable, non-enumerable, non-configurable
     HString* replace_sym = ensure_replace_symbol(heap);
     if (replace_sym != null) {
         HString* replace_key = builtin_intern_string(heap, "replace");
@@ -707,7 +707,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.split as a well-known symbol property
-    // Per ES6 §19.4.2.11: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.13: non-writable, non-enumerable, non-configurable
     HString* split_sym = ensure_split_symbol(heap);
     if (split_sym != null) {
         HString* split_key = builtin_intern_string(heap, "split");
@@ -719,7 +719,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.species as a well-known symbol property
-    // Per ES6 §19.4.2.10: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.12: non-writable, non-enumerable, non-configurable
     HString* species_sym = ensure_species_symbol(heap);
     if (species_sym != null) {
         HString* species_key = builtin_intern_string(heap, "species");
@@ -731,7 +731,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.unscopables as a well-known symbol property
-    // Per ES6 §19.4.2.13: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.16: non-writable, non-enumerable, non-configurable
     HString* unscop_sym = ensure_unscopables_symbol(heap);
     if (unscop_sym != null) {
         HString* unscop_key = builtin_intern_string(heap, "unscopables");
@@ -743,7 +743,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.matchAll as a well-known symbol property
-    // Per ES2020 §19.4.2.9: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.8: non-writable, non-enumerable, non-configurable
     HString* matchall_sym = ensure_matchall_symbol(heap);
     if (matchall_sym != null) {
         HString* matchall_key = builtin_intern_string(heap, "matchAll");
@@ -755,7 +755,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Symbol.asyncIterator as a well-known symbol property
-    // Per ES2018 §19.4.2.4: non-writable, non-enumerable, non-configurable
+    // Per ES2026 §20.4.2.1: non-writable, non-enumerable, non-configurable
     HString* asynciter_sym = ensure_asynciterator_symbol(heap);
     if (asynciter_sym != null) {
         HString* asynciter_key = builtin_intern_string(heap, "asyncIterator");
@@ -767,7 +767,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Symbol.dispose / Symbol.asyncDispose, the explicit-resource-management
-    // well-known symbols (ECMA-262 §20.4.2). NNC like the others.
+    // well-known symbols (ES2026 §20.4.2). NNC like the others.
     HString* dispose_sym = ensure_dispose_symbol(heap);
     HString* dispose_key = builtin_intern_string(heap, "dispose");
     if (dispose_sym != null && dispose_key != null) {

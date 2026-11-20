@@ -1029,7 +1029,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     BIGINT_PROTO_TOSTRING {"toString", 0, false}, // BigInt.prototype.toString([radix])
     BIGINT_PROTO_VALUEOF {"valueOf", 0, false}, // BigInt.prototype.valueOf()
     BIGINT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false},
-    // --- %AsyncFromSyncIteratorPrototype% (ECMA-262 §27.1.4) ---
+    // --- %AsyncFromSyncIteratorPrototype% (ES2026 §27.1.5.2) ---
     ASYNC_FROM_SYNC_NEXT {"next", 1, false}, // %AsyncFromSyncIteratorPrototype%.next(value)
     ASYNC_FROM_SYNC_RETURN {"return", 1, false}, // %AsyncFromSyncIteratorPrototype%.return(value)
     ASYNC_FROM_SYNC_THROW {"throw", 1, false}, // %AsyncFromSyncIteratorPrototype%.throw(value)
@@ -1038,7 +1038,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROMISE_WITH_RESOLVERS {"withResolvers", 0, false}, // Promise.withResolvers() (ECMA-262)
     PROMISE_TRY {"try", 1, false}, // Promise.try(callbackfn, ...args) (ECMA-262)
     ERROR_ISERROR {"isError", 1, false}, // Error.isError(arg) (ECMA-262)
-    // --- Set methods (ECMA-262 §24.2.4) ---
+    // --- Set methods (ES2026 §24.2.4) ---
     SET_PROTO_UNION {"union", 1, false}, // Set.prototype.union(other)
     SET_PROTO_INTERSECTION {"intersection", 1, false}, // Set.prototype.intersection(other)
     SET_PROTO_DIFFERENCE {"difference", 1, false}, // Set.prototype.difference(other)
@@ -1047,7 +1047,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     SET_PROTO_ISSUPERSETOF {"isSupersetOf", 1, false}, // Set.prototype.isSupersetOf(other)
     SET_PROTO_ISDISJOINTFROM {"isDisjointFrom", 1, false}, // Set.prototype.isDisjointFrom(other)
     REGEXP_ESCAPE {"escape", 1, false}, // RegExp.escape(string) (ECMA-262)
-    // --- Iterator Helpers (ECMA-262 §27.1) ---
+    // --- Iterator Helpers (ES2026 §27.1) ---
     ITERATOR_CTOR {"Iterator", 0, false}, // Iterator(), throws (abstract, subclassable)
     ITERATOR_FROM {"from", 1, false}, // Iterator.from(obj)
     ITERATOR_PROTO_CONSTRUCTOR_GET {"get constructor", 0, false}, // get Iterator.prototype.constructor
@@ -1115,7 +1115,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     ATOMICS_WAIT {"", -1, false},
     ATOMICS_NOTIFY {"", -1, false},
     ATOMICS_WAITASYNC {"", -1, false},
-    // --- Async generators (ECMA-262 §27.6) ---
+    // --- Async generators (ES2026 §27.6) ---
     ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, false}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
     ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCDISPOSE {"[Symbol.asyncDispose]", 0, false}, // %AsyncIteratorPrototype%[@@asyncDispose]()
     ASYNC_GENERATOR_PROTO_NEXT {"next", 1, false}, // %AsyncGeneratorPrototype%.next(value)
@@ -1129,7 +1129,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     ASYNC_GEN_YRET_FULFILL {"", -1, false}, // native reaction: yield-resumption return value fulfilled → resume body w/ return
     ASYNC_GEN_YRET_REJECT {"", -1, false}, // native reaction: yield-resumption return value rejected → resume body w/ throw
     REGEXP_PROTO_COMPILE {"compile", 2, false}, // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
-    ATOMICS_PAUSE {"", -1, false}, // Atomics.pause([iterationNumber]), microwait hint (ECMA-262 §25.4.6)
+    ATOMICS_PAUSE {"", -1, false}, // Atomics.pause([iterationNumber]), microwait hint (ES2026 §25.4.6)
     // --- error-stack-accessor proposal ---
     ERROR_PROTO_STACK_GET {"get stack", 0, false}, // get Error.prototype.stack
     ERROR_PROTO_STACK_SET {"set stack", 1, false}, // set Error.prototype.stack
@@ -1160,7 +1160,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     LAST {"", -1, false}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
-// ECMA-262 §9.1.14 OrdinaryCreateFromConstructor / §9.1.15 GetPrototypeFromConstructor.
+// ES2026 §10.1.13 OrdinaryCreateFromConstructor / §10.1.14 GetPrototypeFromConstructor.
 //
 // If ctx.new_target is non-null, perform a full `Get(C, "prototype")` on it;
 // if the result is an object, return it as the instance prototype. Otherwise
@@ -1169,7 +1169,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
 //
 // Uses full Get semantics (not get_prop_proto) so an accessor "prototype"
 // getter on `new_target` is actually invoked, and a throwing getter propagates
-// as an abrupt completion via ctx.should_throw per ECMA-262 §9.1.14 step 3
+// as an abrupt completion via ctx.should_throw per ES2026 §10.1.14
 // (test262 built-ins/Promise/get-prototype-abrupt).  Returns default_proto on
 // error so the VM can still consult ctx.should_throw / ctx.throw_value to
 // raise the original error when the calling builtin returns.
@@ -1195,7 +1195,7 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
             return (HObject*)ptv.get_heapptr();
         }
     }
-    // ECMA-262 §9.1.14 step 4: a prototype that is not an object sends the
+    // ES2026 §10.1.14: a prototype that is not an object sends the
     // fallback through GetFunctionRealm(new_target). A revoked Proxy (null
     // [[ProxyHandler]]) throws there instead of silently taking the default
     // prototype (@@construct must reject for a revoked new.target).
@@ -1207,12 +1207,12 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
     return default_proto;
 }
 
-// ECMA-262 §10.1.8.1 OrdinaryGet, for builtins that
+// ES2026 §10.1.8.1 OrdinaryGet, for builtins that
 // need full Get semantics on a property (walks prototype chain, invokes
 // accessor getters). Returns the resolved TVal, or faults on throw (per
-// ECMA-262 §25.4.1.5 step 7 `ReturnIfAbrupt`). A `null`/missing key
+// ES2026 §27.2.1.5 `ReturnIfAbrupt`). A `null`/missing key
 // returns `undefined` (no fault). Used by Map/Set/WeakMap/WeakSet
-// constructors per ECMA-262 §23.1.1 / §23.2.1 / §23.3.1 / §23.4.1.
+// constructors per ES2026 §24.1.1 / §24.2.1 / §24.3.1 / §24.4.1.
 fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
     if (obj == null || key == null) {
         TVal undef; undef.set_undefined();
@@ -1225,7 +1225,7 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
         case hobject::PropLookupKind.PROP_DATA:
             return res.data_val;
         case hobject::PropLookupKind.PROP_ACCESSOR: {
-            // ECMA-262 §10.1.8.1 step 7: Call(getter, Receiver). The
+            // ES2026 §10.1.8.1: Call(getter, Receiver). The
             // receiver is `obj`, not the object on its chain that holds the
             // accessor.
             TVal getter_this;
@@ -1251,7 +1251,7 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
     }
 }
 
-// ECMA-262 §10.1.9 [[Set]] / OrdinarySet, the counterpart to
+// ES2026 §10.1.9 [[Set]] / OrdinarySet, the counterpart to
 // builtins_generic_get, for builtins performing a spec `Set(O, P, V, true)`.
 //
 // An accessor anywhere on the prototype chain is invoked with `this` set to
@@ -1316,7 +1316,7 @@ fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
     return to_object_wrapper(heap, value);
 }
 
-// ToObject (ECMA-262 §7.1.13). Wrapper classes own their primitive payloads;
+// ToObject (ES2026 §7.1.18). Wrapper classes own their primitive payloads;
 // strings also expose the indexed properties of a String exotic object.
 fn HObject* to_object_wrapper(Heap* heap, TVal value) {
     if (value.is_object() && value.get_heapptr() != null) {
@@ -1442,7 +1442,7 @@ fn void print_tval(Heap* heap, TVal* val) {
 // ECMAScript whitespace check
 // ============================================================================
 
-// ECMAScript whitespace check at the Unicode codepoint level (ECMA-262 §7.2 + §7.3).
+// ECMAScript whitespace check at the Unicode codepoint level (ES2026 §12.2 + §12.3).
 // Handles the full Unicode range including Zs (Space_Separator) characters.
 // Used by String.prototype.trim which must strip all Unicode whitespace.
 fn bool is_ecma_ws_codepoint(uint cp) @inline {
@@ -1554,7 +1554,7 @@ fn double builtin_string_to_number(HString* hstr) {
     if (text == "-Infinity") return -double::inf;
 
     // --- Reject sign-prefixed hex/binary/octal literals ---
-    // ECMA-262 §7.1.3.1: +0x... / -0x... etc. are not valid StringNumericLiterals.
+    // ES2026 §7.1.4.1: +0x... / -0x... etc. are not valid StringNumericLiterals.
     if (p[0] == '+' || p[0] == '-') {
         char* q = p + 1;
         if (q[0] == '0' && (q[1] == 'x' || q[1] == 'X')) return double::nan;
@@ -1562,7 +1562,7 @@ fn double builtin_string_to_number(HString* hstr) {
         if (q[0] == '0' && (q[1] == 'o' || q[1] == 'O')) return double::nan;
     }
 
-    // --- 0x / 0b / 0o integer literals (ECMA-262 §7.1.3.1) ---
+    // --- 0x / 0b / 0o integer literals (ES2026 §7.1.4.1) ---
     // Unlike parseInt, ToNumber(String) accepts these prefixes, but no sign and
     // no trailing radix.
     int shift = 0;
@@ -1600,10 +1600,10 @@ fn double builtin_string_to_number(HString* hstr) {
 }
 
 // ============================================================================
-// ToNumber (ECMA-262 §9.3)
+// ToNumber (ES2026 §7.1.4)
 // ============================================================================
 
-// Convert any TVal to a numeric TVal per ECMA-262 §9.3.
+// Convert any TVal to a numeric TVal per ES2026 §7.1.4.
 // Preserves FASTINT where possible.
 fn void builtin_to_number(TVal* val, TVal* result) {
     switch (val.get_tag()) {
@@ -1764,7 +1764,7 @@ fn HObject* check_collection_class(BuiltinContext* ctx, hobject::ObjClass want, 
 }
 
 // ============================================================================
-// CanBeHeldWeakly (ECMA-262 §7.2.11), shared by WeakMap key / WeakSet value /
+// CanBeHeldWeakly (ES2026 §9.9.1), shared by WeakMap key / WeakSet value /
 // WeakRef target / FinalizationRegistry target+token checks.
 // ============================================================================
 
@@ -2007,7 +2007,7 @@ fn void coll_throw(BuiltinContext* ctx, char[] msg) {
     builtin_throw(ctx, ctx.heap.type_err_proto, msg);
 }
 
-// Shared constructor body for Map/Set/WeakMap/WeakSet (ECMA-262 §23.1.1, §23.2.1,
+// Shared constructor body for Map/Set/WeakMap/WeakSet (ES2026 §24.1.1, §24.2.1,
 // §23.3.1, §23.4.1). Allocates the collection object, then if an iterable
 // argument is provided populates it via the adder method ("set" for
 // Map/WeakMap, "add" for Set/WeakSet) using the iterator protocol.
@@ -2043,7 +2043,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
 
             // Get(coll, adder_name); must throw/return abruptly per spec.
             // builtins_generic_get invokes prototype accessors correctly
-            // (ECMA-262 §10.1.8.1 OrdinaryGet) and propagates
+            // (ES2026 §10.1.8.1 OrdinaryGet) and propagates
             // accessor-throwing to ctx.should_throw.
             TVal coll_tv; coll_tv.set_object(coll);
             HString* adder_key = builtin_intern_string(ctx.heap, adder_name);
@@ -2076,13 +2076,13 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 (iter_fn.is_object() && iter_fn.get_heapptr() != null &&
                  ((HObject*)iter_fn.get_heapptr()).is_callable());
             if (!iter_callable) {
-                // ECMA-262 §7.4.1 GetIterator (sync): obj[@@iterator]() throws
+                // ES2026 §7.4.4 GetIterator (sync): obj[@@iterator]() throws
                 // TypeError when @@iterator is missing.
                 coll_throw(ctx, not_iterable_msg);
                 return;
             }
 
-            // Iterator-based path (ECMA-262 §23.1.1.1.5 AddEntriesFromIterable and analogues).
+            // Iterator-based path (ES2026 §24.1.1.2 AddEntriesFromIterable and analogues).
             TVal iterator = ctx.heap.call_fn(ctx.vm, iter_fn, null, 0, arg);
             if (ctx.heap.has_error) {
                 ctx.should_throw = true;
@@ -2091,7 +2091,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 ctx.result_undefined();
                 return;
             }
-            // ECMA-262 §7.4.1 GetIterator step 5: the result of calling
+            // ES2026 §7.4.4 GetIterator: the result of calling
             // @@iterator must be an Object, or TypeError. Returning
             // normally instead made `new Map(obj)` with an @@iterator that
             // returns a primitive silently produce an empty collection.
@@ -2136,7 +2136,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     return;
                 }
                 if (!result.is_object() || result.get_heapptr() == null) {
-                    // IteratorNext (ECMA-262 §7.4.3): a non-object step result is
+                    // IteratorNext (ES2026 §7.4.6): a non-object step result is
                     // a TypeError. AddEntriesFromIterable wraps the call in
                     // IfAbruptCloseIterator, so the iterator is closed first.
                     coll_throw(ctx, "Iterator result is not an object");
@@ -2145,7 +2145,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     return;
                 }
                 HObject* res_obj = (HObject*)result.get_heapptr();
-                // Use accessor-aware reads for IteratorResult fields (ECMA-262 §7.4.4).
+                // Use accessor-aware reads for IteratorResult fields (ES2026 §7.4.7 / §7.4.8).
                 // get_prop_proto bypasses accessor getters; builtins_generic_get
                 // invokes [[Get]] so a throwing getter is caught.
                 HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
@@ -2180,7 +2180,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 if (is_pair) {
                     if (val_tv.is_object() && val_tv.get_heapptr() != null) {
                         HObject* pair_obj = (HObject*)val_tv.get_heapptr();
-                        // Use accessor-aware property reads (ECMA-262 §23.1.1.1 step 9h/9j).
+                        // Use accessor-aware property reads (ES2026 §24.1.1.2).
                         // array_get_elem is a fast path that bypasses accessor getters;
                         // builtins_generic_get invokes [[Get]] correctly.
                         HString* key0 = ctx.heap.int_to_hstring(0);
@@ -2218,7 +2218,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                             return;
                         }
                     } else {
-                        // pair entry is not an object, ECMA-262 §23.1.1.1 step 9f requires TypeError.
+                        // pair entry is not an object, ES2026 §24.1.1.2 requires TypeError.
                         coll_throw(ctx, "Iterator value must be an object");
                         arr_iterator_close_after_throw(ctx, iterator);
                         ctx.result_undefined();
@@ -2249,7 +2249,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
 // Collection mutator helpers (shared by Map/Set/WeakMap/WeakSet .set/.add/.delete)
 // ============================================================================
 
-// Shared body for Map.prototype.set / WeakMap.prototype.set (ECMA-262 §23.1.3.9 / §23.3.3.5).
+// Shared body for Map.prototype.set / WeakMap.prototype.set (ES2026 §24.1.3.11 / §24.3.3.8).
 // require_object_key: true for WeakMap (throws "Invalid value used as weak map key"
 // unless CanBeHeldWeakly(key), object or non-registered symbol), false for Map
 // (any key allowed).
@@ -2294,7 +2294,7 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
     ctx.result_object(coll);
 }
 
-// CanonicalizeKeyedCollectionKey (ECMA-262 §24.1.1.3): -0 -> +0, otherwise unchanged.
+// CanonicalizeKeyedCollectionKey (ES2026 §24.5.1): -0 -> +0, otherwise unchanged.
 fn TVal canonicalize_keyed_collection_key(TVal key) {
     if (key.is_number() && key.get_number() == 0.0) {
         TVal out; out.set_fastint(0);
@@ -2308,7 +2308,7 @@ fn TVal canonicalize_keyed_collection_key(TVal key) {
 }
 
 // Shared body for Map.prototype.getOrInsert / WeakMap.prototype.getOrInsert
-// (ECMA-262 §24.1.3.9 / §24.3.3.6). require_weak_key: true for WeakMap (throws
+// (ES2026 §24.1.3.7 / §24.3.3.5). require_weak_key: true for WeakMap (throws
 // unless CanBeHeldWeakly(key)), false for Map. grow_hwm: see coll_set_entry.
 fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak_key,
                             char[] invalid_key_msg, bool grow_hwm) {
@@ -2339,7 +2339,7 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
 }
 
 // Shared body for Map.prototype.getOrInsertComputed / WeakMap.prototype.
-// getOrInsertComputed (ECMA-262 §24.1.3.10 / §24.3.3.7). callbackfn is called
+// getOrInsertComputed (ES2026 §24.1.3.8 / §24.3.3.6). callbackfn is called
 // with `key` as its sole argument and `undefined` as `this`, ONLY when the
 // key was absent beforehand. After the callback returns, the map is
 // re-searched for `key`: if present (whether because the callback itself
@@ -2405,7 +2405,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
     ctx.copy_result(value);
 }
 
-// Shared body for Set.prototype.add / WeakSet.prototype.add (ECMA-262 §23.2.3.1 / §23.4.3.1).
+// Shared body for Set.prototype.add / WeakSet.prototype.add (ES2026 §24.2.4.1 / §24.4.3.1).
 // require_object_value: true for WeakSet (throws "Invalid value used in weak set"
 // unless CanBeHeldWeakly(value), object or non-registered symbol), false for Set
 // (any value allowed).
@@ -2462,7 +2462,7 @@ fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, b
 }
 
 // ============================================================================
-// GroupBy shared driver (ECMA-262 §23.1.2.1 Object.groupBy / §24.1.2.1 Map.groupBy)
+// GroupBy shared driver (ES2026 §20.1.2.13 Object.groupBy / §24.1.2.1 Map.groupBy)
 // ============================================================================
 
 // Append `value` to the group array for `key` in `groups_obj`, creating a new
@@ -2525,7 +2525,7 @@ fn bool group_by_append_map(BuiltinContext* ctx, HObject* map, TVal key, TVal va
     return true;
 }
 
-// GroupBy ( items, callbackfn, coercion ), ECMA-262 §23.1.2.1.
+// GroupBy ( items, callbackfn, coercion ), ES2026 §7.3.35.
 // `into_map`: false stores groups as data properties of a null-prototype
 // object (Object.groupBy), true stores groups keyed by SameValueZero in a
 // fresh Map (Map.groupBy, key -0 normalized to +0 per CanonicalizeKeyedCollectionKey).
@@ -2658,7 +2658,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
         TVal next_value;
         if (try vv = value_opt) { next_value = vv; } else { next_value.set_undefined(); }
 
-        // ECMA-262 §23.1.2.1 GroupBy step 6.e: 𝔽(k) as the index arg, beyond
+        // ES2026 §7.3.35 GroupBy: 𝔽(k) as the index arg, beyond
         // 2^53-1 keys the spec has already thrown RangeError (step 6.d), which
         // cannot occur in practice (would require exhausting all safe integers).
         TVal[2] cb_args;
@@ -2708,7 +2708,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
 // ToString helper (ES3 ToString for primitive types)
 // ============================================================================
 
-// ToString(Number) per ECMA-262 §7.1.12.1, shortest round-trip decimal via
+// ToString(Number) per ES2026 §7.1.17, shortest round-trip decimal via
 // spec exponent format (1e+21, 1e-7).
 fn HString* builtin_number_to_hstring(Heap* heap, double d) {
     if (math::is_nan(d)) return (HString*)heap.strs[heap::BuiltinStr.NAN_STR];
@@ -2816,11 +2816,11 @@ fn double builtin_to_integer(TVal* val) {
     }
 }
 
-// VM-aware ToInteger (ECMA-262 §7.1.5): properly handles objects by calling
+// VM-aware ToIntegerOrInfinity (ES2026 §7.1.5): properly handles objects by calling
 // ToPrimitive via the VM (invoking valueOf/toString).  When ToPrimitive
 // returns a non-primitive, throws TypeError instead of silently returning 0.
 // ToIntegerOrInfinity first calls ToNumber, which throws TypeError for
-// Symbol and BigInt arguments (ECMA-262 §7.1.4), checked before the object
+// Symbol and BigInt arguments (ES2026 §7.1.4), checked before the object
 // path since Symbols/BigInts are not objects.
 fn double builtin_to_integer_vm(BuiltinContext* ctx, TVal* val) {
     if (val.is_bigint()) {
@@ -2851,7 +2851,7 @@ fn double builtin_to_integer_vm(BuiltinContext* ctx, TVal* val) {
                     return 0.0 / 0.0;
                 }
             }
-            // ToNumber(BigInt) throws TypeError (ECMA-262 §7.1.4), e.g. a wrapper
+            // ToNumber(BigInt) throws TypeError (ES2026 §7.1.4), e.g. a wrapper
             // or @@toPrimitive that yields a BigInt reaches here.
             if (prim.is_bigint()) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a BigInt value to a number");
@@ -2859,7 +2859,7 @@ fn double builtin_to_integer_vm(BuiltinContext* ctx, TVal* val) {
             }
             return builtin_to_integer(&prim);
         }
-        // Both valueOf and toString returned non-primitives, ECMA-262 §7.1.5 step 4b
+        // Both valueOf and toString returned non-primitives, ES2026 §7.1.1.1
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert object to primitive value");
         return 0.0 / 0.0;
     }
@@ -2880,7 +2880,7 @@ fn bool is_regexp_object(TVal* val) {
     return obj.get_class() == hobject::ObjClass.REGEXP && (*obj.extra_ptr()).regexp.regexp_data != null;
 }
 
-// Full IsRegExp check per ECMA-262 §7.2.8 with VM access for abrupt completions.
+// Full IsRegExp check per ES2026 §7.2.6 with VM access for abrupt completions.
 //
 // Returns: 1 = is RegExp, 0 = is not RegExp, -1 = abrupt completion (throw pending).
 // The algorithm:
@@ -2920,12 +2920,12 @@ fn int is_regexp_check_vm(BuiltinContext* ctx, TVal* val) {
 fn double builtin_to_number_getdouble(BuiltinContext* ctx, TVal* val) {
     if (val.is_fastint()) return (double)val.get_fastint();
     if (val.is_number()) return val.get_number();
-    // ToNumber(BigInt) throws TypeError (ECMA-262 §7.1.4).
+    // ToNumber(BigInt) throws TypeError (ES2026 §7.1.4).
     if (val.is_bigint()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a BigInt value to a number");
         return 0.0 / 0.0;
     }
-    // ToNumber(Symbol) throws TypeError (ECMA-262 §7.1.3). This is the single
+    // ToNumber(Symbol) throws TypeError (ES2026 §7.1.4). This is the single
     // check for both the direct argument and the primitive that
     // builtin_to_number_vm's ToPrimitive produced, which routes back here.
     if (val.is_string()) {
@@ -3159,7 +3159,7 @@ fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
 
 // Register a builtin method with an ordinary function object.
 // Creates a proper HObject function with .name and .length properties
-// (ECMA-262 §17: built-in function objects have non-enumerable .name/.length).
+// (ES2026 §18: built-in function objects have non-enumerable .name/.length).
 fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
     return register_proto_method(proto, heap, name, fn_index);
 }
@@ -3228,7 +3228,7 @@ fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_i
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
     heap.set_prototype(func_obj, heap.function_proto);
-    // Set .length from builtin metadata (ECMA-262 §17: "length" before "name")
+    // Set .length from builtin metadata (ES2026 §18: "length" before "name")
     builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
     {
         HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -3246,7 +3246,7 @@ fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_i
         name_tv.set_string_borrowed(name_val);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
-    // Register on prototype, writable:true, enumerable:false, configurable:true (ECMA-262 §15.3.5.1)
+    // Register on prototype, writable:true, enumerable:false, configurable:true (ES2026 §18)
     TVal tv;
     tv.set_object(func_obj);
     proto.put_prop(key, tv, hobject::PROP_FLAGS_WC, heap);
@@ -3399,7 +3399,7 @@ fn bool register_named_value(EnvRecord* global_env, Heap* heap, char[] name, TVa
     return env::env_declare_nonenum(global_env, key, val);
 }
 
-// Register a global constant with ECMA-262 §15.1 flags:
+// Register a global constant with ES2026 §19.1 flags:
 // {writable: false, enumerable: false, configurable: false}.
 // Used for `undefined`, `NaN`, `Infinity`.
 fn bool register_global_immutable(EnvRecord* global_env, Heap* heap, char[] name,
@@ -3430,10 +3430,10 @@ fn bool register_simple_builtin(EnvRecord* global_env, Heap* heap, char[] name, 
 }
 
 // Set .name and .length on a built-in constructor HObject.
-// .name: non-writable, non-enumerable, configurable (ECMA-262 §19)
-// .length: non-writable, non-enumerable, configurable (ECMA-262 §15.3.5.1)
+// .name: non-writable, non-enumerable, configurable (ES2026 §18)
+// .length: non-writable, non-enumerable, configurable (ES2026 §18)
 fn void set_func_ctor_name_length(HObject* func_obj, Heap* heap, char[] name, int length) {
-    // ECMA-262 §17: built-in function objects have "length" before "name" in
+    // ES2026 §18: built-in function objects have "length" before "name" in
     // own property insertion order.
     HString* length_key = heap.str(heap::BuiltinStr.LENGTH);
     TVal length_tv; length_tv.set_fastint((long)length);
@@ -3460,7 +3460,7 @@ fn void set_func_ctor_name(HObject* func_obj, Heap* heap, char[] name) {
 // A module namespace export (`import * as ns`, `ns.x`) and a named import
 // (`import { x } from './s'`) must both observe the exporting module's
 // CURRENT binding value, not a value snapshotted at link/execute time
-// (ECMA-262 §10.4.6 / §16.2). Both cases are implemented as one native
+// (ES2026 §10.4.6 / §16.2). Both cases are implemented as one native
 // accessor getter that closes over the source module's env bindings object
 // and the interned binding key, stored as hidden non-enumerable,
 // non-writable, non-configurable properties on the getter function object
@@ -3499,7 +3499,7 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
 // Returns undefined if the binding cannot be found. Throws a
 // ReferenceError if the source slot still holds the TDZ sentinel (the
 // exporting module's `let`/`const`/`class` declaration has not yet run),
-// ECMA-262 §10.4.6.8 / §16.2.1.5.5 GetBindingValue for a not-yet-initialized
+// ES2026 §10.4.6.8 / §16.2.1.5.5 GetBindingValue for a not-yet-initialized
 // binding.
 //
 // A re-export chain (`export { x } from './a'` re-exported again by a
@@ -3737,7 +3737,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
 
     heap.native_frame_depth++;
 
-    // ECMA-262 §9.2.2 OrdinaryCreateFromConstructor. Builtin constructors
+    // ES2026 §10.1.13 OrdinaryCreateFromConstructor. Builtin constructors
     // allocate their own instance and are handed an undefined this_val
     // (vm_calls.c3:2874); a host function has no way to do that itself, so the
     // instance is created here from new.target's .prototype. Done inside the
@@ -3820,7 +3820,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     heap.addon_handles_rewind(addon_handle_mark);
     host_text_free(ctx);
 
-    // ECMA-262 §9.2.2 step 13: a [[Construct]] call evaluates to the created
+    // ES2026 §10.2.2: a [[Construct]] call evaluates to the created
     // object unless the host explicitly returned an object of its own.
     if (made_this && !ctx.should_throw && !ctx.result.get().is_object()) {
         ctx.copy_result(ctx.this_val);
@@ -4012,7 +4012,7 @@ fn TVal host_new_string(BuiltinContext* ctx, char[] utf8) {
 // Build a callable FUNCTION object for the host function in `slot`.
 //
 // Mirrors register_proto_method: .length then .name, both as real own
-// properties (ECMA-262 §17). Setting them here rather than teaching
+// properties (ES2026 §18). Setting them here rather than teaching
 // builtin_get_metadata about host indices keeps that function pure and its 19
 // call sites untouched; those call sites read metadata only as a fallback for
 // a missing own property.
@@ -4066,7 +4066,7 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
     }
 
     // A constructor needs an own .prototype with a .constructor back-reference
-    // (ECMA-262 §17): `new` derives the instance prototype from it, `class D
+    // (ES2026 §18): `new` derives the instance prototype from it, `class D
     // extends HostCtor` rejects a constructor whose .prototype is not an
     // object, and `instanceof` walks it. Non-constructors get none, matching
     // builtin methods and arrow functions.
@@ -4274,19 +4274,19 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register isFinite
     if (!register_simple_builtin(global_env, heap, "isFinite", Builtin.IS_FINITE.ordinal)) return false;
 
-    // Register eval (ECMA-262 §15.1.2.1)
+    // Register eval (ES2026 §19.2.1)
     if (!register_simple_builtin(global_env, heap, "eval", Builtin.EVAL.ordinal)) return false;
 
-    // Register encodeURI (ECMA-262 §15.1.3.1)
+    // Register encodeURI (ES2026 §19.2.6.4)
     if (!register_simple_builtin(global_env, heap, "encodeURI", Builtin.ENCODE_URI.ordinal)) return false;
 
-    // Register encodeURIComponent (ECMA-262 §15.1.3.2)
+    // Register encodeURIComponent (ES2026 §19.2.6.5)
     if (!register_simple_builtin(global_env, heap, "encodeURIComponent", Builtin.ENCODE_URI_COMPONENT.ordinal)) return false;
 
-    // Register decodeURI (ECMA-262 §15.1.3.3)
+    // Register decodeURI (ES2026 §19.2.6.2)
     if (!register_simple_builtin(global_env, heap, "decodeURI", Builtin.DECODE_URI.ordinal)) return false;
 
-    // Register decodeURIComponent (ECMA-262 §15.1.3.4)
+    // Register decodeURIComponent (ES2026 §19.2.6.3)
     if (!register_simple_builtin(global_env, heap, "decodeURIComponent", Builtin.DECODE_URI_COMPONENT.ordinal)) return false;
 
     // Register escape (Annex B §B.2.1.1)
@@ -4301,11 +4301,11 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     $endif
 
     // Register global constants: NaN, Infinity, undefined
-    // ECMA-262 §15.1: these are {writable: false, enumerable: false, configurable: false}
+    // ES2026 §19.1: these are {writable: false, enumerable: false, configurable: false}
     if (!register_global_immutable(global_env, heap, "NaN", NUMBER, double::nan, 0)) return false;
     if (!register_global_immutable(global_env, heap, "Infinity", NUMBER, double::inf, 0)) return false;
     {
-        // Register `undefined`, ECMA-262 §15.1.1 value is the undefined value
+        // Register `undefined`, ES2026 §19.1.4 value is the undefined value
         HString* u_key = heap.str_intern("undefined");
         if (u_key == null) return false;
         TVal u_val;
@@ -4430,10 +4430,10 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register Generator constructor and prototype.  This also creates
     // the GeneratorFunction constructor as a full HObject, wires
     // GeneratorFunction.prototype → Generator.prototype, and registers
-    // GeneratorFunction as a global constructor (ECMA-262 §25.2.2).
+    // GeneratorFunction as a global constructor (ES2026 §27.3.1).
     if (!@optional_registration(features::ASYNC_GENERATORS, register_generator_constructor(global_env, heap))) return false;
 
-    // Register %IteratorPrototype% (ECMA-262 §25.1.2), shared prototype for all
+    // Register %IteratorPrototype% (ES2026 §27.1.3.3), shared prototype for all
     // built-in iterators, providing [Symbol.iterator]() that returns `this`.
     if (!register_iterator_prototype(heap)) return false;
     $if $feat(INTL):
@@ -4445,14 +4445,14 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register the Iterator global constructor, Iterator.prototype's helper
     // methods (map/filter/take/drop/flatMap/reduce/toArray/forEach/some/
     // every/find), %IteratorHelperPrototype%, and
-    // %WrapForValidIteratorPrototype% (ECMA-262 §27.1).
+    // %WrapForValidIteratorPrototype% (ES2026 §27.1).
     if (!@optional_registration(features::ITERATOR_HELPERS, register_iterator_ctor_and_helpers(global_env, heap))) return false;
 
-    // Register %AsyncFromSyncIteratorPrototype% (ECMA-262 §27.1.4), wraps a
+    // Register %AsyncFromSyncIteratorPrototype% (ES2026 §27.1.5.2), wraps a
     // sync iterator so `for await` can drive it.
     if (!@optional_registration(features::ASYNC_GENERATORS, register_async_from_sync_iterator_prototype(heap))) return false;
 
-    // Register the async-generator prototype chain (ECMA-262 §27.4, §27.6):
+    // Register the async-generator prototype chain (ES2026 §27.4, §27.6):
     // %AsyncIteratorPrototype%, %AsyncGeneratorPrototype%, %AsyncGenerator%,
     // %AsyncGeneratorFunction%.
     if (!@optional_registration(features::ASYNC_GENERATORS, register_async_generator(global_env, heap))) return false;
@@ -4500,7 +4500,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         // NativeErrors (TypeError, RangeError, etc.) are excluded here, their [[Prototype]]
         // is the Error constructor HObject (set by register_native_error_ctor), not Function.prototype.
         // GeneratorFunction is deliberately absent: its [[Prototype]] is
-        // %Function% itself, not Function.prototype (ECMA-262 §27.5.1.1), and
+        // %Function% itself, not Function.prototype (ES2026 §27.5.1.1), and
         // register_generator_constructor already set it.
         char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Promise" };
         for (int i = 0; i < ctor_names.len; i++) {
@@ -4520,7 +4520,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         if (function != null && function.prototype == null) heap.set_prototype(function, heap.function_proto);
     }
 
-    // Register globalThis (ECMA-262 §19.2.1), points back to the global object itself.
+    // Register globalThis (ES2026 §19.1.1), points back to the global object itself.
     // globalThis is a property of the global environment's bindings object.
     {
         HString* gthis_key = builtin_intern_string(heap, "globalThis");
@@ -4531,7 +4531,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Wire the global object's [[Prototype]] to Object.prototype (ECMA-262 §9.3).
+    // Wire the global object's [[Prototype]] to Object.prototype (ES2026 §9.3).
     // This is required so that the global object inherits hasOwnProperty, valueOf,
     // toString, etc. from Object.prototype, as mandated by the spec.
     if (heap.object_proto != null) {

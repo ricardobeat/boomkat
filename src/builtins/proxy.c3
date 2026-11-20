@@ -1,4 +1,4 @@
-// Proxy exotic object, ES2020 §10.5.
+// Proxy exotic object, ES2026 §10.5.
 //
 // Implements the Proxy constructor, Proxy.revocable, and the essential
 // internal methods (MOP operations) with their trap-result invariant
@@ -103,7 +103,7 @@ fn void ProxyDesc.complete(&self) {
 // callers that may see a proxy use own_property_desc below).
 fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out) {
     *out = (ProxyDesc){};
-    // Integer-Indexed exotic [[GetOwnProperty]] (ES2022 §10.4.5.1): canonical
+    // TypedArray exotic [[GetOwnProperty]] (ES2026 §10.4.5.1): canonical
     // numeric index keys never live in the property table, bypass it entirely.
     if (is_typed_array_class(obj.get_class())) {
         double num;
@@ -336,7 +336,7 @@ fn bool tval_is_callable(TVal v) {
 // ============================================================================
 
 fn bool js_get_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, TVal receiver, TVal* out) {
-    // Integer-Indexed exotic [[Get]] (ES2022 §10.4.5.8): canonical numeric
+    // TypedArray exotic [[Get]] (ES2026 §10.4.5.4): canonical numeric
     // index keys never walk the prototype chain.
     if (is_typed_array_class(obj.get_class())) {
         double num;
@@ -387,7 +387,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
     // Module Namespace Exotic [[Set]] (§10.4.6.11): always returns false, with
     // no descriptor read (a plain `ns.x = v` never touches the binding).
     if (obj.flags.exotic_module_ns) { *res = false; return true; }
-    // Integer-Indexed exotic [[Set]] (ES2022 §10.4.5.10): canonical numeric
+    // TypedArray exotic [[Set]] (ES2026 §10.4.5.5): canonical numeric
     // index keys bypass OrdinarySet entirely.
     if (is_typed_array_class(obj.get_class())) {
         double num;
@@ -422,7 +422,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
         // A TypedArray encountered while walking up the prototype chain
         // (cur != obj) has its own exotic [[Set]], OrdinarySetWithOwnDescriptor
         // recurses into parent.[[Set]](P, V, Receiver) rather than treating it
-        // as a flat OrdinaryGetOwnProperty lookup (ES2024 §9.1.9.2 step 2.b).
+        // as a flat OrdinaryGetOwnProperty lookup (ES2026 §10.1.9.2 step 2.b).
         if (cur != obj && is_typed_array_class(cur.get_class())) {
             return js_set_with_receiver(vm, heap, cur, key, val, receiver, res);
         }
@@ -493,7 +493,7 @@ fn bool set_on_receiver(void* vm, Heap* heap, HString* key, TVal val, TVal recei
             return true;
         }
     }
-    // ArraySetLength exotic receiver (ES2024 §10.4.2.1 [[DefineOwnProperty]]):
+    // ArraySetLength exotic receiver (ES2026 §10.4.2.1 [[DefineOwnProperty]]):
     // CreateDataProperty(Receiver, "length", {value}) on an Array must run
     // the full ArraySetLength algorithm, not a plain put_prop.
     if (recv_obj.get_class() == hobject::ObjClass.ARRAY && key.equals("length")) {
@@ -534,7 +534,7 @@ fn bool set_on_receiver(void* vm, Heap* heap, HString* key, TVal val, TVal recei
 // ============================================================================
 
 fn bool js_has_property(void* vm, Heap* heap, HObject* obj, HString* key, bool* out) {
-    // Integer-Indexed exotic [[HasProperty]] (ES2022 §10.4.5.2): a canonical
+    // TypedArray exotic [[HasProperty]] (ES2026 §10.4.5.2): a canonical
     // numeric index key never falls through to OrdinaryHasProperty / the
     // prototype chain, whether or not it is a valid in-bounds index.
     if (is_typed_array_class(obj.get_class())) {
@@ -905,7 +905,7 @@ fn bool proxy_desc_compatible(bool extensible, ProxyDesc* desc, ProxyDesc* curre
 }
 
 // ============================================================================
-// ArraySetLength (ES2024 §10.4.2.4), shared by every [[DefineOwnProperty]]
+// ArraySetLength (ES2026 §10.4.2.4), shared by every [[DefineOwnProperty]]
 // entry point that can target an Array's "length" (Object.defineProperty,
 // Object.defineProperties, Reflect.defineProperty, and ordinary_define_own's
 // own callers via the proxy [[DefineOwnProperty]] trap fallback).
@@ -1000,12 +1000,12 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
         return true;
     }
 
-    // ES5 §15.4.5.1 step 3.a.i: reject writable false→true on non-writable length.
+    // ES2026 §10.4.2.4: reject writable false→true on non-writable length.
     if (desc.has_writable && desc.writable && !len_is_writable) {
         return true;
     }
 
-    // ES5 §15.4.5.1 step 3.f.i: if non-writable, reject value changes.
+    // ES2026 §10.4.2.4: if non-writable, reject value changes.
     if (arr_has_new_len && !len_is_writable && arr_new_len != old_len) {
         return true;
     }
@@ -1060,7 +1060,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
     }
     array_set_length(obj, arr_new_len, heap);
 
-    // ES5 §15.4.5.1 step 3.i.ii/3.j: apply writable:false AFTER truncation.
+    // ES2026 §10.4.2.4: apply writable:false AFTER truncation.
     // (The spec says to set writable last so that the length can be modified
     // during element deletion even when the descriptor requests non-writable.)
     if (desc.has_writable && !desc.writable) {
@@ -1083,7 +1083,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
         }
     }
 
-    // ES2024 §10.4.2.4 step 20: stopping at a non-configurable element is a
+    // ES2026 §10.4.2.4 step 20: stopping at a non-configurable element is a
     // `false` result (like the other validation rejections above), not a
     // thrown error, Object.defineProperty wraps it into a TypeError.
     if (threw_type_error) {
@@ -1099,12 +1099,12 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
 // ============================================================================
 
 fn bool ordinary_define_own(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* desc, bool* res) {
-    // ArraySetLength (ES2024 §10.4.2.4): defining "length" on an Array runs
+    // ArraySetLength (ES2026 §10.4.2.4): defining "length" on an Array runs
     // its own exotic algorithm instead of ValidateAndApplyPropertyDescriptor.
     if (obj.get_class() == hobject::ObjClass.ARRAY && key.equals("length")) {
         return array_set_length_desc(vm, heap, obj, desc, res);
     }
-    // Integer-Indexed exotic [[DefineOwnProperty]] (ES2022 §10.4.5.3): canonical
+    // TypedArray exotic [[DefineOwnProperty]] (ES2026 §10.4.5.3): canonical
     // numeric index keys bypass ValidateAndApplyPropertyDescriptor entirely.
     if (is_typed_array_class(obj.get_class())) {
         double num;
@@ -1788,7 +1788,7 @@ fn bool proxy_mop_prevent_extensions(void* vm, Heap* heap, HObject* proxy, bool*
     return true;
 }
 
-// SetIntegrityLevel(O, level), ES2015 §7.3.13, for a Proxy target.
+// SetIntegrityLevel(O, level), ES2026 §7.3.15, for a Proxy target.
 // Routes [[PreventExtensions]] then [[DefineOwnProperty]] for every own key
 // through the MOP so a `defineProperty`/`preventExtensions` trap observes
 // the same partial descriptors an ordinary object walk would apply: data
@@ -1832,7 +1832,7 @@ fn bool proxy_set_integrity_level(void* vm, Heap* heap, HObject* proxy, bool fro
     return true;
 }
 
-// TestIntegrityLevel(O, level), ES2015 §7.3.15, for a Proxy.
+// TestIntegrityLevel(O, level), ES2026 §7.3.16, for a Proxy.
 // The proxy MOP calls are required even when their traps are absent: in that
 // case proxy_mop_own_keys forwards to the target's [[OwnPropertyKeys]], while
 // [[GetOwnProperty]] still runs on the outer proxy for every forwarded key.
@@ -2046,7 +2046,7 @@ fn void builtin_proxy_call(BuiltinContext* ctx) {
         // No trap: forward to the target.
         if (ctx.is_constructor) {
             if (heap.construct_fn == null) { ctx.result_undefined(); return; }
-            // ES2020 §10.5.2 step 5: Construct(target, args, newTarget). newTarget
+            // ES2026 §10.5.13: Construct(target, args, newTarget). newTarget
             // is whatever the caller supplied (Reflect.construct's third argument),
             // defaulting to the proxy itself (p) for ordinary `new P(...)` calls.
             // The Get(newTarget, "prototype") of GetPrototypeFromConstructor is

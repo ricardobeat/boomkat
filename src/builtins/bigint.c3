@@ -31,7 +31,7 @@ fn void builtin_set_bigint_result(BuiltinContext* ctx, hbigint::HBigInt* box) {
 }
 
 // ============================================================================
-// ToBigInt (ES2020 §7.1.13)
+// ToBigInt (ES2026 §7.1.13)
 // ============================================================================
 
 // Convert a value to an int128 BigInt per ToBigInt.  On failure sets
@@ -66,7 +66,7 @@ fn hbigint::HBigInt* builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok)
         }
         case NUMBER:
         case FASTINT:
-            // ES2020 §7.1.13 ToBigInt(Number) → always TypeError.  (The BigInt
+            // ES2026 §7.1.13 ToBigInt(Number) → always TypeError.  (The BigInt
             // constructor's Number path is handled separately, before this.)
             *ok = false;
             arr_throw_type_error(ctx, "Cannot convert a Number to a BigInt");
@@ -98,7 +98,7 @@ fn hbigint::HBigInt* builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok)
     }
 }
 
-// NumberToBigInt (ES2020 §7.1.13 step for Number): the number must be an
+// NumberToBigInt (ES2026 §21.2.1.1.1): the number must be an
 // integer. A non-integral or non-finite value faults BIGINT_SYNTAX; there is no
 // magnitude limit, since every finite integral double is representable.
 fn hbigint::HBigInt*? number_to_bigint(Heap* hp, double d) {
@@ -109,7 +109,7 @@ fn hbigint::HBigInt*? number_to_bigint(Heap* hp, double d) {
 
 
 // ============================================================================
-// BigInt(value), ES2020 §20.2.1
+// BigInt(value), ES2026 §21.2.1
 // ============================================================================
 
 fn void builtin_bigint(BuiltinContext* ctx) {
@@ -125,7 +125,7 @@ fn void builtin_bigint(BuiltinContext* ctx) {
     }
     TVal* arg = &ctx.regs[ctx.base_reg];
 
-    // ES2020 §20.2.1.1: if the (ToPrimitive'd) argument is a Number, use
+    // ES2026 §21.2.1.1: if the (ToPrimitive'd) argument is a Number, use
     // NumberToBigInt (integral-only, else RangeError) rather than ToBigInt
     // (which would TypeError).  Resolve ToPrimitive(number) for objects first.
     TVal prim = *arg;
@@ -159,7 +159,7 @@ fn void builtin_bigint(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// BigInt.asIntN(bits, value) / BigInt.asUintN(bits, value), ES2020 §20.2.2
+// BigInt.asIntN(bits, value) / BigInt.asUintN(bits, value), ES2026 §21.2.2
 // ============================================================================
 
 // Parse the `bits` argument: ToIndex (a non-negative integer).  On failure
@@ -188,7 +188,7 @@ fn void builtin_bigint_as_intn(BuiltinContext* ctx) {
     bigint_as_common(ctx, true);
 }
 
-// Shared body of asIntN / asUintN (ECMA-262 §21.2.2.1-2), which differ only in
+// Shared body of asIntN / asUintN (ES2026 §21.2.2.1-2), which differ only in
 // how the retained low bits are interpreted.
 fn void bigint_as_common(BuiltinContext* ctx, bool is_signed) {
     uint bits;
@@ -208,10 +208,10 @@ fn void bigint_as_common(BuiltinContext* ctx, bool is_signed) {
 }
 
 // ============================================================================
-// BigInt.prototype.toString([radix]) / valueOf(), ES2020 §20.2.3
+// BigInt.prototype.toString([radix]) / valueOf(), ES2026 §21.2.3
 // ============================================================================
 
-// thisBigIntValue (ES2020 §20.2.3.4): unwrap a BigInt primitive.  On failure
+// thisBigIntValue (ES2026 §21.2.3): unwrap a BigInt primitive.  On failure
 // sets ctx.should_throw and returns false.
 fn bool bigint_this_value(BuiltinContext* ctx, hbigint::HBigInt** out_val) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];

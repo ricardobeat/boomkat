@@ -41,7 +41,7 @@ fn uint dv_elem_size(hobject::ObjClass cls) {
 }
 
 // ============================================================================
-// DataView(buffer, byteOffset=0, byteLength=undefined), ES2015 §24.2.2.1
+// DataView(buffer, byteOffset=0, byteLength=undefined), ES2026 §25.3.2.1
 // ============================================================================
 
 fn void builtin_dataview(BuiltinContext* ctx) {
@@ -145,7 +145,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// DataView.prototype accessors, ES2015 §24.2.4.1-3
+// DataView.prototype accessors, ES2026 §25.3.4.1-3
 // ============================================================================
 
 fn void builtin_dataview_proto_buffer_get(BuiltinContext* ctx) {

@@ -542,11 +542,8 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         ctx.result_number(double::nan);
         return;
     }
-    // ES2015 §18.2.5: parseInt(string, radix), ToString(string) first.
-    // The previous fast-path returned fastints directly (skipping ToString) and
-    // bailed to NaN for any non-string input, wrong for Number(-0), Number(NaN),
-    // Boolean values, etc. The spec defines parseInt on the string form of the
-    // argument regardless of input type.
+    // ES2026 §19.2.5: parseInt(string, radix) always applies ToString(string)
+    // first, regardless of input type (e.g. Number(-0), NaN, booleans).
     TVal* arg = &ctx.regs[ctx.base_reg];
     HString* h;
     if (arg.is_string()) {
@@ -559,7 +556,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         ctx.result_number(double::nan);
         return;
     }
-    // Radix coercion (ES2015 §18.2.5 step 7: ToInt32).
+    // Radix coercion (ES2026 §19.2.5 step 7: ToInt32).
     // Done before string scanning; a throwing radix must propagate.
     int radix = 0;
     if (ctx.argc > 1) {
@@ -733,7 +730,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         break;
     }
 
-    // Match the longest StrDecimalLiteral prefix (ES2015 §7.1.3.1 Table 10).
+    // Match the longest StrDecimalLiteral prefix (ES2026 §7.1.4.1.1).
     // Grammar: [+-]? (Infinity | DecimalDigits? "." DecimalDigits? Exponent?
     //                  | DecimalDigits Exponent?)
     // Crucially, this does NOT include the "0x"/"0X" hex prefix that
@@ -794,7 +791,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
     ctx.result_number(d);
 }
 
-// isNaN(number) / isFinite(number), ES2015 §18.2.2-3. Both take ToNumber(x)
+// isNaN(number) / isFinite(number), ES2026 §19.2.2-3. Both take ToNumber(x)
 // first, so an object argument runs its valueOf/toString: the result must
 // reflect the coerced value, and a throwing valueOf must propagate rather than
 // be swallowed into NaN. builtin_to_number is the non-VM coercion and cannot
@@ -857,7 +854,7 @@ fn bool is_intrinsic_eval(TVal callee) {
 
 fn void builtin_eval(BuiltinContext* ctx) {
     $if features::SOURCE_COMPILER:
-    // ES5 §15.1.2.1: eval(x)
+    // ES2026 §19.2.1: eval(x)
     if (ctx.argc < 1) {
         // No args → return undefined
         ctx.result_undefined();
@@ -904,7 +901,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // source. Detect this before compiling so the eval CompilerContext can
     // permit the syntax (see compile_eval's allow_super doc comment).
     //
-    // Per ES2022 §8.7.1, direct eval ALSO inherits the caller's
+    // Per ES2026 §9.2, direct eval ALSO inherits the caller's
     // PrivateEnvironment, i.e. private field/method references inside the
     // eval body resolve against the calling class body's declared names.
     // The caller (the function whose body contains `eval(...)`) stashed a
@@ -922,7 +919,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // thunk is on top, but that thunk is an engine artifact: in the spec the
     // running execution context during parameter evaluation is the function
     // being initialized, so the eval's `var` bindings must land in its
-    // parameter environment, visible to the body (ES2024 §10.2.11 steps
+    // parameter environment, visible to the body (ES2026 §10.2.11 steps
     // 27-29). eval_caller therefore skips a default thunk to its parent.
     vm::Activation* eval_caller = null;
     bool caller_has_direct_eval = false;
@@ -994,7 +991,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
                     caller_direct_eval_in_function = true;
                 }
                 // super.x/super[x] in eval is only allowed when the calling
-                // function is a method with a [[HomeObject]] (ES2022 §15.7.3
+                // function is a method with a [[HomeObject]] (ES2026 §19.2.1.1
                 // PerformEval step 7: "If thisEnvRec has a [[HomeObject]]
                 // field"). has_home_object is set at compile time when
                 // super_is_home_object is true (i.e. the function is a
@@ -1048,7 +1045,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
                     // __home_object__.
                     parent_super_home_is_object_literal = true;
                 }
-                // ContainsArguments (ES2022 §15.7.10 step 14): a direct eval
+                // ContainsArguments (ES2026 §19.2.1.1): a direct eval
                 // called from a class field/static initializer or static
                 // block, or from another eval body that itself inherited
                 // the restriction (forbid_arguments is stamped on every
@@ -1082,7 +1079,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     parent_static_super_name,
                                                     parent_home_object_name,
                                                     parent_super_home_is_object_literal,
-                                                    // ES2024 §19.2.1.1 step 12:
+                                                    // ES2026 §19.2.1.1 step 12:
                                                     // direct eval inherits the
                                                     // caller's strictness;
                                                     // an INDIRECT eval is
@@ -1130,7 +1127,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // activation's ACT_FLAG_DIRECT_EVAL flag (set by the compiler when the
     // function body contains a direct eval(...) call). The environment the
     // eval's own scope is parented on is the caller's lexical environment for
-    // direct eval (ES5 §10.4.2), and the global environment for indirect eval.
+    // direct eval (ES2026 §19.2.1.1), and the global environment for indirect eval.
     vm::Vm* eval_vm = (vm::Vm*)ctx.vm;
     usz act_count = eval_vm.activation_count;
     bool is_direct_eval = false;
@@ -1156,7 +1153,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
         caller_this = eval_caller.this_binding;
     }
     // Declaration-instantiation leak semantics follow the eval SOURCE's own
-    // strictness (ES2015 §18.2.1.1 PerformEval step 12), independent of the
+    // strictness (ES2026 §19.2.1.1 PerformEval step 12), independent of the
     // fact that this engine executes every function in strict mode.
     //
     //   - Strict eval source: varEnv is a FRESH declarative env. A single
@@ -1169,7 +1166,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     //     EvalDeclarationInstantiation; lex_env is a fresh declarative child
     //     of the call-site's lex_env (chaining through var_env so DECLVAR
     //     writes stay visible to same-eval reads), isolating let/const/class.
-    // A direct eval inherits the calling code's strictness (ES2024 §19.2.1.1
+    // A direct eval inherits the calling code's strictness (ES2026 §19.2.1.1
     // step 12: "Eval code is strict mode code if it begins with a Directive
     // Prologue that contains a Use Strict Directive OR if the call to eval
     // is a direct eval that is contained in strict mode code"). An indirect
@@ -1190,7 +1187,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
         }
     } else {
         // Sloppy eval: `var`/`function` bindings go in the enclosing variable
-        // environment (ES2015 §18.2.1.2 EvalDeclarationInstantiation), so the
+        // environment (ES2026 §19.2.1.3 EvalDeclarationInstantiation), so the
         // eval body must run with var_env = the caller's var_env (direct) or
         // the global env (indirect). The temp lex_env above holds only the
         // eval's own let/const/class declarations.
@@ -1202,7 +1199,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
             (*func_obj.extra_ptr()).func.lex_env = lex_env_raw;
         }
 
-        // ES2024 §18.2.1.2 step 5.4: a sloppy eval's var-declared name that
+        // ES2026 §19.2.1.3: a sloppy eval's var-declared name that
         // already has a binding in any enclosing declarative or function-
         // scope environment between the eval's lexical environment and its
         // variable environment is a SyntaxError. The chain holds, e.g., a
@@ -1295,7 +1292,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     func_tv.set_object(func_obj);
     ctx.regs[ctx.base_reg - 2] = func_tv;
 
-    // Set this binding per ES6 §18.2.1.2:
+    // Set this binding per ES2026 §19.2.1.1:
     //   - Indirect eval: thisArg = the global object
     //   - Direct eval: thisArg = the calling context's this binding
     // The re-dispatch CALL handler runs the eval'd function with `this`
@@ -1327,7 +1324,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
 }
 
 // $262.evalScript(src), the test262 host hook that runs `src` as an
-// independent global Script (ES2015 §18.2.1 ScriptEvaluation), NOT as an
+// independent global Script (ES2026 §16.1.6 ScriptEvaluation), NOT as an
 // eval call. Unlike `eval`, this is never "direct" or "indirect": the
 // compiled Program always gets a fresh top-level activation whose
 // var_env/lex_env is the real global environment, so `var`/`function`/
@@ -1373,7 +1370,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     // want_completion: ScriptEvaluation's result is the Script's completion
     // value, which this hook returns to its caller.
     // Indirect eval: the Script is non-strict unless its own prologue opts in
-    // (ES2024 §19.2.1.1 step 12 with strictCaller = false).
+    // (ES2026 §19.2.1.1 step 12 with strictCaller = false).
     CompiledFunction*? cf = compiler::compile(&lex, ctx.heap, true, true);
     CompiledFunction* func;
     if (try f = cf) {

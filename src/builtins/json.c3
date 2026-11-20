@@ -13,7 +13,7 @@ import boomkat::vm;
 import std::io;
 
 // ============================================================================
-// JSON.parse (ECMA-262 §15.12.2)
+// JSON.parse (ES2026 §25.5.2)
 // ============================================================================
 
 // A parallel parse-tree node recording the exact source span of each JSON
@@ -104,7 +104,7 @@ fn uint json_walk_array_length(void* vm, Heap* heap, HObject* obj) {
     return 0;
 }
 
-// InternalizeJSONProperty, ECMA-262 §25.5.1.
+// InternalizeJSONProperty, ES2026 §25.5.2.4.
 // Implements the spec algorithm: Get(holder,name) via full [[Get]] (invokes
 // accessors and Proxy traps), recurse into object/array children in
 // integer-ascending + insertion order (using [[OwnPropertyKeys]] for Proxy
@@ -331,7 +331,7 @@ fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
     ctx.should_throw = true;
 }
 
-// JSON.parse(text [, reviver]), ECMA-262 §15.12.2
+// JSON.parse(text [, reviver]), ES2026 §25.5.2
 faultdef JSON_MODULE_PARSE_ERROR;
 
 // Parse a whole JSON document (a JSON-module's file contents) into a TVal,
@@ -440,7 +440,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 
     json_install_root_prototype(ctx.heap, result);
 
-    // Reviver support (ECMA-262 §15.12.2 step 4)
+    // Reviver support (ES2026 §25.5.2)
     if (ctx.argc > 1) {
         TVal* reviver_arg = &ctx.regs[ctx.base_reg + 1];
         if (reviver_arg.is_lightfunc() || (reviver_arg.is_object() &&
@@ -457,7 +457,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
                 TVal holder_tv;
                 holder_tv.set_object(holder);
 
-                // ECMA-262 §15.12.2 step 4: walk the root value through the reviver.
+                // ES2026 §25.5.2: walk the root value through the reviver.
                 // Propagate abrupt completions (reviver-call-err, reviver-get-name-err).
                 TVal walked = json_walk(ctx.vm, ctx.heap, *reviver_arg, holder_tv, empty_key, text_str, root_rec);
                 json_record_free(ctx.heap, root_rec);
@@ -483,7 +483,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// JSON.stringify (ECMA-262 §15.12.3)
+// JSON.stringify (ES2026 §25.5.4)
 // ============================================================================
 
 // QuoteJSONString (ECMA-262). The text is written as UTF-16 units: a lone
@@ -701,7 +701,7 @@ fn void json_stack_pop(JsonSerializeCtx* jctx) {
     if (jctx.visited_count > 0) jctx.visited_count--;
 }
 
-// ECMA-262 §9.8.1 ToString for Number values, produces the shortest string that
+// ES2026 §6.1.6.1.20 Number::toString, produces the shortest string that
 // uniquely identifies the IEEE 754 double.  Writes into `buf` and returns the
 // number of characters written.
 fn usz json_number_to_string(double d, char* buf, usz buf_size) {
@@ -720,7 +720,7 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
         mem::copy(buf, "-Infinity", (sz)(9));
         return 9;
     }
-    // +0 / -0 → "0"  (ECMA-262 §9.8.1 step 2)
+    // +0 / -0 → "0"  (ES2026 §6.1.6.1.20)
     if (d == 0.0) {
         buf[0] = '0';
         return 1;
@@ -741,7 +741,7 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
     return (flen > 0) ? (usz)flen : 0;
 }
 
-// ECMA-262 §15.12.3 step 5: Type unwrapping via ToString/ToNumber/ToBoolean.
+// ES2026 §25.5.4: Type unwrapping via ToString/ToNumber/ToBoolean.
 // For String/Number wrapper objects, calls toString()/valueOf() (per spec)
 // rather than reading the cached primitive_value (which ignores overrides).
 // Returns the unwrapped TVal. Sets *had_error=true if the method threw.
@@ -806,7 +806,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     return val;
 }
 
-// Apply toJSON + replacer function + type unwrapping per ECMA-262 §15.12.3
+// Apply toJSON + replacer function + type unwrapping per ES2026 §25.5.4
 // SerializeJSONProperty steps 1-4. Returns the processed value.
 // If the result should be omitted (undefined/functions), sets *omit=true.
 fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal holder, bool* omit) {
@@ -900,7 +900,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
         }
     }
 
-    // Step 4: Unwrap wrapper objects (String/Number/Boolean/BigInt) per ECMA-262 §15.12.3
+    // Step 4: Unwrap wrapper objects (String/Number/Boolean/BigInt) per ES2026 §25.5.4
     // For String and Number wrappers, ToString and ToNumber call toString() and
     // valueOf(), which must respect any overridden methods on the wrapper.
     if (val.is_object() && val.get_heapptr() != null) {
@@ -998,7 +998,7 @@ fn JsonShapePlan* json_shape_plan(Heap* heap, HObject* obj) {
 fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     if (jctx.error) return -1;
 
-    // ECMA-262 §15.12.3 step 1: If stack contains value, throw TypeError
+    // ES2026 §25.5.4: If stack contains value, throw TypeError
     if (json_stack_has(jctx, obj)) {
         json_throw_type_error(jctx, "Converting circular structure to JSON");
         return -1;
@@ -1144,7 +1144,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         }
     } else {
         // Snapshot own enumerable String keys before iterating, so that getters
-        // that delete properties don't cause keys to be skipped (ECMA-262 §15.12.3
+        // that delete properties don't cause keys to be skipped (ES2026 §25.5.4
         // step 4.b), in EnumerableOwnPropertyNames order: integer indices
         // ascending, then String keys in insertion order, Symbols excluded.
         //
@@ -1257,7 +1257,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
 fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     if (jctx.error) return -1;
 
-    // ECMA-262 §15.12.3 step 1: If stack contains value, throw TypeError
+    // ES2026 §25.5.4: If stack contains value, throw TypeError
     if (json_stack_has(jctx, arr)) {
         json_throw_type_error(jctx, "Converting circular structure to JSON");
         return -1;
@@ -1517,7 +1517,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
     }
 }
 
-// JSON.stringify(value [, replacer [, space]]), ECMA-262 §15.12.3
+// JSON.stringify(value [, replacer [, space]]), ES2026 §25.5.4
 fn void builtin_json_stringify(BuiltinContext* ctx) {
     // Clear any stale error flag and value
     ctx.heap.has_error = false;
@@ -1777,7 +1777,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
         if (is_sym_space) {
             // Skip, leave gap empty
         } else if (space_arg.is_fastint()) {
-            // ECMA-262 §15.12.3 step 6: min(10, ToInteger(space)); if < 1, gap is empty
+            // ES2026 §25.5.4: min(10, ToIntegerOrInfinity(space)); if < 1, gap is empty
             long si = space_arg.get_fastint();
             if (si < 0) si = 0;
             if (si > 10) si = 10;

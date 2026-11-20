@@ -309,7 +309,7 @@ fn void builtin_string_proto_toString(BuiltinContext* ctx) {
         ctx.result_string(this_val.get_heapptr());
         return;
     }
-    // Per ECMA-262 §21.1.3.27 step 1-3: thisStringValue throws TypeError for non-String values
+    // Per ES2026 §22.1.3.29: thisStringValue throws TypeError for non-String values
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "String.prototype.toString requires that 'this' be a String");
 }
@@ -335,7 +335,7 @@ fn void builtin_string_proto_valueOf(BuiltinContext* ctx) {
         ctx.result_string(this_val.get_heapptr());
         return;
     }
-    // Per ECMA-262 §21.1.3.28 step 1-3: thisStringValue throws TypeError for non-String values
+    // Per ES2026 §22.1.3.35: thisStringValue throws TypeError for non-String values
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "String.prototype.valueOf requires that 'this' be a String");
 }
@@ -507,7 +507,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
-    // Per ECMA-262 §15.5.4.13 step 6: if end is undefined, let end be len.
+    // Per ES2026 §22.1.3.22 step 6: if end is undefined, let end be len.
     double end_d;
     if (ctx.argc > 1) {
         TVal* end_arg = &ctx.regs[ctx.base_reg + 1];
@@ -521,7 +521,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
     }
     if (ctx.should_throw) { ctx.result_undefined(); return; }
 
-    // ECMA-262 §15.5.4.13 steps 7-8: clamp to [0, len]. NaN→0; ±∞ resolve to the
+    // ES2026 §22.1.3.22 steps 7-8: clamp to [0, len]. NaN→0; ±∞ resolve to the
     // clamped extreme (cast to int after clamping so Infinity doesn't wrap).
     int start_i;
     if (math::is_nan(start_d) || start_d == 0.0) {
@@ -562,7 +562,7 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
-    // Per ECMA-262 §15.5.4.15 step 6: if end is undefined, let end be len.
+    // Per ES2026 §22.1.3.25 step 6: if end is undefined, let end be len.
     double end_d;
     if (ctx.argc > 1) {
         TVal* end_arg = &ctx.regs[ctx.base_reg + 1];
@@ -1244,7 +1244,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
 
     uint sep_len = sep_hstr.unit_len();
 
-    // Empty separator: split by UTF-16 code unit (ECMA-262 §15.5.4.14 step 11,
+    // Empty separator: split by UTF-16 code unit (ES2026 §22.1.3.23,
     // T is a String of length 1 containing element q of S, where S is
     // indexed by UTF-16 code unit, not Unicode codepoint or byte).
     if (sep_len == 0) {
@@ -1366,7 +1366,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
 
     TVal* search_val = &ctx.regs[ctx.base_reg];
 
-    // Check for @@replace protocol (ECMA-262 §21.1.3.14 step 2).
+    // Check for @@replace protocol (ES2026 §22.1.3.19 step 2).
     // Step 2: If searchValue is neither undefined nor null, GetMethod(searchValue, @@replace).
     // Use builtins_generic_get so accessor/getter properties are invoked (propagating throws).
     if (ctx.argc >= 1 && !search_val.is_null() && !search_val.is_undefined()) {
@@ -1709,7 +1709,7 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
 
     HString* search_hstr;
     if (ctx.argc > 0) {
-        // ECMA-262 §21.1.3.7 step 3-6: IsRegExp(searchString) → throw TypeError
+        // ES2026 §22.1.3.8: IsRegExp(searchString) → throw TypeError
         int regexp_check = is_regexp_check_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (regexp_check < 0) { ctx.result_undefined(); return; }
         if (regexp_check == 1) {
@@ -1747,7 +1747,7 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
 
     HString* search_hstr;
     if (ctx.argc > 0) {
-        // ECMA-262 §21.1.3.18 step 3-6: IsRegExp(searchString) → throw TypeError
+        // ES2026 §22.1.3.24: IsRegExp(searchString) → throw TypeError
         int regexp_check = is_regexp_check_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (regexp_check < 0) { ctx.result_undefined(); return; }
         if (regexp_check == 1) {
@@ -1785,7 +1785,7 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
 
     HString* search_hstr;
     if (ctx.argc > 0) {
-        // ECMA-262 §21.1.3.6 step 3-6: IsRegExp(searchString) → throw TypeError
+        // ES2026 §22.1.3.7: IsRegExp(searchString) → throw TypeError
         int regexp_check = is_regexp_check_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (regexp_check < 0) { ctx.result_undefined(); return; }
         if (regexp_check == 1) {
@@ -1829,7 +1829,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     // Step 4: RangeError if count < 0 or count is +∞ (NaN already clamped to 0).
     if (count_d < 0 || math::is_inf(count_d)) {
-        // Throw RangeError per ECMA-262 §21.1.3.14 step 4.
+        // Throw RangeError per ES2026 §22.1.3.18 step 4.
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid count value");
         return;
     }
@@ -2347,7 +2347,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     // Default form: NFC
     int n_type = unicode_bindings::UNICODE_NFC;
 
-    // Process form argument (ECMA-262 §21.1.3.12 steps 3-5)
+    // Process form argument (ES2026 §22.1.3.15 steps 3-5)
     // If form is not provided or is undefined, default to NFC.
     if (ctx.argc > 0 && !ctx.regs[ctx.base_reg].is_undefined()) {
         HString* form = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);

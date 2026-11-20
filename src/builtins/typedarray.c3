@@ -132,7 +132,7 @@ fn char[] ta_class_name(hobject::ObjClass cls) {
     return TA_INFO[(int)cls - (int)hobject::ObjClass.INT8ARRAY].name;
 }
 
-// ES2022 §7.1.21 CanonicalNumericIndexString, true iff `s` is "-0" or the
+// ES2026 §7.1.21 CanonicalNumericIndexString, true iff `s` is "-0" or the
 // ToString of some number that round-trips back to the same text (e.g.
 // "1.5", "NaN", "Infinity"). Plain array-index integer strings ("0", "1",
 // ...) are handled separately via HString.is_arridx() and never reach here.
@@ -242,7 +242,7 @@ fn HObject* typedarray_instance_proto(BuiltinContext* ctx, HObject* fallback_pro
 // Per-class intrinsic default, independent of a subclass's new.target.
 fn HObject* typed_array_resolve_instance_proto(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    // AllocateTypedArray's defaultProto (ES2022 §22.2.5.1 per-class TypedArray()
+    // AllocateTypedArray's defaultProto (ES2026 §23.2.5.1 per-class TypedArray()
     // constructor step 3) is the specific subclass's own %XArray.prototype%, not
     // the shared abstract %TypedArray.prototype%.
     HObject* default_proto = heap.typedarray_proto;
@@ -393,7 +393,7 @@ fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
     return out;
 }
 
-// ES2022 §7.1.11 ToUint8Clamp, NaN -> 0, clamp to [0,255], banker's
+// ES2026 §7.1.12 ToUint8Clamp, NaN -> 0, clamp to [0,255], banker's
 // rounding (round half to even) on ties.
 fn char ta_to_uint8_clamped(double d) {
     if (d != d) return 0; // NaN
@@ -591,7 +591,7 @@ fn void ta_store_scalar(char* p, hobject::ObjClass cls, TAScalar* s) {
     }
 }
 
-// ES2022 §7.1.6 ToInt32 core, applied to an already-computed double.
+// ES2026 §7.1.6 ToInt32 core, applied to an already-computed double.
 // NaN/Infinity -> 0; otherwise truncate toward zero mod 2^32, reinterpreted
 // as signed 32-bit (sign bit set -> negative).
 fn long double_to_int32(double d) {
@@ -771,7 +771,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                     ctx.heap.has_error = false;
                     return;
                 }
-                // ES2015 §7.4.1 GetIterator step 5: the result of calling
+                // ES2026 §7.4.4 GetIterator: the result of calling
                 // @@iterator must be an Object, or TypeError.
                 if (!iterator.is_object() || iterator.get_heapptr() == null) {
                     arraybuffer_throw_type_error(ctx,
@@ -1076,7 +1076,7 @@ fn HObject* ta_validate(BuiltinContext* ctx) {
     return obj;
 }
 
-// IsViewOutOfBounds (ES2024 §10.4.5): a view over a resizable buffer goes
+// IsViewOutOfBounds (ES2026 §25.3.1.4): a view over a resizable buffer goes
 // out of bounds when the buffer shrinks past it. Covers both TypedArray and
 // DataView. Returns true if detached or out of bounds. Fixed (non-resizable)
 // buffers can never be OOB while live, so this collapses to a detach check.
@@ -1092,7 +1092,7 @@ fn bool view_is_out_of_bounds(HObject* obj) @inline {
     return off + (*obj.extra_ptr()).view.byte_length > buf_len;
 }
 
-// IsTypedArrayFixedLength (ES2024 §10.4.5.15): false iff the view is
+// IsTypedArrayFixedLength (ES2026 §10.4.5.15): false iff the view is
 // length-tracking, or its backing buffer is a resizable (non-shared)
 // ArrayBuffer. A non-fixed-length TypedArray cannot be made non-extensible,
 // its [[PreventExtensions]] returns false, so Object.freeze/seal on it (and
@@ -1164,7 +1164,7 @@ fn uint ta_element_count(HObject* obj) @inline {
     return view_effective_byte_length(obj) >> shift;
 }
 
-// IsValidIntegerIndex (ES2022 §10.4.5.9): true iff `idx` is a non-negative
+// IsValidIntegerIndex (ES2026 §10.4.5.16): true iff `idx` is a non-negative
 // integer, the buffer is not detached, and idx < [[ArrayLength]].
 fn bool ta_is_valid_integer_index(HObject* obj, double idx) {
     if (ta_is_detached(obj)) return false;
@@ -1175,7 +1175,7 @@ fn bool ta_is_valid_integer_index(HObject* obj, double idx) {
 }
 
 // CanonicalNumericIndexString + integer-index classification for a String
-// property key on a TypedArray (ES2022 §10.4.5 IntegerIndexedObject match).
+// property key on a TypedArray (ES2026 §10.4.5 TypedArray exotic object).
 // Returns true when `key` is a canonical numeric index string, with
 // `*out_num` set to the numeric value (any finite or infinite double,
 // possibly non-integer or negative) for further checks by the caller.
@@ -1190,7 +1190,7 @@ fn bool ta_key_numeric_index(Heap* heap, HString* key, double* out_num) {
     return is_canonical_numeric_index(heap, key, out_num);
 }
 
-// Integer-Indexed exotic [[GetOwnProperty]] (ES2022 §10.4.5.1) for a String
+// TypedArray exotic [[GetOwnProperty]] (ES2026 §10.4.5.1) for a String
 // key already known to be a canonical numeric index (`num`). Populates
 // `out` with a data-property descriptor (WEC) when the index is valid;
 // leaves `out.found = false` otherwise (still consumed the key, caller
@@ -1209,7 +1209,7 @@ fn void ta_own_index_desc(Heap* heap, HObject* obj, double num, ProxyDesc* out) 
     out.has_configurable = true; out.configurable = true;
 }
 
-// IntegerIndexedElementSet (ES2022 §10.4.5.10): ToNumber(value) first (may
+// TypedArraySetElement (ES2026 §10.4.5.18): ToNumber(value) first (may
 // run user code / throw), then silently no-op if OOB/detached afterwards.
 // `ctx` carries should_throw/throw_value for propagating ToNumber errors.
 fn void ta_integer_indexed_element_set(BuiltinContext* ctx, HObject* obj, double num, TVal value) {
@@ -1232,7 +1232,7 @@ fn void ta_integer_indexed_element_set(BuiltinContext* ctx, HObject* obj, double
     ta_write_element(p, cls, &converted, ctx);
 }
 
-// Normalize a relative index (ES2022 §23.2.4.1 ToIntegerOrInfinity + clamp).
+// Normalize a relative index (ES2026 §7.1.5 ToIntegerOrInfinity + clamp).
 fn uint ta_norm_index(double d, uint len) {
     if (d != d || d == 0.0) return 0;
     if (d < 0.0) {
@@ -3352,7 +3352,7 @@ fn HObject* ta_typed_array_create(BuiltinContext* ctx, TVal* args, uint nargs) {
         arraybuffer_throw_type_error(ctx, "TypedArrayCreate: result buffer is immutable");
         return null;
     }
-    // ES2022 §23.2.4.3 TypedArrayCreate step 4: when argumentList is
+    // ES2026 §23.2.4.1 TypedArrayCreateFromConstructor: when argumentList is
     // «length», validate the result's [[ArrayLength]] is at least the
     // requested length (a custom constructor may have ignored/shrunk it).
     if (nargs == 1 && (args[0].is_fastint() || args[0].is_number())) {
@@ -4258,7 +4258,7 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     length_tv.set_fastint(3);
     ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
-    // Per ES6 §22.2, each TypedArray constructor has its own .prototype that
+    // Per ES2026 §23.2, each TypedArray constructor has its own .prototype that
     // inherits from the shared %TypedArray%.prototype. We set @@toStringTag on
     // that per-ctor prototype so Object.prototype.toString.call(instance)
     // returns "[object <Name>]" rather than "[object TypedArray]".

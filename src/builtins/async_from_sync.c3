@@ -125,7 +125,7 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
     if (catch err = outer_raw) return null;
     HObject* outer = outer_raw;
 
-    // ECMA-262 §27.1.4.4 step: "Let valueWrapper be PromiseResolve(%Promise%,
+    // ES2026 §27.1.5.4 step: "Let valueWrapper be PromiseResolve(%Promise%,
     // value)", the full PromiseResolve abstract operation, which performs an
     // observable `Get(value, "constructor")` lookup when value is already a
     // Promise (returning it unchanged when the constructor is %Promise%)
@@ -194,7 +194,7 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
 
 // Native fulfill reaction for the internal value-promise: builds
 // `{value, done}` and fulfills the outer (returned) promise with it
-// (ECMA-262 §27.1.4.4 steps 9-11, "onFulfilled" closure).
+// (ES2026 §27.1.5.4 steps 9-11, "onFulfilled" closure).
 fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
     ctx.result_undefined();
     if (ctx.callee_obj == null) return;
@@ -242,7 +242,7 @@ fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
 }
 
 // Native reject reaction for the internal value-promise: forwards the
-// rejection reason straight to the outer promise (ECMA-262 §27.1.4.4 step 9,
+// rejection reason straight to the outer promise (ES2026 §27.1.5.4 step 9,
 // "onRejected" is `promiseCapability.[[Reject]]`).
 fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
     ctx.result_undefined();
