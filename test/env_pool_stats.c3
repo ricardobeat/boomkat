@@ -1,7 +1,5 @@
-// Environment-pool accounting harness for plans/085. Runs a JS workload, then
-// prints the heap's environment counters so a fixture can observe retention.
-// The workload itself lives in a .js file so the same source drives both the
-// normal runner and this counter oracle.
+// Environment-pool accounting harness: runs a JS workload and prints the
+// heap's environment counters so a fixture can observe retention.
 module env_pool_stats;
 
 import boomkat::compiler;

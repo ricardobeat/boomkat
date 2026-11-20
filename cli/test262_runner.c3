@@ -354,7 +354,6 @@ fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
     }
 }
 
-// Check for the `async` flag in frontmatter.
 fn bool is_async_test(char[] src) {
     return has_flag(src, "async");
 }
@@ -383,7 +382,6 @@ fn bool is_module_test(char[] path, char[] src) {
         && (contains_substr(src, "import") || contains_substr(src, "export"));
 }
 
-// Negative test phase from frontmatter.
 enum NegPhase : int {
     NONE,
     PARSE,
@@ -419,7 +417,6 @@ fn usz negative_type(char[] src, char[] out) {
 // Match thrown value constructor name against expected type.
 // Checks builtin error prototype chains and constructor name properties.
 fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
-    // Read thrown value from heap.error_value after unwinding.
     TVal thrown_val = hp.error_value;
     if (!thrown_val.is_object()) {
         return false;
@@ -427,7 +424,6 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     HObject* thrown = (HObject*)thrown_val.get_heapptr();
     if (thrown == null) return false;
 
-    // Check prototype chains for standard builtin error types.
     HObject* want_proto = null;
     if (compiler::str_eq(expected, "TypeError"))      { want_proto = hp.type_err_proto; }
     else if (compiler::str_eq(expected, "RangeError"))     { want_proto = hp.range_err_proto; }
@@ -479,7 +475,6 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     return false;
 }
 
-// Parse the `negative:` frontmatter block and return its declared phase.
 fn NegPhase negative_phase(char[] src) {
     char[] fm = frontmatter(src);
     usz i = find_key(fm, "negative:");
@@ -503,7 +498,6 @@ fn NegPhase negative_phase(char[] src) {
     return NegPhase.NONE;
 }
 
-// Run a `flags: [module]` test through the ESM resolve, link, and evaluate pipeline.
 fn int exec_js_module(Vm* v, Heap* hp, char[] test_path) {
     return esm::run_module_file(hp, v, test_path);
 }

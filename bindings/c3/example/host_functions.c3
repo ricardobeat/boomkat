@@ -34,9 +34,7 @@ fn void host_greet(JsCtx ctx, void* udata) {
     ctx.ret_string(string::tformat("hello, %s", name));
 }
 
-// `counter()` -- reads mutable host state through the udata pointer that was
-// handed to `register_fn`. This is how a callback reaches anything other than
-// globals: C3 function pointers cannot capture.
+// `counter()` -- mutates host state via udata (C3 function pointers cannot capture).
 fn void host_counter(JsCtx ctx, void* udata) {
     int* n = (int*)udata;
     (*n)++;
@@ -162,8 +160,7 @@ fn int main() {
     return 0;
 }
 
-// Evaluate `src` and print its result, or the message of whatever it failed
-// with. Everything above goes through this so the output reads as a transcript.
+// Evaluate `src` and print its result or error message.
 fn void show(JsContext* rt, String label, String src) {
     JsValue? v = rt.eval(src);
     if (catch e = v) {

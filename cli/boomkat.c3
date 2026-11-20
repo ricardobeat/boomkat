@@ -292,7 +292,8 @@ fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mo
     defer lex.free_arena();
     lex.skip_hashbang();
     lex.ts_mode = ts_mode;
-    // An owned `source` came from `mem`; the functions share it and it is freed with the last of them.
+    // An owned `source` came from `mem`; functions share it and free it with the last
+    // reference.
     bytecode::SourceBuf* source_buf = owned ? bytecode::source_buf_adopt(source) : null;
     lex.source_buf = source_buf;
     defer bytecode::source_buf_release(source_buf);
@@ -318,7 +319,6 @@ fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mo
     return unhandled_rejection_count > 0 ? 1 : 0;
 }
 
-// True if the path ends in `.ts`, `.mts`, or `.cts` (case-sensitive).
 fn bool has_ts_extension(String path) {
     if (path.len >= 3 && path[^3..] == ".ts") return true;
     if (path.len >= 4 && path[^4..] == ".mts") return true;

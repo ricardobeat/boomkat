@@ -185,7 +185,6 @@ fn int main(String[] args) {
         return 1;
     }
 
-    // Load source.
     time::Time t0 = debug ? time::now() : (time::Time)0;
     char[]? source_opt = file::load(mem, path);
     if (catch err = source_opt) {
@@ -195,7 +194,6 @@ fn int main(String[] args) {
     char[] source = source_opt;
     if (debug) io::printfn("  load source: %d us", (int)(time::now() - t0));
 
-    // Create heap.
     time::Time t1 = debug ? time::now() : (time::Time)0;
     Heap*? hp = heap::create(null, null, null, null, null);
     if (catch err = hp) {
@@ -207,7 +205,6 @@ fn int main(String[] args) {
 
     if (dump_ast || parse_only || dump_scopes) return ast_cli(source, hp, path, dump_ast, dump_scopes, module_mode);
 
-    // Create VM.
     time::Time t2 = debug ? time::now() : (time::Time)0;
     Vm*? v = vm::vm_create(hp);
     if (catch err = v) {
@@ -218,11 +215,9 @@ fn int main(String[] args) {
     v.trace = trace_vm;
     if (debug) io::printfn("  vm create:   %d us", (int)(time::now() - t2));
 
-    // Compile.
     time::Time t3 = debug ? time::now() : (time::Time)0;
 
     if (module_mode && !compile_only) {
-        // ESM module mode: resolve -> link -> execute.
         char[] module_name = path;
         esm::ModuleDef*? mod_opt = esm::resolve_module(hp, module_name, "");
         if (catch err = mod_opt) {
@@ -345,7 +340,6 @@ $endif
         return 0;
     }
 
-    // Execute.
     time::Time t4 = debug ? time::now() : (time::Time)0;
     TVal? res = v.execute(func);
     if (catch err = res) {
@@ -366,7 +360,6 @@ $endif
 // Text bytecode dump
 // ============================================================================
 
-// True if the path ends in `.ts`, `.mts`, or `.cts` (case-sensitive).
 fn bool has_ts_extension(String path) {
     if (path.len >= 3 && path[^3..] == ".ts") return true;
     if (path.len >= 4 && path[^4..] == ".mts") return true;
