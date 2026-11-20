@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your first script · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="site-head">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="first-script.html" aria-current="page">tutorials</a>
+      <a href="../how-to/build-profiles.html">how-to</a>
+      <a href="../reference/c-api.html">reference</a>
+      <a href="../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <p class="label">tutorial</p>
+    <h1>Your first script with Boomkat</h1>
+    <p class="lede">
+      Build the Boomkat CLI from source, run a TypeScript module, and compare module execution with classic script mode.
+    </p>
+
+    <div class="band" aria-hidden="true"></div>
+
+    <h2>Prerequisites</h2>
+    <p>Install the C3 compiler (v0.8.5 or later), <code>just</code>, and <code>python3</code>:</p>
+    <pre class="ink"><code><span class="ink-s5">brew</span> <span class="ink-s9">install</span> <span class="ink-s9">c3c</span> <span class="ink-s9">just</span></code></pre>
+
+    <h2>1. Build the CLI</h2>
+    <p>From the repository root, build the default <code>boomkat</code> target:</p>
+    <pre class="ink"><code><span class="ink-s5">just</span> <span class="ink-s9">build</span> <span class="ink-s9">boomkat</span></code></pre>
+    <p>The binary is written to <code>out/boomkat</code>.</p>
+
+    <h2>2. Run a JavaScript module</h2>
+    <p>Create a file named <code>hello.js</code>:</p>
+    <pre class="ink"><code><span class="ink-s2">const</span> <span class="ink-s2">name</span> <span class="ink-s2">=</span> <span class="ink-s9">&quot;Boomkat&quot;</span>;
+<span class="ink-s5">print</span>(<span class="ink-s9">`Hello from ${name}`</span>);</code></pre>
+    <p>Run it:</p>
+    <pre class="ink"><code><span class="ink-s5">./out/boomkat</span> <span class="ink-s9">hello.js</span></code></pre>
+    <p>Expected output:</p>
+    <pre><code>Hello from Boomkat</code></pre>
+
+    <h2>3. Run a TypeScript file directly</h2>
+    <p>Create <code>greet.ts</code>. Boomkat strips erasable TypeScript syntax without a separate build step:</p>
+    <pre class="ink"><code><span class="ink-s2">function</span> <span class="ink-s3">greet</span>(<span class="ink-s2">who</span>: <span class="ink-s2">string</span>, <span class="ink-s2">count</span>: <span class="ink-s2">number</span>): <span class="ink-s2">string</span> {
+  <span class="ink-s2">return</span> <span class="ink-s9">`${who} x${count}`</span>;
+}
+
+<span class="ink-s5">print</span>(<span class="ink-s5">greet</span>(<span class="ink-s9">&quot;margay&quot;</span>, <span class="ink-s5">3</span>));</code></pre>
+    <p>Run it the same way:</p>
+    <pre class="ink"><code><span class="ink-s5">./out/boomkat</span> <span class="ink-s9">greet.ts</span></code></pre>
+    <p>Expected output:</p>
+    <pre><code>margay x3</code></pre>
+
+    <h2>4. Try classic script mode</h2>
+    <p>
+      Files run as ES modules in strict mode by default. To evaluate a classic sloppy script, pass <code>--script</code>.
+      Create <code>sloppy.js</code>:
+    </p>
+    <pre class="ink"><code><span class="ink-s2">x</span> <span class="ink-s2">=</span> <span class="ink-s5">42</span>;
+<span class="ink-s5">print</span>(<span class="ink-s2">x</span>);</code></pre>
+    <p>Running it without <code>--script</code> throws a <code>ReferenceError</code> because modules are strict. With <code>--script</code> it succeeds:</p>
+    <pre class="ink"><code><span class="ink-s5">./out/boomkat</span> <span class="ink-s9">--script</span> <span class="ink-s9">sloppy.js</span></code></pre>
+    <p>Expected output:</p>
+    <pre><code>42</code></pre>
+
+    <h2>Next steps</h2>
+    <ul>
+      <li><a href="embed-in-c.html">Embed Boomkat in a C program</a></li>
+      <li><a href="../reference/cli-and-flags.html">CLI modes, build profiles, and compile flags</a></li>
+    </ul>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../index.html">boomkat docs</a></span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

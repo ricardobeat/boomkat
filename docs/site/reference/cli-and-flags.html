@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CLI &amp; build flags · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../tutorials/first-script.html">tutorials</a>
+      <a href="../how-to/build-profiles.html">how-to</a>
+      <a href="c-api.html" aria-current="page">reference</a>
+      <a href="../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="CLI and flags index">
+      <p class="label">CLI Modes</p>
+      <ul>
+        <li><a href="#cli-invocation">module (default)</a></li>
+        <li><a href="#cli-invocation">--script</a></li>
+        <li><a href="#cli-invocation">boomkat_debug -c</a></li>
+      </ul>
+
+      <p class="label">Build Profiles</p>
+      <ul>
+        <li><a href="#profiles">boomkat</a></li>
+        <li><a href="#profiles">boomkat-full-icu</a></li>
+        <li><a href="#profiles">boomkat-slim</a></li>
+        <li><a href="#profiles">boomkat-tiny</a></li>
+      </ul>
+
+      <p class="label">Runtime &amp; VM Flags</p>
+      <ul>
+        <li><a href="#flags-vm">NONANBOX</a></li>
+        <li><a href="#flags-vm">THREADED_DISPATCH</a></li>
+        <li><a href="#flags-vm">SMALL_VM</a></li>
+        <li><a href="#flags-vm">STRICT_ONLY</a></li>
+        <li><a href="#flags-vm">BYTECODE_ONLY</a></li>
+        <li><a href="#flags-vm">BYTECODE_GENERATOR</a></li>
+      </ul>
+
+      <p class="label">Feature Flags</p>
+      <ul>
+        <li><a href="#flags-features">PRINT / CONSOLE</a></li>
+        <li><a href="#flags-features">INTL / INTL_FULL</a></li>
+        <li><a href="#flags-features">INTL_COLLATOR</a></li>
+        <li><a href="#flags-features">TEMPORAL</a></li>
+        <li><a href="#flags-features">NO_TYPESCRIPT / NO_JSX</a></li>
+        <li><a href="#flags-features">NO_BIGINT / NO_PROXY</a></li>
+        <li><a href="#flags-features">NO_REGEXP / NO_BUFFERS</a></li>
+        <li><a href="#flags-features">NO_COLLECTIONS / NO_WEAKREF</a></li>
+      </ul>
+
+      <p class="label">Diagnostics</p>
+      <ul>
+        <li><a href="#flags-diag">TRACE_VM</a></li>
+        <li><a href="#flags-diag">OP_PROFILE / GC_PROFILE</a></li>
+        <li><a href="#flags-diag">HEAP_VERIFY / GC_VERIFY</a></li>
+        <li><a href="#flags-diag">GC_STRESS</a></li>
+        <li><a href="#flags-diag">SCAN_POISON / POOL_BYPASS</a></li>
+      </ul>
+
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="c-api.html">C Embedding API</a></li>
+        <li><a href="c3-api.html">C3 Internal API</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference</p>
+      <h1>CLI modes, build profiles, and compile flags</h1>
+      <p class="lede">
+        Command-line invocation modes, release build profiles, and compile-time <code>-D</code> feature flags.
+      </p>
+
+      <div class="band" aria-hidden="true"></div>
+
+      <h2 id="cli-invocation">CLI invocation</h2>
+      <table>
+        <thead>
+          <tr><th>Command</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>boomkat &lt;file&gt;</code></td><td>Evaluates <code>&lt;file&gt;</code> as an ES module (strict mode). Supports <code>.js</code>, <code>.mjs</code>, <code>.ts</code>, <code>.tsx</code>, <code>.jsx</code>.</td></tr>
+          <tr><td><code>boomkat --script &lt;file&gt;</code></td><td>Evaluates <code>&lt;file&gt;</code> as a classic script (sloppy unless <code>"use strict"</code> is present; <code>.ts</code> is always strict).</td></tr>
+          <tr><td><code>boomkat_debug -c &lt;file&gt;</code></td><td>Prints bytecode disassembly when built with <code>-D TRACE_VM</code> (<code>just build-trace</code>).</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="profiles">Build profiles</h2>
+      <table>
+        <thead>
+          <tr><th>Profile</th><th>Approx. size</th><th>Included features</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>boomkat</code></td><td>~2.2 MB</td><td>Default CLI; modern ECMAScript, TypeScript/JSX, small English Intl.</td></tr>
+          <tr><td><code>boomkat-full-icu</code></td><td>&gt;4 MB</td><td>Full bundled Intl locale data, Collator with tailorings, and Temporal.</td></tr>
+          <tr><td><code>boomkat-slim</code></td><td>~1.5 MB</td><td>Excludes TypeScript, JSX, Temporal, Intl, BigInt, Proxy, and other optional features.</td></tr>
+          <tr><td><code>boomkat-tiny</code></td><td>~700 KB</td><td>Reduced ECMAScript set, no parser or compiler; executes precompiled <code>.bkbc</code> bytecode only.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="flags-vm">Runtime and VM flags (<code>-D</code>)</h2>
+      <table>
+        <thead>
+          <tr><th>Flag</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>NONANBOX</code></td><td>Disable NaN-boxing; use 16-byte tagged union <code>TVal</code>.</td></tr>
+          <tr><td><code>THREADED_DISPATCH</code></td><td>Enable direct-threaded VM dispatch (enabled in default CLI).</td></tr>
+          <tr><td><code>SMALL_VM</code></td><td>Use size-optimized VM dispatch loop.</td></tr>
+          <tr><td><code>STRICT_ONLY</code></td><td>Compile out sloppy-mode support.</td></tr>
+          <tr><td><code>BYTECODE_ONLY</code></td><td>Omit parser and compiler; execute precompiled bytecode images only.</td></tr>
+          <tr><td><code>BYTECODE_GENERATOR</code></td><td>Enable bytecode image serialization.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="flags-features">Optional feature flags (<code>-D</code>)</h2>
+      <table>
+        <thead>
+          <tr><th>Flag</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>PRINT</code> / <code>CONSOLE</code></td><td>Register global <code>print</code> / <code>console</code>.</td></tr>
+          <tr><td><code>INTL</code> / <code>INTL_FULL</code> / <code>INTL_COLLATOR</code></td><td>Enable native Intl, full bundled locales, and <code>Intl.Collator</code>.</td></tr>
+          <tr><td><code>TEMPORAL</code></td><td>Enable <code>Temporal</code> namespace.</td></tr>
+          <tr><td><code>NO_TYPESCRIPT</code> / <code>NO_JSX</code></td><td>Omit TypeScript stripping / JSX lowering.</td></tr>
+          <tr><td><code>NO_BIGINT</code> / <code>NO_PROXY</code> / <code>NO_REGEXP</code></td><td>Omit BigInt, Proxy/Reflect, or RegExp.</td></tr>
+          <tr><td><code>NO_BUFFERS</code> / <code>NO_COLLECTIONS</code> / <code>NO_WEAKREF</code></td><td>Omit ArrayBuffer/TypedArray, Map/Set, or WeakRef/FinalizationRegistry.</td></tr>
+          <tr><td><code>NO_MODULE_LOADING</code> / <code>NO_SHARED_MEMORY</code></td><td>Omit ESM loading or SharedArrayBuffer/Atomics.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="flags-diag">Diagnostics and verification flags (<code>-D</code>)</h2>
+      <table>
+        <thead>
+          <tr><th>Flag</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>TRACE_VM</code></td><td>Enable bytecode disassembly and VM tracing.</td></tr>
+          <tr><td><code>OP_PROFILE</code> / <code>GC_PROFILE</code></td><td>Enable opcode or GC profiling.</td></tr>
+          <tr><td><code>HEAP_VERIFY</code> / <code>GC_VERIFY</code> / <code>GC_STRESS</code></td><td>Validate GC roots, check incremental GC invariants, or collect at every allocation.</td></tr>
+          <tr><td><code>SCAN_POISON</code> / <code>POOL_BYPASS</code></td><td>Poison freed storage or bypass allocation pools for AddressSanitizer.</td></tr>
+        </tbody>
+      </table>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../index.html">boomkat docs</a></span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

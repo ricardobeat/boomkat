@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>C embedding API · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../tutorials/first-script.html">tutorials</a>
+      <a href="../how-to/build-profiles.html">how-to</a>
+      <a href="c-api.html" aria-current="page">reference</a>
+      <a href="../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C API symbols">
+      <p class="label">Types</p>
+      <ul>
+        <li><a href="#bk_runtime">bk_runtime</a></li>
+        <li><a href="#bk_ctx">bk_ctx</a></li>
+        <li><a href="#bk_value">bk_value</a></li>
+        <li><a href="#bk_scope">bk_scope</a></li>
+      </ul>
+
+      <p class="label">Immediates</p>
+      <ul>
+        <li><a href="#immediates">BK_UNDEFINED</a></li>
+        <li><a href="#immediates">BK_NULL</a></li>
+        <li><a href="#immediates">BK_TRUE / BK_FALSE</a></li>
+        <li><a href="#immediates">BK_EXCEPTION</a></li>
+      </ul>
+
+      <p class="label">Lifecycle</p>
+      <ul>
+        <li><a href="#bk_create">bk_create</a></li>
+        <li><a href="#bk_destroy">bk_destroy</a></li>
+        <li><a href="#bk_new_runtime">bk_new_runtime</a></li>
+        <li><a href="#bk_free_runtime">bk_free_runtime</a></li>
+        <li><a href="#bk_new_context">bk_new_context</a></li>
+        <li><a href="#bk_free_context">bk_free_context</a></li>
+        <li><a href="#bk_request_interrupt">bk_request_interrupt</a></li>
+        <li><a href="#bk_clear_interrupt">bk_clear_interrupt</a></li>
+      </ul>
+
+      <p class="label">Evaluation &amp; Errors</p>
+      <ul>
+        <li><a href="#bk_eval">bk_eval</a></li>
+        <li><a href="#bk_eval_ex">bk_eval_ex</a></li>
+        <li><a href="#bk_exec">bk_exec</a></li>
+        <li><a href="#bk_is_exception">bk_is_exception</a></li>
+        <li><a href="#bk_get_exception">bk_get_exception</a></li>
+        <li><a href="#bk_error">bk_error</a></li>
+      </ul>
+
+      <p class="label">Values &amp; Scopes</p>
+      <ul>
+        <li><a href="#bk_dup_value">bk_dup_value</a></li>
+        <li><a href="#bk_free_value">bk_free_value</a></li>
+        <li><a href="#bk_scope_open">bk_scope_open</a></li>
+        <li><a href="#bk_scope_close_escape">bk_scope_close_escape</a></li>
+        <li><a href="#bk_cstr">bk_cstr</a></li>
+        <li><a href="#bk_register_fn">bk_register_fn</a></li>
+      </ul>
+
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="cli-and-flags.html">CLI &amp; Build Flags</a></li>
+        <li><a href="c3-api.html">C3 Internal API</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference</p>
+      <h1>C embedding API (<code>boomkat.h</code>)</h1>
+      <p class="lede">
+        Core types and functions exported by <code>include/boomkat.h</code>. Build the static library with <code>make lib</code> or the shared library with <code>make shared</code>.
+      </p>
+
+      <div class="band" aria-hidden="true"></div>
+
+      <h2>Core types</h2>
+
+      <div class="api-item" id="bk_runtime">
+        <p class="api-sig"><code>typedef struct bk_runtime_s *bk_runtime</code></p>
+        <p class="api-desc">Owns a heap, VM, value registry, job queue, module loader, memory limit, and interrupt hooks. Runs on one thread at a time.</p>
+      </div>
+      <div class="api-item" id="bk_ctx">
+        <p class="api-sig"><code>typedef struct bk_ctx_s *bk_ctx</code></p>
+        <p class="api-desc">A realm within a runtime. Owns globals, intrinsics, module instances, pending exception, and diagnostics.</p>
+      </div>
+      <div class="api-item" id="bk_value">
+        <p class="api-sig"><code>typedef uint64_t bk_value</code></p>
+        <p class="api-desc">Opaque 64-bit value handle. Owned registry root outside a local scope, or scope-bound local handle inside one.</p>
+      </div>
+      <div class="api-item" id="bk_scope">
+        <p class="api-sig"><code>typedef uint32_t bk_scope</code></p>
+        <p class="api-desc">Handle to an active local value scope (max 131,072 locals per scope).</p>
+      </div>
+
+      <h2 id="immediates">Immediate handles</h2>
+      <p>
+        <code>BK_UNDEFINED</code>, <code>BK_NULL</code>, <code>BK_TRUE</code>, <code>BK_FALSE</code>, <code>BK_BOOL(b)</code>, and <code>BK_EXCEPTION</code>.
+        Immediate handles are valid across contexts, consume no registry slot, and require no <code>bk_free_value</code>.
+      </p>
+
+      <h2>Lifecycle</h2>
+
+      <div class="api-item" id="bk_create">
+        <p class="api-sig"><code>bk_ctx bk_create(void)</code></p>
+        <p class="api-desc">Create a standalone context that owns its own runtime.</p>
+      </div>
+      <div class="api-item" id="bk_destroy">
+        <p class="api-sig"><code>void bk_destroy(bk_ctx ctx)</code></p>
+        <p class="api-desc">Destroy a context created by <code>bk_create</code> and its owned runtime.</p>
+      </div>
+      <div class="api-item" id="bk_new_runtime">
+        <p class="api-sig"><code>bk_runtime bk_new_runtime(const bk_runtime_options *opts)</code></p>
+        <p class="api-desc">Create a runtime. Pass <code>NULL</code> for defaults, or supply custom allocator and fatal callbacks via <code>bk_runtime_options</code>.</p>
+      </div>
+      <div class="api-item" id="bk_free_runtime">
+        <p class="api-sig"><code>void bk_free_runtime(bk_runtime rt)</code></p>
+        <p class="api-desc">Destroy a runtime and all realms created inside it.</p>
+      </div>
+      <div class="api-item" id="bk_new_context">
+        <p class="api-sig"><code>bk_ctx bk_new_context(bk_runtime rt, const bk_context_options *opts)</code></p>
+        <p class="api-desc">Create a realm inside <code>rt</code>. Supports <code>BK_CONTEXT_NO_EVAL</code>, <code>BK_CONTEXT_CANNOT_BLOCK</code>, and <code>BK_CONTEXT_HOST_GLOBAL</code>.</p>
+      </div>
+      <div class="api-item" id="bk_free_context">
+        <p class="api-sig"><code>void bk_free_context(bk_ctx ctx)</code></p>
+        <p class="api-desc">Release a context handle and clear its pending exception.</p>
+      </div>
+      <div class="api-item" id="bk_request_interrupt">
+        <p class="api-sig"><code>void bk_request_interrupt(bk_runtime rt)</code></p>
+        <p class="api-desc">Thread-safe interrupt latch for watchdog cancellation.</p>
+      </div>
+      <div class="api-item" id="bk_clear_interrupt">
+        <p class="api-sig"><code>void bk_clear_interrupt(bk_runtime rt)</code></p>
+        <p class="api-desc">Clear a previously latched interrupt request.</p>
+      </div>
+
+      <h2>Evaluation and exceptions</h2>
+
+      <div class="api-item" id="bk_eval">
+        <p class="api-sig"><code>bk_value bk_eval(bk_ctx ctx, const char *source)</code></p>
+        <p class="api-desc">Evaluate a NUL-terminated sloppy script; returns an owned <code>bk_value</code> or <code>BK_EXCEPTION</code>.</p>
+      </div>
+      <div class="api-item" id="bk_eval_ex">
+        <p class="api-sig"><code>bk_value bk_eval_ex(bk_ctx ctx, const char *source, size_t len, const char *filename, unsigned flags)</code></p>
+        <p class="api-desc">Evaluate source with explicit length, filename, and flags such as <code>BK_EVAL_STRICT</code>.</p>
+      </div>
+      <div class="api-item" id="bk_exec">
+        <p class="api-sig"><code>int bk_exec(bk_ctx ctx, const char *source)</code></p>
+        <p class="api-desc">Evaluate a script, discard the result, and return non-zero on failure.</p>
+      </div>
+      <div class="api-item" id="bk_is_exception">
+        <p class="api-sig"><code>int bk_is_exception(bk_value v)</code></p>
+        <p class="api-desc">Return non-zero if <code>v</code> is <code>BK_EXCEPTION</code>.</p>
+      </div>
+      <div class="api-item" id="bk_get_exception">
+        <p class="api-sig"><code>bk_value bk_get_exception(bk_ctx ctx)</code></p>
+        <p class="api-desc">Take and clear the pending thrown value. Returns <code>BK_UNDEFINED</code> if none is pending.</p>
+      </div>
+      <div class="api-item" id="bk_error">
+        <p class="api-sig"><code>const char *bk_error(bk_ctx ctx)</code></p>
+        <p class="api-desc">Return a NUL-terminated diagnostic string for the last error.</p>
+      </div>
+
+      <h2>Values, scopes, and host callbacks</h2>
+
+      <div class="api-item" id="bk_dup_value">
+        <p class="api-sig"><code>bk_value bk_dup_value(bk_ctx ctx, bk_value v)</code></p>
+        <p class="api-desc">Create a new owned registry root for <code>v</code>. Immediates are returned unchanged.</p>
+      </div>
+      <div class="api-item" id="bk_free_value">
+        <p class="api-sig"><code>void bk_free_value(bk_ctx ctx, bk_value v)</code></p>
+        <p class="api-desc">Release an owned registry root. Ignores immediates and local handles.</p>
+      </div>
+      <div class="api-item" id="bk_scope_open">
+        <p class="api-sig"><code>bk_scope bk_scope_open(bk_ctx ctx)</code></p>
+        <p class="api-desc">Open a nested local value scope. Value-returning calls allocate locals until the scope closes.</p>
+      </div>
+      <div class="api-item" id="bk_scope_close_escape">
+        <p class="api-sig"><code>bk_value bk_scope_close_escape(bk_ctx ctx, bk_scope scope, bk_value v)</code></p>
+        <p class="api-desc">Close <code>scope</code> and return <code>v</code> in the enclosing scope (or as an owned root if none encloses it).</p>
+      </div>
+      <div class="api-item" id="bk_cstr">
+        <p class="api-sig"><code>const char *bk_cstr(bk_ctx ctx, bk_value v, size_t *len_out)</code></p>
+        <p class="api-desc">Coerce <code>v</code> to context-owned UTF-8 valid for the next three <code>bk_cstr</code> calls.</p>
+      </div>
+      <div class="api-item" id="bk_register_fn">
+        <p class="api-sig"><code>int bk_register_fn(bk_ctx ctx, bk_value obj, const char *name, bk_native_fn fn, unsigned argc, unsigned flags, void *udata)</code></p>
+        <p class="api-desc">Register a C callback on <code>obj</code> (pass <code>0</code> for the global object).</p>
+      </div>
+
+      <p class="note">
+        Full C and C++ headers live in <code>include/boomkat.h</code> and <code>include/boomkat.hpp</code>.
+      </p>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../index.html">boomkat docs</a></span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
