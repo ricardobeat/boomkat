@@ -127,9 +127,7 @@ fn void CompilerContext.gen_module_slots(&self) {
     ast::AstIndex* idx = ast::index_state;
     if ((idx.res.scopes.data[1].flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_CAPTURE_ALL | ast::SCOPE_HAS_WITH)) != 0) return;
     CompModuleDef* mod = self.get_module_def();
-    // Collect the exported local names once. Asking whether a binding is one of
-    // them used to scan every export, which is quadratic in a module with many
-    // of both.
+    // Collect exported local names in a set for O(1) lookup below.
     HashSet{String} exported;
     exported.init(mem);
     foreach (entry : mod.exports) {

@@ -39,8 +39,7 @@ import boomkat::types;
 //      this file: FUSION_NULL_BRANCH; runs after rule 5, on the branches rule 3
 //      produced)
 //
-// Rule 4 and the dead-LDREG-before-INC/DEC DCE pass are the only hand-written
-// passes left in context.c3. See plans/058-fusion-rule-framework.md for why.
+// Rule 4 and the dead-LDREG-before-INC/DEC DCE pass are hand-written in context.c3.
 
 // Result of matching a fusion's trigger+consumer pair, produced by a
 // rule's `match_consumer` callback.

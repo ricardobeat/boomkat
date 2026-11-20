@@ -195,7 +195,7 @@ struct LoopInfo {
     int  saved_lex_depth;     ///< cur_lex_depth at loop entry, break/continue POP_LEX back to this
 int  saved_with_depth;   ///< cur_with_depth at loop entry, break/continue WITH_END back to this
     int  iter_close_reg;      ///< >= 0: for-of iterator reg, emit ITER_CLOSE on break/return; -1 = none
-    bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC (plan 057)
+    bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC
     // A `using` head's iterator close waits for the iteration's release in the
     // loop's own close boundary; every other loop closes at the jump site.
     bool deferred_close;
@@ -919,12 +919,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
 
-    // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
-    // compilation entry point (compile/compile_eval/compile_function/etc.) is
-    // responsible for setting the lexer's strict_mode to match ctx.is_strict
-    // after init. init() runs before ctx.is_strict is meaningful, so trying to
-    // mirror it here would either default to the wrong value (false, since
-    // mem::clear zeros is_strict) or get clobbered anyway by every caller.
+    // Each compilation entry point sets the lexer's strict_mode to match
+    // ctx.is_strict after init().
 }
 
 // Free the compiler's scratch buffers; the CompiledFunction from finish() owns
@@ -1962,12 +1958,9 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // EMPTY arguments object that shadows the real one).
     func.flags.uses_arguments = self.uses_arguments
                              || (self.has_direct_eval && !self.is_arrow && !self.eval_mode);
-    // Mapped arguments (plans/083 Phase 3.1): sloppy + simple parameter list
-    // per ECMA-262 arguments exotic objects. Simplicity reads the same three signals
-    // params_are_simple() uses (rest, defaults incl. destructured defaults,
-    // destructured params). Direct-eval-forced uses_arguments is unmapped:
-    // the flag only guarantees an object exists for the eval body, and the
-    // eval body is not this function's own parameter scope.
+    // Mapped arguments: sloppy mode with a simple parameter list (ECMA-262
+    // arguments exotic objects). Direct-eval-forced uses_arguments is unmapped
+    // because the eval body is not this function's own parameter scope.
     func.flags.mapped_arguments = !self.is_strict && self.uses_arguments
                              && !self.has_rest && self.defaults.len == 0
                              && self.destruct_defaults.len == 0

@@ -688,10 +688,9 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
     DestructIters iters = { .states = mem::new_array(DestructIterState, (sz)count), .outermost = 0xFFFF };
     defer mem::free(iters.states);
 
-    // Pre-scan: allocate persistent registers before any iterator setup. Rest
-    // group_regs must sit below callee_reg to survive the per-iteration CALL
-    // frame (see plan 042/043). Also note whether any array binds exist, which
-    // decides the IteratorClose TRY guard.
+    // Pre-scan: allocate persistent registers before any iterator setup so
+    // rest group_regs sit below callee_reg and survive per-iteration CALL frames.
+    // Also note whether any array binds exist for the IteratorClose TRY guard.
     bool has_array_binds = false;
     for (uint di = 0; di < count; di++) {
         binds[di].resolve_probe_reg = 0xFFFF;
