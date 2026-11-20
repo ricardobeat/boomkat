@@ -1350,17 +1350,17 @@ about 66 KB of the size, and a switch dispatch build is 1.5-5.5x slower; measure
 both before trading one for the other.
 
 `boomkat_tiny_compile` is the ordinary source CLI built with TINY's capabilities
-and `BYTECODE_GENERATOR`. It exposes `--compile OUTPUT.bkbc INPUT.js`.
+and `BYTECODE_GENERATOR`. It exposes `--compile OUTPUT.bk INPUT.js`.
 `boomkat_tiny` selects `BYTECODE_ONLY` and runs the image directly. The normal
 and SLIM CLIs exclude the image writer and this option.
 
 ```sh
 just build-tiny
-just compile-bytecode program.js out/program.bkbc
-just run-bytecode out/program.bkbc
+just compile-bytecode program.js out/program.bk
+just run-bytecode out/program.bk
 # Equivalent CLI commands:
-out/boomkat_tiny_compile --compile out/program.bkbc program.js
-out/boomkat_tiny out/program.bkbc
+out/boomkat_tiny_compile --compile out/program.bk program.js
+out/boomkat_tiny out/program.bk
 ```
 
 Images use the strict Module goal. Top-level `this` is undefined and declarations

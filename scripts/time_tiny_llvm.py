@@ -20,7 +20,7 @@ rng = random.Random(42)
 results = {}
 for name in ['loop', 'function_call', 'property_lookup', 'ic_proto', 'array']:
     source = root / 'test' / 'benchmarks' / ('bench_' + name + '.js')
-    image = out / (name + '.bkbc')
+    image = out / (name + '.bk')
     subprocess.run([root / 'out/boomkat_tiny_compile', '--compile', image, source],
                    check=True, capture_output=True)
     outputs = [subprocess.check_output([exe, image]) for exe in variants.values()]

@@ -22,7 +22,7 @@ fn void bytecode_rejection(void* heap_raw, void* vm_raw, TVal promise, TVal reas
 
 fn int main(String[] args) {
     if (args.len != 2) {
-        io::eprintfn("Usage: boomkat_tiny INPUT.bkbc"); return 2;
+        io::eprintfn("Usage: boomkat_tiny INPUT.bk"); return 2;
     }
     char[]? input = file::load(mem, args[1]);
     if (catch err = input) { io::eprintfn("Could not read %s", args[1]); return 1; }

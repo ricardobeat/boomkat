@@ -244,8 +244,8 @@ fn void print_usage() {
         io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [FILE | -]");
     $endif
     $if features::PORTABLE_BYTECODE:
-        io::printn("       boomkat [--script] --compile OUTPUT.bkbc INPUT.js");
-        io::printn("       boomkat --image INPUT.bkbc");
+        io::printn("       boomkat [--script] --compile OUTPUT.bk INPUT.js");
+        io::printn("       boomkat --image INPUT.bk");
     $endif
     io::printn("       boomkat --help | --version");
     $if features::TYPESCRIPT:

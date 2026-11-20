@@ -50,16 +50,16 @@
 <span class="ink-s5">just</span> <span class="ink-s9">build</span> <span class="ink-s9">boomkat-full-icu</span> <span class="ink-s9">--collator=false</span></code></pre>
 
     <h2>Precompile and run bytecode with <code>boomkat-tiny</code></h2>
-    <p><code>boomkat-tiny</code> omits the parser and compiler and runs only precompiled <code>.bkbc</code> images.</p>
+    <p><code>boomkat-tiny</code> omits the parser and compiler and runs only precompiled <code>.bk</code> images.</p>
     <ol>
       <li>Build the tiny runtime and its companion bytecode compiler:
         <pre class="ink"><code><span class="ink-s5">just</span> <span class="ink-s9">build-tiny</span></code></pre>
       </li>
       <li>Compile a JavaScript file to a bytecode image:
-        <pre class="ink"><code><span class="ink-s5">./out/boomkat_tiny_compile</span> <span class="ink-s9">--compile</span> <span class="ink-s9">program.bkbc</span> <span class="ink-s9">program.js</span></code></pre>
+        <pre class="ink"><code><span class="ink-s5">./out/boomkat_tiny_compile</span> <span class="ink-s9">--compile</span> <span class="ink-s9">program.bk</span> <span class="ink-s9">program.js</span></code></pre>
       </li>
       <li>Execute the image on the tiny runtime:
-        <pre class="ink"><code><span class="ink-s5">./out/boomkat_tiny</span> <span class="ink-s9">program.bkbc</span></code></pre>
+        <pre class="ink"><code><span class="ink-s5">./out/boomkat_tiny</span> <span class="ink-s9">program.bk</span></code></pre>
       </li>
     </ol>
 
