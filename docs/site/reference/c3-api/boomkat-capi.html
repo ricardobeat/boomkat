@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::capi · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html" aria-current="page">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::capi</code></h1>
+      <p class="lede">23 types, 237 functions and macros, 0 methods, 41 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="BkClassDef"><pre><code>struct BkClassDef {
+  char* name;
+  uint parent;
+  void* finalize;
+  void* trace;
+  void* construct;
+  int arity;
+  uint flags;
+  void* opaque;
+  <a href="#BkExoticHooks">BkExoticHooks*</a> exotic;
+}</code></pre><p class="api-src">src/capi.c3:1941:8</p></div>
+<div class="api-item" id="BkContextOptions"><pre><code>struct BkContextOptions {
+  uint flags;
+  uint global_class;
+  void* global_payload;
+}</code></pre><p class="api-src">src/capi.c3:169:8</p></div>
+<div class="api-item" id="BkErrorInfo"><pre><code>struct BkErrorInfo {
+  int code;
+  int line;
+  int col;
+  char* script_name;
+  char* stack;
+}</code></pre><p class="api-src">src/capi.c3:770:8</p></div>
+<div class="api-item" id="BkExoticCall"><pre><code>alias BkExoticCall = fn ulong(void* ctx, ulong self, ulong this_value, uint argc, ulong* argv, void* opaque)</code></pre><p class="api-src">src/capi.c3:2163:7</p></div>
+<div class="api-item" id="BkExoticDefine"><pre><code>alias BkExoticDefine = fn int(void* ctx, ulong self, uint key, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> desc, int* ok, void* opaque)</code></pre><p class="api-src">src/capi.c3:2160:7</p></div>
+<div class="api-item" id="BkExoticGetOwn"><pre><code>alias BkExoticGetOwn = fn int(void* ctx, ulong self, uint key, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> desc, void* opaque)</code></pre><p class="api-src">src/capi.c3:2159:7</p></div>
+<div class="api-item" id="BkExoticHooks"><pre><code>struct BkExoticHooks {
+  <a href="#BkExoticGetOwn">BkExoticGetOwn</a> get_own;
+  <a href="#BkExoticDefine">BkExoticDefine</a> define_own;
+  <a href="#BkExoticRemove">BkExoticRemove</a> remove;
+  <a href="#BkExoticOwnKeys">BkExoticOwnKeys</a> own_keys;
+  <a href="#BkExoticCall">BkExoticCall</a> call;
+}</code></pre><p class="api-src">src/capi.c3:2166:8</p></div>
+<div class="api-item" id="BkExoticOwnKeys"><pre><code>alias BkExoticOwnKeys = fn int(void* ctx, ulong self, ulong* keys_out, void* opaque)</code></pre><p class="api-src">src/capi.c3:2162:7</p></div>
+<div class="api-item" id="BkExoticRemove"><pre><code>alias BkExoticRemove = fn int(void* ctx, ulong self, uint key, int* ok, void* opaque)</code></pre><p class="api-src">src/capi.c3:2161:7</p></div>
+<div class="api-item" id="BkFnDef"><pre><code>struct BkFnDef {
+  char* name;
+  void* cfn;
+  int arity;
+  uint flags;
+  void* udata;
+  void* finalize;
+  void* finalize_opaque;
+}</code></pre><p class="api-src">src/capi.c3:2875:8</p></div>
+<div class="api-item" id="BkHeapStats"><pre><code>struct BkHeapStats {
+  ulong heap_bytes;
+  ulong external_bytes;
+  ulong heap_limit;
+  uint live_handles;
+  uint gc_cycles;
+}</code></pre><p class="api-src">src/capi.c3:3096:8</p></div>
+<div class="api-item" id="BkLoadFn"><pre><code>alias BkLoadFn = fn int(void* ctx, char* name, <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> request, void* opaque)</code></pre><p class="api-src">src/capi.c3:383:7</p></div>
+<div class="api-item" id="BkPromiseRejectionFn"><pre><code>alias BkPromiseRejectionFn = fn void(void* ctx, ulong promise_id, ulong promise, ulong reason, int handled, void* opaque)</code></pre><p class="api-src">src/capi.c3:3181:7</p></div>
+<div class="api-item" id="BkPropertyDescriptor"><pre><code>struct BkPropertyDescriptor {
+  uint flags;
+  ulong value;
+  ulong get;
+  ulong set;
+}</code></pre><p class="api-src">src/capi.c3:1411:8</p></div>
+<div class="api-item" id="BkResolveFn"><pre><code>alias BkResolveFn = fn int(void* ctx, char* referrer, char* specifier, <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> request, void* opaque)</code></pre><p class="api-src">src/capi.c3:382:7</p></div>
+<div class="api-item" id="BkRuntimeOptions"><pre><code>struct BkRuntimeOptions {
+  <a href="boomkat-heap.html#AllocFunc">AllocFunc</a> alloc;
+  <a href="boomkat-heap.html#ReallocFunc">ReallocFunc</a> realloc;
+  <a href="boomkat-heap.html#FreeFunc">FreeFunc</a> free;
+  void* alloc_opaque;
+  <a href="boomkat-heap.html#FatalFunc">FatalFunc</a> fatal;
+  ulong heap_limit;
+}</code></pre><p class="api-src">src/capi.c3:110:8</p></div>
+<div class="api-item" id="BkTypedArrayInfo"><pre><code>struct BkTypedArrayInfo {
+  int type;
+  void* data;
+  usz length;
+  usz byte_offset;
+  ulong buffer;
+}</code></pre><p class="api-src">src/capi.c3:3210:8</p></div>
+<div class="api-item" id="Ctx"><pre><code>alias Ctx = <a href="boomkat-embed.html#Ctx">Ctx</a></code></pre><p class="api-src">src/capi.c3:22:7</p></div>
+<div class="api-item" id="HookFrame"><pre><code>struct HookFrame {
+  <a href="#Runtime">Runtime*</a> rt;
+  <a href="#Ctx">Ctx*</a> ctx;
+  <a href="#Ctx">Ctx*</a> previous;
+  <a href="boomkat-heap.html#Realm">Realm*</a> realm;
+  uint scope;
+  ulong self;
+  <a href="#BkExoticHooks">BkExoticHooks*</a> hooks;
+  void* opaque;
+}</code></pre><p class="api-src">src/capi.c3:2184:8</p></div>
+<div class="api-item" id="Intrinsic"><pre><code>enum Intrinsic : int {
+  OBJECT_PROTOTYPE,
+  FUNCTION_PROTOTYPE,
+  ARRAY_PROTOTYPE,
+  ERROR_PROTOTYPE,
+  TYPE_ERROR_PROTOTYPE,
+  PROMISE_PROTOTYPE,
+  ITERATOR_PROTOTYPE,
+  RANGE_ERROR_PROTOTYPE,
+  REFERENCE_ERROR_PROTOTYPE,
+  SYNTAX_ERROR_PROTOTYPE,
+  ASYNC_ITERATOR_PROTOTYPE,
+  GENERATOR_PROTOTYPE,
+  STRING_PROTOTYPE,
+  NUMBER_PROTOTYPE,
+  BOOLEAN_PROTOTYPE,
+  SYMBOL_PROTOTYPE,
+  BIGINT_PROTOTYPE,
+  DATE_PROTOTYPE,
+  REGEXP_PROTOTYPE,
+  MAP_PROTOTYPE,
+  SET_PROTOTYPE,
+  ARRAY_BUFFER_PROTOTYPE,
+  TYPED_ARRAY_PROTOTYPE,
+  GLOBAL_OBJECT,
+}</code></pre><p class="api-src">src/capi.c3:1530:6</p></div>
+<div class="api-item" id="Runtime"><pre><code>alias Runtime = <a href="boomkat-embed.html#Runtime">Runtime</a></code></pre><p class="api-src">src/capi.c3:21:7</p></div>
+<div class="api-item" id="StringView"><pre><code>struct StringView {
+  void* data;
+  usz length;
+  char width;
+  char ascii;
+}</code></pre><p class="api-src">src/capi.c3:879:8</p></div>
+<div class="api-item" id="WellKnownSymbol"><pre><code>enum WellKnownSymbol : int {
+  ITERATOR,
+  ASYNC_ITERATOR,
+  TO_STRING_TAG,
+  TO_PRIMITIVE,
+  HAS_INSTANCE,
+  IS_CONCAT_SPREADABLE,
+  MATCH,
+  MATCH_ALL,
+  REPLACE,
+  SEARCH,
+  SPECIES,
+  SPLIT,
+  UNSCOPABLES,
+  DISPOSE,
+  ASYNC_DISPOSE,
+}</code></pre><p class="api-src">src/capi.c3:1579:6</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="BK_CLASS_DEFER_FINALIZE"><p class="api-sig"><code>const uint BK_CLASS_DEFER_FINALIZE = 1;</code></p><p class="api-src">src/capi.c3:1938:12</p></div>
+<div class="api-item" id="BK_CTOR"><p class="api-sig"><code>const uint BK_CTOR = 1;</code></p><p class="api-src">src/capi.c3:2885:12</p></div>
+<div class="api-item" id="BK_ERR_ENCODING"><p class="api-sig"><code>const int BK_ERR_ENCODING = -9;</code></p><p class="api-src">src/capi.c3:33:11</p></div>
+<div class="api-item" id="BK_ERR_FULL"><p class="api-sig"><code>const int BK_ERR_FULL = -7;</code></p><p class="api-src">src/capi.c3:31:11</p></div>
+<div class="api-item" id="BK_ERR_INTERNAL"><p class="api-sig"><code>const int BK_ERR_INTERNAL = -4;</code></p><p class="api-src">src/capi.c3:28:11</p></div>
+<div class="api-item" id="BK_ERR_INTERRUPT"><p class="api-sig"><code>const int BK_ERR_INTERRUPT = -8;</code></p><p class="api-src">src/capi.c3:32:11</p></div>
+<div class="api-item" id="BK_ERR_INVALID"><p class="api-sig"><code>const int BK_ERR_INVALID = -5;</code></p><p class="api-src">src/capi.c3:29:11</p></div>
+<div class="api-item" id="BK_ERR_NOMEM"><p class="api-sig"><code>const int BK_ERR_NOMEM = -1;</code></p><p class="api-src">src/capi.c3:25:11</p></div>
+<div class="api-item" id="BK_ERR_SYNTAX"><p class="api-sig"><code>const int BK_ERR_SYNTAX = -2;</code></p><p class="api-src">src/capi.c3:26:11</p></div>
+<div class="api-item" id="BK_ERR_THROW"><p class="api-sig"><code>const int BK_ERR_THROW = -3;</code></p><p class="api-src">src/capi.c3:27:11</p></div>
+<div class="api-item" id="BK_ERR_TYPE"><p class="api-sig"><code>const int BK_ERR_TYPE = -6;</code></p><p class="api-src">src/capi.c3:30:11</p></div>
+<div class="api-item" id="BK_ERR_UNSUPPORTED"><p class="api-sig"><code>const int BK_ERR_UNSUPPORTED = -10;</code></p><p class="api-src">src/capi.c3:34:11</p></div>
+<div class="api-item" id="BK_GC_FULL"><p class="api-sig"><code>const int BK_GC_FULL = 1;</code></p><p class="api-src">src/capi.c3:3093:11</p></div>
+<div class="api-item" id="BK_GC_MINOR"><p class="api-sig"><code>const int BK_GC_MINOR = 0;</code></p><p class="api-src">src/capi.c3:3092:11</p></div>
+<div class="api-item" id="BK_KEYS_ENUMERABLE_ONLY"><p class="api-sig"><code>const uint BK_KEYS_ENUMERABLE_ONLY = 4;</code></p><p class="api-src">src/capi.c3:2540:12</p></div>
+<div class="api-item" id="BK_KEYS_SKIP_INDICES"><p class="api-sig"><code>const uint BK_KEYS_SKIP_INDICES = 8;</code></p><p class="api-src">src/capi.c3:2541:12</p></div>
+<div class="api-item" id="BK_KEYS_STRINGS"><p class="api-sig"><code>const uint BK_KEYS_STRINGS = 1;</code></p><p class="api-src">src/capi.c3:2538:12</p></div>
+<div class="api-item" id="BK_KEYS_SYMBOLS"><p class="api-sig"><code>const uint BK_KEYS_SYMBOLS = 2;</code></p><p class="api-src">src/capi.c3:2539:12</p></div>
+<div class="api-item" id="BK_LOADER_ASYNC"><p class="api-sig"><code>const uint BK_LOADER_ASYNC = 1;</code></p><p class="api-src">src/capi.c3:379:12</p></div>
+<div class="api-item" id="BK_LOADER_NO_FILESYSTEM_FALLBACK"><p class="api-sig"><code>const uint BK_LOADER_NO_FILESYSTEM_FALLBACK = 2;</code></p><p class="api-src">src/capi.c3:380:12</p></div>
+<div class="api-item" id="BK_OK"><p class="api-sig"><code>const int BK_OK = 0;</code></p><p class="api-src">src/capi.c3:24:11</p></div>
+<div class="api-item" id="BK_PROMISE_FULFILLED"><p class="api-sig"><code>const int BK_PROMISE_FULFILLED = 1;</code></p><p class="api-src">src/capi.c3:1787:11</p></div>
+<div class="api-item" id="BK_PROMISE_PENDING"><p class="api-sig"><code>const int BK_PROMISE_PENDING = 0;</code></p><p class="api-src">src/capi.c3:1786:11</p></div>
+<div class="api-item" id="BK_PROMISE_REJECTED"><p class="api-sig"><code>const int BK_PROMISE_REJECTED = 2;</code></p><p class="api-src">src/capi.c3:1788:11</p></div>
+<div class="api-item" id="BK_PROP_ALL"><p class="api-sig"><code>const uint BK_PROP_ALL = 511;</code></p><p class="api-src">src/capi.c3:1408:12</p></div>
+<div class="api-item" id="BK_PROP_CONFIGURABLE"><p class="api-sig"><code>const uint BK_PROP_CONFIGURABLE = 4;</code></p><p class="api-src">src/capi.c3:1401:12</p></div>
+<div class="api-item" id="BK_PROP_ENUMERABLE"><p class="api-sig"><code>const uint BK_PROP_ENUMERABLE = 2;</code></p><p class="api-src">src/capi.c3:1400:12</p></div>
+<div class="api-item" id="BK_PROP_HAS_CONFIGURABLE"><p class="api-sig"><code>const uint BK_PROP_HAS_CONFIGURABLE = 256;</code></p><p class="api-src">src/capi.c3:1407:12</p></div>
+<div class="api-item" id="BK_PROP_HAS_ENUMERABLE"><p class="api-sig"><code>const uint BK_PROP_HAS_ENUMERABLE = 128;</code></p><p class="api-src">src/capi.c3:1406:12</p></div>
+<div class="api-item" id="BK_PROP_HAS_GET"><p class="api-sig"><code>const uint BK_PROP_HAS_GET = 16;</code></p><p class="api-src">src/capi.c3:1403:12</p></div>
+<div class="api-item" id="BK_PROP_HAS_SET"><p class="api-sig"><code>const uint BK_PROP_HAS_SET = 32;</code></p><p class="api-src">src/capi.c3:1404:12</p></div>
+<div class="api-item" id="BK_PROP_HAS_VALUE"><p class="api-sig"><code>const uint BK_PROP_HAS_VALUE = 8;</code></p><p class="api-src">src/capi.c3:1402:12</p></div>
+<div class="api-item" id="BK_PROP_HAS_WRITABLE"><p class="api-sig"><code>const uint BK_PROP_HAS_WRITABLE = 64;</code></p><p class="api-src">src/capi.c3:1405:12</p></div>
+<div class="api-item" id="BK_PROP_WRITABLE"><p class="api-sig"><code>const uint BK_PROP_WRITABLE = 1;</code></p><p class="api-src">src/capi.c3:1399:12</p></div>
+<div class="api-item" id="BK_SLOT_SIZE"><p class="api-sig"><code>const usz BK_SLOT_SIZE = 16;</code></p><p class="api-src">src/capi.c3:2417:11</p></div>
+<div class="api-item" id="BK_TYPE_UNDEFINED"><p class="api-sig"><code>const int BK_TYPE_UNDEFINED = 0;</code></p><p class="api-src">src/capi.c3:39:11</p></div>
+<div class="api-item" id="BK_UTF8_REPLACE"><p class="api-sig"><code>const int BK_UTF8_REPLACE = 0;</code></p><p class="api-src">src/capi.c3:36:11</p></div>
+<div class="api-item" id="BK_UTF8_STRICT"><p class="api-sig"><code>const int BK_UTF8_STRICT = 1;</code></p><p class="api-src">src/capi.c3:37:11</p></div>
+<div class="api-item" id="CONTEXT_FLAGS"><p class="api-sig"><code>const uint CONTEXT_FLAGS = 7;</code></p><p class="api-src">src/capi.c3:175:12</p></div>
+<div class="api-item" id="ELEMENT_TYPE_COUNT"><p class="api-sig"><code>const uint ELEMENT_TYPE_COUNT = 12;</code></p><p class="api-src">src/capi.c3:3218:12</p></div>
+<div class="api-item" id="exotic_ops"><p class="api-sig"><code><a href="boomkat-builtins.html#HostExoticOps">HostExoticOps</a> exotic_ops = { .get_own = &amp;exotic_get_own, .define = &amp;exotic_define, .remove = &amp;exotic_remove, .own_keys = &amp;exotic_own_keys, .call = &amp;exotic_call, };</code></p><p class="api-src">src/capi.c3:2174:25</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="accessor_of"><p class="api-sig"><code>fn int accessor_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:1419:8</p></div>
+<div class="api-item" id="answered"><p class="api-sig"><code>fn int answered(<a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req)</code></p><p class="api-src">src/capi.c3:527:8</p></div>
+<div class="api-item" id="api_class"><p class="api-sig"><code>fn <a href="boomkat-heap.html#HostClassEntry">HostClassEntry*</a> api_class(<a href="#Runtime">Runtime*</a> rt, uint cls)</code></p><p class="api-src">src/capi.c3:1954:26</p></div>
+<div class="api-item" id="as_object"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> as_object(void* ctxp, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:1134:13</p></div>
+<div class="api-item" id="bad_handle"><p class="api-sig"><code>fn ulong bad_handle(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/capi.c3:100:10</p></div>
+<div class="api-item" id="bigint_of"><p class="api-sig"><code>fn <a href="boomkat-hbigint.html#HBigInt">HBigInt*</a> bigint_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:1684:13</p></div>
+<div class="api-item" id="bk_add_external_memory"><p class="api-sig"><code>fn void bk_add_external_memory(void* rtp, long delta) @export</code></p><p class="api-src">src/capi.c3:3144:9</p></div>
+<div class="api-item" id="bk_adopt_shared_block"><p class="api-sig"><code>fn ulong bk_adopt_shared_block(void* ctxp, void* data) @export</code></p><p class="api-src">src/capi.c3:3429:10</p></div>
+<div class="api-item" id="bk_alloc"><p class="api-sig"><code>fn void* bk_alloc(void* rtp, usz size) @export</code></p><p class="api-src">src/capi.c3:130:10</p></div>
+<div class="api-item" id="bk_arg"><p class="api-sig"><code>fn ulong bk_arg(void* ctxp, uint i) @export</code></p><p class="api-src">src/capi.c3:2966:10</p></div>
+<div class="api-item" id="bk_argc"><p class="api-sig"><code>fn uint bk_argc(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:2958:9</p></div>
+<div class="api-item" id="bk_atom_to_value"><p class="api-sig"><code>fn ulong bk_atom_to_value(void* ctxp, uint atom) @export</code></p><p class="api-src">src/capi.c3:1337:10</p></div>
+<div class="api-item" id="bk_call"><p class="api-sig"><code>fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc) @export</code></p><p class="api-src">src/capi.c3:2623:10</p></div>
+<div class="api-item" id="bk_clear_interrupt"><p class="api-sig"><code>fn void bk_clear_interrupt(void* rtp) @export</code></p><p class="api-src">src/capi.c3:3176:9</p></div>
+<div class="api-item" id="bk_compile"><p class="api-sig"><code>fn ulong bk_compile(void* ctxp, char* src, usz len, char* filename, uint flags) @export</code></p><p class="api-src">src/capi.c3:257:10</p></div>
+<div class="api-item" id="bk_construct"><p class="api-sig"><code>fn ulong bk_construct(void* ctxp, ulong ctor_id, ulong* argv, uint argc, ulong new_target_id) @export</code></p><p class="api-src">src/capi.c3:2689:10</p></div>
+<div class="api-item" id="bk_create"><p class="api-sig"><code>fn void* bk_create() @export</code></p><p class="api-src">src/capi.c3:151:10</p></div>
+<div class="api-item" id="bk_cstr"><p class="api-sig"><code>fn char* bk_cstr(void* ctxp, ulong id, usz* out_len) @export</code></p><p class="api-src">src/capi.c3:974:10</p></div>
+<div class="api-item" id="bk_define_class"><p class="api-sig"><code>fn uint bk_define_class(void* ctxp, <a href="#BkClassDef">BkClassDef*</a> def, ulong* ctor_out, ulong* proto_out) @export</code></p><p class="api-src">src/capi.c3:1994:9</p></div>
+<div class="api-item" id="bk_define_module"><p class="api-sig"><code>fn int bk_define_module(void* ctxp, char* name, usz name_len, char* src, usz len) @export</code></p><p class="api-src">src/capi.c3:362:8</p></div>
+<div class="api-item" id="bk_define_native_module"><p class="api-sig"><code>fn int bk_define_native_module(void* ctxp, char* name, usz len, ulong exports) @export</code></p><p class="api-src">src/capi.c3:611:8</p></div>
+<div class="api-item" id="bk_define_property"><p class="api-sig"><code>fn int bk_define_property(void* ctxp, ulong obj_id, uint atom, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> desc, int* ok) @export</code></p><p class="api-src">src/capi.c3:1465:8</p></div>
+<div class="api-item" id="bk_delete_property"><p class="api-sig"><code>fn int bk_delete_property(void* ctxp, ulong obj_id, char* key, usz key_len, int* out) @export</code></p><p class="api-src">src/capi.c3:1253:8</p></div>
+<div class="api-item" id="bk_delete_property_atom"><p class="api-sig"><code>fn int bk_delete_property_atom(void* ctxp, ulong obj_id, uint atom, int* out) @export</code></p><p class="api-src">src/capi.c3:1386:8</p></div>
+<div class="api-item" id="bk_describe"><p class="api-sig"><code>fn int bk_describe(void* ctxp, ulong id, char* buf, usz cap, usz* out_len) @export</code></p><p class="api-src">src/capi.c3:3031:8</p></div>
+<div class="api-item" id="bk_destroy"><p class="api-sig"><code>fn void bk_destroy(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:160:9</p></div>
+<div class="api-item" id="bk_detach_array_buffer"><p class="api-sig"><code>fn int bk_detach_array_buffer(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:3340:8</p></div>
+<div class="api-item" id="bk_dup_atom"><p class="api-sig"><code>fn uint bk_dup_atom(void* ctxp, uint atom) @export</code></p><p class="api-src">src/capi.c3:1347:9</p></div>
+<div class="api-item" id="bk_dup_value"><p class="api-sig"><code>fn ulong bk_dup_value(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:701:10</p></div>
+<div class="api-item" id="bk_enqueue_job"><p class="api-sig"><code>fn int bk_enqueue_job(void* ctxp, ulong callback) @export</code></p><p class="api-src">src/capi.c3:645:8</p></div>
+<div class="api-item" id="bk_eval_ex"><p class="api-sig"><code>fn ulong bk_eval_ex(void* ctxp, char* src, usz len, char* filename, uint flags) @export</code></p><p class="api-src">src/capi.c3:301:10</p></div>
+<div class="api-item" id="bk_execute_pending_job"><p class="api-sig"><code>fn int bk_execute_pending_job(void* rtp, void** context) @export</code></p><p class="api-src">src/capi.c3:665:8</p></div>
+<div class="api-item" id="bk_free_atom"><p class="api-sig"><code>fn void bk_free_atom(void* ctxp, uint atom) @export</code></p><p class="api-src">src/capi.c3:1354:9</p></div>
+<div class="api-item" id="bk_free_context"><p class="api-sig"><code>fn void bk_free_context(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:223:9</p></div>
+<div class="api-item" id="bk_free_cstring"><p class="api-sig"><code>fn void bk_free_cstring(void* ctxp, char* string) @export</code></p><p class="api-src">src/capi.c3:990:9</p></div>
+<div class="api-item" id="bk_free_memory"><p class="api-sig"><code>fn void bk_free_memory(void* rtp, void* ptr) @export</code></p><p class="api-src">src/capi.c3:144:9</p></div>
+<div class="api-item" id="bk_free_runtime"><p class="api-sig"><code>fn void bk_free_runtime(void* rtp) @export</code></p><p class="api-src">src/capi.c3:221:9</p></div>
+<div class="api-item" id="bk_free_value"><p class="api-sig"><code>fn void bk_free_value(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:695:9</p></div>
+<div class="api-item" id="bk_free_weak"><p class="api-sig"><code>fn void bk_free_weak(void* ctxp, ulong weak) @export</code></p><p class="api-src">src/capi.c3:3502:9</p></div>
+<div class="api-item" id="bk_gc"><p class="api-sig"><code>fn void bk_gc(void* rtp, int kind) @export</code></p><p class="api-src">src/capi.c3:3104:9</p></div>
+<div class="api-item" id="bk_gc_in_joint_cycle"><p class="api-sig"><code>fn int bk_gc_in_joint_cycle(void* rtp) @export</code></p><p class="api-src">src/capi.c3:3129:8</p></div>
+<div class="api-item" id="bk_gc_inhibit"><p class="api-sig"><code>fn void bk_gc_inhibit(void* rtp, int inhibit) @export</code></p><p class="api-src">src/capi.c3:3139:9</p></div>
+<div class="api-item" id="bk_gc_joint_begin"><p class="api-sig"><code>fn int bk_gc_joint_begin(void* rtp, void** tracer_out) @export</code></p><p class="api-src">src/capi.c3:3112:8</p></div>
+<div class="api-item" id="bk_gc_joint_drain"><p class="api-sig"><code>fn void bk_gc_joint_drain(void* rtp) @export</code></p><p class="api-src">src/capi.c3:3121:9</p></div>
+<div class="api-item" id="bk_gc_joint_end"><p class="api-sig"><code>fn void bk_gc_joint_end(void* rtp) @export</code></p><p class="api-src">src/capi.c3:3125:9</p></div>
+<div class="api-item" id="bk_gc_step"><p class="api-sig"><code>fn int bk_gc_step(void* rtp, ulong budget_ns) @export</code></p><p class="api-src">src/capi.c3:3133:8</p></div>
+<div class="api-item" id="bk_get_array_buffer"><p class="api-sig"><code>fn int bk_get_array_buffer(void* ctxp, ulong id, void** data, usz* length) @export</code></p><p class="api-src">src/capi.c3:3326:8</p></div>
+<div class="api-item" id="bk_get_context_data"><p class="api-sig"><code>fn void* bk_get_context_data(void* ctxp, uint slot) @export</code></p><p class="api-src">src/capi.c3:241:10</p></div>
+<div class="api-item" id="bk_get_error_code"><p class="api-sig"><code>fn int bk_get_error_code(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:763:8</p></div>
+<div class="api-item" id="bk_get_error_info"><p class="api-sig"><code>fn int bk_get_error_info(void* ctxp, <a href="#BkErrorInfo">BkErrorInfo*</a> out) @export</code></p><p class="api-src">src/capi.c3:778:8</p></div>
+<div class="api-item" id="bk_get_error_message"><p class="api-sig"><code>fn char* bk_get_error_message(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:757:10</p></div>
+<div class="api-item" id="bk_get_exception"><p class="api-sig"><code>fn ulong bk_get_exception(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:996:10</p></div>
+<div class="api-item" id="bk_get_global_object"><p class="api-sig"><code>fn ulong bk_get_global_object(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:1116:10</p></div>
+<div class="api-item" id="bk_get_heap_stats"><p class="api-sig"><code>fn int bk_get_heap_stats(void* rtp, <a href="#BkHeapStats">BkHeapStats*</a> out) @export</code></p><p class="api-src">src/capi.c3:3157:8</p></div>
+<div class="api-item" id="bk_get_instance_class"><p class="api-sig"><code>fn uint bk_get_instance_class(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:2147:9</p></div>
+<div class="api-item" id="bk_get_instance_payload"><p class="api-sig"><code>fn void* bk_get_instance_payload(void* ctxp, ulong id, uint cls) @export</code></p><p class="api-src">src/capi.c3:2096:10</p></div>
+<div class="api-item" id="bk_get_intrinsic"><p class="api-sig"><code>fn ulong bk_get_intrinsic(void* ctxp, int which) @export</code></p><p class="api-src">src/capi.c3:1540:10</p></div>
+<div class="api-item" id="bk_get_length"><p class="api-sig"><code>fn int bk_get_length(void* ctxp, ulong obj_id, ulong* out) @export</code></p><p class="api-src">src/capi.c3:2829:8</p></div>
+<div class="api-item" id="bk_get_new_target"><p class="api-sig"><code>fn ulong bk_get_new_target(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:2989:10</p></div>
+<div class="api-item" id="bk_get_own_property"><p class="api-sig"><code>fn int bk_get_own_property(void* ctxp, ulong obj_id, uint atom, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> out, int* found) @export</code></p><p class="api-src">src/capi.c3:1485:8</p></div>
+<div class="api-item" id="bk_get_own_property_keys"><p class="api-sig"><code>fn ulong bk_get_own_property_keys(void* ctxp, ulong obj_id, uint flags) @export</code></p><p class="api-src">src/capi.c3:2547:10</p></div>
+<div class="api-item" id="bk_get_property"><p class="api-sig"><code>fn ulong bk_get_property(void* ctxp, ulong obj_id, char* key, usz key_len) @export</code></p><p class="api-src">src/capi.c3:1185:10</p></div>
+<div class="api-item" id="bk_get_property_atom"><p class="api-sig"><code>fn ulong bk_get_property_atom(void* ctxp, ulong obj_id, uint atom) @export</code></p><p class="api-src">src/capi.c3:1359:10</p></div>
+<div class="api-item" id="bk_get_property_uint32"><p class="api-sig"><code>fn ulong bk_get_property_uint32(void* ctxp, ulong obj_id, uint idx) @export</code></p><p class="api-src">src/capi.c3:1192:10</p></div>
+<div class="api-item" id="bk_get_prototype"><p class="api-sig"><code>fn ulong bk_get_prototype(void* ctxp, ulong obj_id) @export</code></p><p class="api-src">src/capi.c3:2736:10</p></div>
+<div class="api-item" id="bk_get_runtime"><p class="api-sig"><code>fn void* bk_get_runtime(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:225:10</p></div>
+<div class="api-item" id="bk_get_runtime_data"><p class="api-sig"><code>fn void* bk_get_runtime_data(void* rtp, uint slot) @export</code></p><p class="api-src">src/capi.c3:231:10</p></div>
+<div class="api-item" id="bk_get_type"><p class="api-sig"><code>fn int bk_get_type(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:801:8</p></div>
+<div class="api-item" id="bk_get_typed_array"><p class="api-sig"><code>fn int bk_get_typed_array(void* ctxp, ulong id, <a href="#BkTypedArrayInfo">BkTypedArrayInfo*</a> out) @export</code></p><p class="api-src">src/capi.c3:3382:8</p></div>
+<div class="api-item" id="bk_get_well_known_symbol"><p class="api-sig"><code>fn ulong bk_get_well_known_symbol(void* ctxp, int which) @export</code></p><p class="api-src">src/capi.c3:1585:10</p></div>
+<div class="api-item" id="bk_has_property"><p class="api-sig"><code>fn int bk_has_property(void* ctxp, ulong obj_id, char* key, usz key_len, int* out) @export</code></p><p class="api-src">src/capi.c3:1232:8</p></div>
+<div class="api-item" id="bk_has_property_atom"><p class="api-sig"><code>fn int bk_has_property_atom(void* ctxp, ulong obj_id, uint atom, int* out) @export</code></p><p class="api-src">src/capi.c3:1377:8</p></div>
+<div class="api-item" id="bk_import"><p class="api-sig"><code>fn ulong bk_import(void* ctxp, char* specifier, usz len) @export</code></p><p class="api-src">src/capi.c3:631:10</p></div>
+<div class="api-item" id="bk_instanceof"><p class="api-sig"><code>fn int bk_instanceof(void* ctxp, ulong value_id, ulong ctor_id, int* out) @export</code></p><p class="api-src">src/capi.c3:2766:8</p></div>
+<div class="api-item" id="bk_invalidate_module"><p class="api-sig"><code>fn int bk_invalidate_module(void* ctxp, char* name, usz len) @export</code></p><p class="api-src">src/capi.c3:621:8</p></div>
+<div class="api-item" id="bk_is_array"><p class="api-sig"><code>fn int bk_is_array(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:2817:8</p></div>
+<div class="api-item" id="bk_is_constructor_call"><p class="api-sig"><code>fn int bk_is_constructor_call(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:2995:8</p></div>
+<div class="api-item" id="bk_is_job_pending"><p class="api-sig"><code>fn int bk_is_job_pending(void* rtp) @export</code></p><p class="api-src">src/capi.c3:659:8</p></div>
+<div class="api-item" id="bk_json_parse"><p class="api-sig"><code>fn ulong bk_json_parse(void* ctxp, char* utf8, usz len) @export</code></p><p class="api-src">src/capi.c3:2839:10</p></div>
+<div class="api-item" id="bk_json_stringify"><p class="api-sig"><code>fn ulong bk_json_stringify(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:2858:10</p></div>
+<div class="api-item" id="bk_module_fail"><p class="api-sig"><code>fn int bk_module_fail(<a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req, ulong error) @export</code></p><p class="api-src">src/capi.c3:601:8</p></div>
+<div class="api-item" id="bk_module_provide"><p class="api-sig"><code>fn int bk_module_provide(<a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req, char* source, usz len) @export</code></p><p class="api-src">src/capi.c3:510:8</p></div>
+<div class="api-item" id="bk_module_provide_native"><p class="api-sig"><code>fn int bk_module_provide_native(<a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req, ulong exports) @export</code></p><p class="api-src">src/capi.c3:592:8</p></div>
+<div class="api-item" id="bk_module_set_name"><p class="api-sig"><code>fn int bk_module_set_name(<a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req, char* name, usz len) @export</code></p><p class="api-src">src/capi.c3:498:8</p></div>
+<div class="api-item" id="bk_new_array"><p class="api-sig"><code>fn ulong bk_new_array(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:1088:10</p></div>
+<div class="api-item" id="bk_new_array_buffer"><p class="api-sig"><code>fn ulong bk_new_array_buffer(void* ctxp, usz length, void** data_out) @export</code></p><p class="api-src">src/capi.c3:3266:10</p></div>
+<div class="api-item" id="bk_new_array_from"><p class="api-sig"><code>fn ulong bk_new_array_from(void* ctxp, ulong* elems, uint n) @export</code></p><p class="api-src">src/capi.c3:1098:10</p></div>
+<div class="api-item" id="bk_new_atom"><p class="api-sig"><code>fn uint bk_new_atom(void* ctxp, char* utf8, usz len) @export</code></p><p class="api-src">src/capi.c3:1298:9</p></div>
+<div class="api-item" id="bk_new_atom_index"><p class="api-sig"><code>fn uint bk_new_atom_index(void* ctxp, uint index) @export</code></p><p class="api-src">src/capi.c3:1306:9</p></div>
+<div class="api-item" id="bk_new_bigint_int64"><p class="api-sig"><code>fn ulong bk_new_bigint_int64(void* ctxp, long value) @export</code></p><p class="api-src">src/capi.c3:1669:10</p></div>
+<div class="api-item" id="bk_new_bigint_uint64"><p class="api-sig"><code>fn ulong bk_new_bigint_uint64(void* ctxp, ulong value) @export</code></p><p class="api-src">src/capi.c3:1676:10</p></div>
+<div class="api-item" id="bk_new_bigint_words"><p class="api-sig"><code>fn ulong bk_new_bigint_words(void* ctxp, int negative, ulong* words, usz count) @export</code></p><p class="api-src">src/capi.c3:1712:10</p></div>
+<div class="api-item" id="bk_new_c_function"><p class="api-sig"><code>fn ulong bk_new_c_function(void* ctxp, void* callback, char* name, int arity, uint flags, void* data, void* finalize, void* finalize_opaque) @export</code></p><p class="api-src">src/capi.c3:3053:10</p></div>
+<div class="api-item" id="bk_new_context"><p class="api-sig"><code>fn void* bk_new_context(void* rtp, <a href="#BkContextOptions">BkContextOptions*</a> options) @export</code></p><p class="api-src">src/capi.c3:179:10</p></div>
+<div class="api-item" id="bk_new_error"><p class="api-sig"><code>fn ulong bk_new_error(void* ctxp, int kind, char* msg) @export</code></p><p class="api-src">src/capi.c3:3014:10</p></div>
+<div class="api-item" id="bk_new_external_array_buffer"><p class="api-sig"><code>fn ulong bk_new_external_array_buffer(void* ctxp, void* data, usz length, <a href="boomkat-heap.html#ExternalReleaseFn">ExternalReleaseFn</a> release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:3294:10</p></div>
+<div class="api-item" id="bk_new_external_string_latin1"><p class="api-sig"><code>fn ulong bk_new_external_string_latin1(void* ctxp, char* chars, usz len, <a href="boomkat-hstring.html#ExtRelease">ExtRelease</a> release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:1047:10</p></div>
+<div class="api-item" id="bk_new_external_string_utf16"><p class="api-sig"><code>fn ulong bk_new_external_string_utf16(void* ctxp, ushort* units, usz len, <a href="boomkat-hstring.html#ExtRelease">ExtRelease</a> release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:1057:10</p></div>
+<div class="api-item" id="bk_new_instance"><p class="api-sig"><code>fn ulong bk_new_instance(void* ctxp, uint cls, void* payload, ulong new_target) @export</code></p><p class="api-src">src/capi.c3:2052:10</p></div>
+<div class="api-item" id="bk_new_number"><p class="api-sig"><code>fn ulong bk_new_number(void* ctxp, double d) @export</code></p><p class="api-src">src/capi.c3:1012:10</p></div>
+<div class="api-item" id="bk_new_object"><p class="api-sig"><code>fn ulong bk_new_object(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:1067:10</p></div>
+<div class="api-item" id="bk_new_object_with_proto"><p class="api-sig"><code>fn ulong bk_new_object_with_proto(void* ctxp, ulong proto_id) @export</code></p><p class="api-src">src/capi.c3:2721:10</p></div>
+<div class="api-item" id="bk_new_promise"><p class="api-sig"><code>fn ulong bk_new_promise(void* ctxp, ulong* resolve_out, ulong* reject_out) @export</code></p><p class="api-src">src/capi.c3:1802:10</p></div>
+<div class="api-item" id="bk_new_proxy"><p class="api-sig"><code>fn ulong bk_new_proxy(void* ctxp, ulong target, ulong handler) @export</code></p><p class="api-src">src/capi.c3:2396:10</p></div>
+<div class="api-item" id="bk_new_runtime"><p class="api-sig"><code>fn void* bk_new_runtime(<a href="#BkRuntimeOptions">BkRuntimeOptions*</a> options) @export</code></p><p class="api-src">src/capi.c3:121:10</p></div>
+<div class="api-item" id="bk_new_shared_array_buffer"><p class="api-sig"><code>fn ulong bk_new_shared_array_buffer(void* ctxp, usz length, void** data_out) @export</code></p><p class="api-src">src/capi.c3:3408:10</p></div>
+<div class="api-item" id="bk_new_string"><p class="api-sig"><code>fn ulong bk_new_string(void* ctxp, char* utf8, usz len) @export</code></p><p class="api-src">src/capi.c3:1026:10</p></div>
+<div class="api-item" id="bk_new_string_latin1"><p class="api-sig"><code>fn ulong bk_new_string_latin1(void* ctxp, char* chars, usz len) @export</code></p><p class="api-src">src/capi.c3:1033:10</p></div>
+<div class="api-item" id="bk_new_string_utf16"><p class="api-sig"><code>fn ulong bk_new_string_utf16(void* ctxp, ushort* units, usz len) @export</code></p><p class="api-src">src/capi.c3:1040:10</p></div>
+<div class="api-item" id="bk_new_symbol"><p class="api-sig"><code>fn ulong bk_new_symbol(void* ctxp, char* desc, usz len) @export</code></p><p class="api-src">src/capi.c3:1614:10</p></div>
+<div class="api-item" id="bk_new_typed_array"><p class="api-sig"><code>fn ulong bk_new_typed_array(void* ctxp, int type, ulong buffer, usz byte_offset, usz length) @export</code></p><p class="api-src">src/capi.c3:3352:10</p></div>
+<div class="api-item" id="bk_new_weak"><p class="api-sig"><code>fn ulong bk_new_weak(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:3462:10</p></div>
+<div class="api-item" id="bk_promise_mark_handled"><p class="api-sig"><code>fn int bk_promise_mark_handled(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:1880:8</p></div>
+<div class="api-item" id="bk_promise_observe"><p class="api-sig"><code>fn int bk_promise_observe(void* ctxp, ulong id, ulong fulfilled, ulong rejected) @export</code></p><p class="api-src">src/capi.c3:1921:8</p></div>
+<div class="api-item" id="bk_promise_resolve"><p class="api-sig"><code>fn ulong bk_promise_resolve(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:1891:10</p></div>
+<div class="api-item" id="bk_promise_result"><p class="api-sig"><code>fn ulong bk_promise_result(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:1870:10</p></div>
+<div class="api-item" id="bk_promise_state_get"><p class="api-sig"><code>fn int bk_promise_state_get(void* ctxp, ulong id, int* out) @export</code></p><p class="api-src">src/capi.c3:1855:8</p></div>
+<div class="api-item" id="bk_promise_then"><p class="api-sig"><code>fn ulong bk_promise_then(void* ctxp, ulong id, ulong on_fulfilled, ulong on_rejected) @export</code></p><p class="api-src">src/capi.c3:1904:10</p></div>
+<div class="api-item" id="bk_read_bigint_int64"><p class="api-sig"><code>fn int bk_read_bigint_int64(void* ctxp, ulong id, long* out, int* lossless) @export</code></p><p class="api-src">src/capi.c3:1693:8</p></div>
+<div class="api-item" id="bk_read_bigint_words"><p class="api-sig"><code>fn int bk_read_bigint_words(void* ctxp, ulong id, int* negative, ulong* words, usz capacity, usz* count) @export</code></p><p class="api-src">src/capi.c3:1748:8</p></div>
+<div class="api-item" id="bk_read_bool"><p class="api-sig"><code>fn int bk_read_bool(void* ctxp, ulong id, int* out) @export</code></p><p class="api-src">src/capi.c3:819:8</p></div>
+<div class="api-item" id="bk_read_number"><p class="api-sig"><code>fn int bk_read_number(void* ctxp, ulong id, double* out) @export</code></p><p class="api-src">src/capi.c3:808:8</p></div>
+<div class="api-item" id="bk_read_string"><p class="api-sig"><code>fn int bk_read_string(void* ctxp, ulong id, char* buf, usz cap, usz* out_len) @export</code></p><p class="api-src">src/capi.c3:842:8</p></div>
+<div class="api-item" id="bk_read_string_utf16"><p class="api-sig"><code>fn int bk_read_string_utf16(void* ctxp, ulong id, ushort* buf, usz cap, usz* out_len) @export</code></p><p class="api-src">src/capi.c3:861:8</p></div>
+<div class="api-item" id="bk_read_string_utf8"><p class="api-sig"><code>fn int bk_read_string_utf8(void* ctxp, ulong id, int mode, char* buf, usz cap, usz* out_len) @export</code></p><p class="api-src">src/capi.c3:850:8</p></div>
+<div class="api-item" id="bk_realloc"><p class="api-sig"><code>fn void* bk_realloc(void* rtp, void* ptr, usz size) @export</code></p><p class="api-src">src/capi.c3:136:10</p></div>
+<div class="api-item" id="bk_register_fn"><p class="api-sig"><code>fn int bk_register_fn(void* ctxp, ulong target_id, char* name, void* fn_ptr, int arity, uint flags, void* udata) @export</code></p><p class="api-src">src/capi.c3:2944:8</p></div>
+<div class="api-item" id="bk_request_interrupt"><p class="api-sig"><code>fn void bk_request_interrupt(void* rtp) @export</code></p><p class="api-src">src/capi.c3:3168:9</p></div>
+<div class="api-item" id="bk_run_finalizers"><p class="api-sig"><code>fn uint bk_run_finalizers(void* runtime) @export</code></p><p class="api-src">src/capi.c3:2487:9</p></div>
+<div class="api-item" id="bk_run_jobs"><p class="api-sig"><code>fn int bk_run_jobs(void* rtp) @export</code></p><p class="api-src">src/capi.c3:686:8</p></div>
+<div class="api-item" id="bk_run_script"><p class="api-sig"><code>fn ulong bk_run_script(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:281:10</p></div>
+<div class="api-item" id="bk_same_value"><p class="api-sig"><code>fn int bk_same_value(void* ctxp, ulong a_id, ulong b_id) @export</code></p><p class="api-src">src/capi.c3:2810:8</p></div>
+<div class="api-item" id="bk_scope_close"><p class="api-sig"><code>fn void bk_scope_close(void* ctxp, uint scope) @export</code></p><p class="api-src">src/capi.c3:721:9</p></div>
+<div class="api-item" id="bk_scope_close_escape"><p class="api-sig"><code>fn ulong bk_scope_close_escape(void* ctxp, uint scope, ulong id) @export</code></p><p class="api-src">src/capi.c3:726:10</p></div>
+<div class="api-item" id="bk_scope_current"><p class="api-sig"><code>fn uint bk_scope_current(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:746:9</p></div>
+<div class="api-item" id="bk_scope_local"><p class="api-sig"><code>fn ulong bk_scope_local(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:738:10</p></div>
+<div class="api-item" id="bk_scope_open"><p class="api-sig"><code>fn uint bk_scope_open(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:713:9</p></div>
+<div class="api-item" id="bk_set_context_data"><p class="api-sig"><code>fn void bk_set_context_data(void* ctxp, uint slot, void* data) @export</code></p><p class="api-src">src/capi.c3:236:9</p></div>
+<div class="api-item" id="bk_set_function_list"><p class="api-sig"><code>fn int bk_set_function_list(void* ctxp, ulong target_id, <a href="#BkFnDef">BkFnDef*</a> defs) @export</code></p><p class="api-src">src/capi.c3:2899:8</p></div>
+<div class="api-item" id="bk_set_global_class"><p class="api-sig"><code>fn int bk_set_global_class(void* ctxp, uint cls, void* payload) @export</code></p><p class="api-src">src/capi.c3:2124:8</p></div>
+<div class="api-item" id="bk_set_global_property"><p class="api-sig"><code>fn int bk_set_global_property(void* ctxp, char* name, usz name_len, ulong val_id) @export</code></p><p class="api-src">src/capi.c3:2979:8</p></div>
+<div class="api-item" id="bk_set_heap_limit"><p class="api-sig"><code>fn int bk_set_heap_limit(void* rtp, ulong bytes) @export</code></p><p class="api-src">src/capi.c3:3149:8</p></div>
+<div class="api-item" id="bk_set_instance_payload"><p class="api-sig"><code>fn int bk_set_instance_payload(void* ctxp, ulong id, uint cls, void* payload) @export</code></p><p class="api-src">src/capi.c3:2106:8</p></div>
+<div class="api-item" id="bk_set_interrupt"><p class="api-sig"><code>fn void bk_set_interrupt(void* rtp, void* cb, void* opaque) @export</code></p><p class="api-src">src/capi.c3:3080:9</p></div>
+<div class="api-item" id="bk_set_job_hook"><p class="api-sig"><code>fn void bk_set_job_hook(void* runtime, void* hook, void* opaque) @export</code></p><p class="api-src">src/capi.c3:2469:9</p></div>
+<div class="api-item" id="bk_set_jsx"><p class="api-sig"><code>fn int bk_set_jsx(void* ctxp, int enable, int runtime, char* import_source, char* factory, char* fragment) @export</code></p><p class="api-src">src/capi.c3:334:8</p></div>
+<div class="api-item" id="bk_set_module_loader"><p class="api-sig"><code>fn int bk_set_module_loader(void* runtime, <a href="boomkat-embed.html#ModuleLoader">ModuleLoader*</a> loader) @export</code></p><p class="api-src">src/capi.c3:483:8</p></div>
+<div class="api-item" id="bk_set_promise_rejection_tracker"><p class="api-sig"><code>fn void bk_set_promise_rejection_tracker(void* rtp, void* cb, void* opaque) @export</code></p><p class="api-src">src/capi.c3:3195:9</p></div>
+<div class="api-item" id="bk_set_property"><p class="api-sig"><code>fn int bk_set_property(void* ctxp, ulong obj_id, char* key, usz key_len, ulong val_id) @export</code></p><p class="api-src">src/capi.c3:1216:8</p></div>
+<div class="api-item" id="bk_set_property_atom"><p class="api-sig"><code>fn int bk_set_property_atom(void* ctxp, ulong obj_id, uint atom, ulong val_id) @export</code></p><p class="api-src">src/capi.c3:1368:8</p></div>
+<div class="api-item" id="bk_set_property_uint32"><p class="api-sig"><code>fn int bk_set_property_uint32(void* ctxp, ulong obj_id, uint idx, ulong val_id) @export</code></p><p class="api-src">src/capi.c3:1224:8</p></div>
+<div class="api-item" id="bk_set_prototype"><p class="api-sig"><code>fn int bk_set_prototype(void* ctxp, ulong obj_id, ulong proto_id) @export</code></p><p class="api-src">src/capi.c3:2751:8</p></div>
+<div class="api-item" id="bk_set_root_tracer"><p class="api-sig"><code>fn void bk_set_root_tracer(void* runtime, void* callback, void* opaque) @export</code></p><p class="api-src">src/capi.c3:2458:9</p></div>
+<div class="api-item" id="bk_set_runtime_data"><p class="api-sig"><code>fn void bk_set_runtime_data(void* rtp, uint slot, void* data) @export</code></p><p class="api-src">src/capi.c3:227:9</p></div>
+<div class="api-item" id="bk_shared_block_release"><p class="api-sig"><code>fn void bk_shared_block_release(void* data) @export</code></p><p class="api-src">src/capi.c3:3447:9</p></div>
+<div class="api-item" id="bk_shared_block_retain"><p class="api-sig"><code>fn void bk_shared_block_retain(void* data) @export</code></p><p class="api-src">src/capi.c3:3443:9</p></div>
+<div class="api-item" id="bk_slot_clear"><p class="api-sig"><code>fn void bk_slot_clear(void* ctxp, void* slot) @export</code></p><p class="api-src">src/capi.c3:2446:9</p></div>
+<div class="api-item" id="bk_slot_get"><p class="api-sig"><code>fn ulong bk_slot_get(void* ctxp, void* slot) @export</code></p><p class="api-src">src/capi.c3:2438:10</p></div>
+<div class="api-item" id="bk_slot_init"><p class="api-sig"><code>fn void bk_slot_init(void* slot) @export</code></p><p class="api-src">src/capi.c3:2420:9</p></div>
+<div class="api-item" id="bk_slot_set"><p class="api-sig"><code>fn int bk_slot_set(void* ctxp, void* slot, ulong id) @export</code></p><p class="api-src">src/capi.c3:2428:8</p></div>
+<div class="api-item" id="bk_status_str"><p class="api-sig"><code>fn char* bk_status_str(int status) @export</code></p><p class="api-src">src/capi.c3:789:10</p></div>
+<div class="api-item" id="bk_strict_equals"><p class="api-sig"><code>fn int bk_strict_equals(void* ctxp, ulong a_id, ulong b_id) @export</code></p><p class="api-src">src/capi.c3:2803:8</p></div>
+<div class="api-item" id="bk_string_length"><p class="api-sig"><code>fn usz bk_string_length(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:871:8</p></div>
+<div class="api-item" id="bk_string_view_get"><p class="api-sig"><code>fn int bk_string_view_get(void* ctxp, ulong id, <a href="#StringView">StringView*</a> out) @export</code></p><p class="api-src">src/capi.c3:888:8</p></div>
+<div class="api-item" id="bk_symbol_description"><p class="api-sig"><code>fn ulong bk_symbol_description(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:1642:10</p></div>
+<div class="api-item" id="bk_symbol_for"><p class="api-sig"><code>fn ulong bk_symbol_for(void* ctxp, char* key, usz len) @export</code></p><p class="api-src">src/capi.c3:1626:10</p></div>
+<div class="api-item" id="bk_this"><p class="api-sig"><code>fn ulong bk_this(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:2973:10</p></div>
+<div class="api-item" id="bk_throw"><p class="api-sig"><code>fn ulong bk_throw(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:3044:10</p></div>
+<div class="api-item" id="bk_throw_error"><p class="api-sig"><code>fn ulong bk_throw_error(void* ctxp, int kind, char* msg) @export</code></p><p class="api-src">src/capi.c3:3004:10</p></div>
+<div class="api-item" id="bk_to_bool"><p class="api-sig"><code>fn int bk_to_bool(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:934:8</p></div>
+<div class="api-item" id="bk_to_cstring"><p class="api-sig"><code>fn char* bk_to_cstring(void* ctxp, ulong id, usz* out_len) @export</code></p><p class="api-src">src/capi.c3:958:10</p></div>
+<div class="api-item" id="bk_to_number"><p class="api-sig"><code>fn double bk_to_number(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:907:11</p></div>
+<div class="api-item" id="bk_to_string"><p class="api-sig"><code>fn ulong bk_to_string(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:947:10</p></div>
+<div class="api-item" id="bk_trace_slot"><p class="api-sig"><code>fn void bk_trace_slot(void* tracer, void* slot) @export</code></p><p class="api-src">src/capi.c3:2453:9</p></div>
+<div class="api-item" id="bk_type_str"><p class="api-sig"><code>fn char* bk_type_str(int type) @export</code></p><p class="api-src">src/capi.c3:793:10</p></div>
+<div class="api-item" id="bk_value_to_atom"><p class="api-sig"><code>fn uint bk_value_to_atom(void* ctxp, ulong id) @export</code></p><p class="api-src">src/capi.c3:1327:9</p></div>
+<div class="api-item" id="bk_version"><p class="api-sig"><code>fn char* bk_version() @export</code></p><p class="api-src">src/capi.c3:247:10</p></div>
+<div class="api-item" id="bk_wait_events"><p class="api-sig"><code>fn int bk_wait_events(void* runtime, double timeout_ms) @export</code></p><p class="api-src">src/capi.c3:2477:8</p></div>
+<div class="api-item" id="bk_wake"><p class="api-sig"><code>fn void bk_wake(void* runtime) @export</code></p><p class="api-src">src/capi.c3:2482:9</p></div>
+<div class="api-item" id="bk_weak_get"><p class="api-sig"><code>fn ulong bk_weak_get(void* ctxp, ulong weak) @export</code></p><p class="api-src">src/capi.c3:3486:10</p></div>
+<div class="api-item" id="buffer_of"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> buffer_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:3222:13</p></div>
+<div class="api-item" id="call_builtin"><p class="api-sig"><code>fn int call_builtin(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-builtins.html#Builtin">Builtin</a> which, <a href="boomkat-types.html#TVal">TVal</a> this_value, <a href="boomkat-types.html#TVal">TVal*</a> args, uint argc, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:2501:8</p></div>
+<div class="api-item" id="capi_rejection_tracker"><p class="api-sig"><code>fn void capi_rejection_tracker(void* heap_raw, <a href="boomkat-types.html#TVal">TVal</a> promise, <a href="boomkat-types.html#TVal">TVal</a> reason, bool handled, void* udata)</code></p><p class="api-src">src/capi.c3:3183:9</p></div>
+<div class="api-item" id="class_is_a"><p class="api-sig"><code>fn bool class_is_a(<a href="#Runtime">Runtime*</a> rt, uint cls, uint want)</code></p><p class="api-src">src/capi.c3:1979:9</p></div>
+<div class="api-item" id="constructable"><p class="api-sig"><code>fn bool constructable(<a href="boomkat-types.html#TVal">TVal</a> v) @inline</code></p><p class="api-src">src/capi.c3:2685:9</p></div>
+<div class="api-item" id="cstr_copy"><p class="api-sig"><code>fn char* cstr_copy(char[] bytes)</code></p><p class="api-src">src/capi.c3:386:10</p></div>
+<div class="api-item" id="define_native"><p class="api-sig"><code>fn int define_native(<a href="#Runtime">Runtime*</a> rt, char[] name, <a href="boomkat-types.html#TVal">TVal</a> exports)</code></p><p class="api-src">src/capi.c3:535:8</p></div>
+<div class="api-item" id="delete_key"><p class="api-sig"><code>fn int delete_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k, int* out)</code></p><p class="api-src">src/capi.c3:1262:8</p></div>
+<div class="api-item" id="desc_from_bk"><p class="api-sig"><code>fn int desc_from_bk(void* ctxp, <a href="#Runtime">Runtime*</a> rt, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> desc, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> out)</code></p><p class="api-src">src/capi.c3:1431:8</p></div>
+<div class="api-item" id="desc_to_bk"><p class="api-sig"><code>fn bool desc_to_bk(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> pd, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> out)</code></p><p class="api-src">src/capi.c3:2281:9</p></div>
+<div class="api-item" id="exotic_call"><p class="api-sig"><code>fn void exotic_call(<a href="boomkat-builtins.html#BuiltinContext">BuiltinContext*</a> bctx, <a href="boomkat-hobject.html#HObject">HObject*</a> self)</code></p><p class="api-src">src/capi.c3:2355:9</p></div>
+<div class="api-item" id="exotic_define"><p class="api-sig"><code>fn int exotic_define(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> key, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> desc, bool* res)</code></p><p class="api-src">src/capi.c3:2306:8</p></div>
+<div class="api-item" id="exotic_get_own"><p class="api-sig"><code>fn int exotic_get_own(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> key, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> out)</code></p><p class="api-src">src/capi.c3:2253:8</p></div>
+<div class="api-item" id="exotic_own_keys"><p class="api-sig"><code>fn int exotic_own_keys(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-types.html#TVal">TVal*</a> list_out)</code></p><p class="api-src">src/capi.c3:2338:8</p></div>
+<div class="api-item" id="exotic_remove"><p class="api-sig"><code>fn int exotic_remove(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> key, bool* res)</code></p><p class="api-src">src/capi.c3:2323:8</p></div>
+<div class="api-item" id="fail"><p class="api-sig"><code>fn int fail(<a href="#Runtime">Runtime*</a> rt, int code, String msg)</code></p><p class="api-src">src/capi.c3:60:8</p></div>
+<div class="api-item" id="fail_value"><p class="api-sig"><code>fn ulong fail_value(<a href="#Runtime">Runtime*</a> rt, int code, String msg)</code></p><p class="api-src">src/capi.c3:95:10</p></div>
+<div class="api-item" id="finalize_entries"><p class="api-sig"><code>fn void finalize_entries(<a href="#BkFnDef">BkFnDef*</a> defs, usz from)</code></p><p class="api-src">src/capi.c3:2892:9</p></div>
+<div class="api-item" id="find_module_request"><p class="api-sig"><code>fn <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> find_module_request(<a href="#Runtime">Runtime*</a> rt, char[] name)</code></p><p class="api-src">src/capi.c3:426:19</p></div>
+<div class="api-item" id="free_args"><p class="api-sig"><code>fn void free_args(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal*</a> args, <a href="boomkat-types.html#TVal">TVal*</a> local) @inline</code></p><p class="api-src">src/capi.c3:2681:9</p></div>
+<div class="api-item" id="get_key"><p class="api-sig"><code>fn ulong get_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k)</code></p><p class="api-src">src/capi.c3:1157:10</p></div>
+<div class="api-item" id="has_builtin"><p class="api-sig"><code>fn bool has_builtin(<a href="boomkat-builtins.html#Builtin">Builtin</a> which) @inline</code></p><p class="api-src">src/capi.c3:2496:9</p></div>
+<div class="api-item" id="has_key"><p class="api-sig"><code>fn int has_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k, int* out)</code></p><p class="api-src">src/capi.c3:1241:8</p></div>
+<div class="api-item" id="hold"><p class="api-sig"><code>fn void hold(<a href="boomkat-heap.html#Heap">Heap*</a> hp, uint i, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:2249:9</p></div>
+<div class="api-item" id="hook_atom"><p class="api-sig"><code>fn uint hook_atom(<a href="#HookFrame">HookFrame*</a> f, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/capi.c3:2242:9</p></div>
+<div class="api-item" id="hook_enter"><p class="api-sig"><code>fn bool hook_enter(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="#HookFrame">HookFrame*</a> f)</code></p><p class="api-src">src/capi.c3:2195:9</p></div>
+<div class="api-item" id="hook_leave"><p class="api-sig"><code>fn void hook_leave(<a href="#HookFrame">HookFrame*</a> f)</code></p><p class="api-src">src/capi.c3:2212:9</p></div>
+<div class="api-item" id="hook_threw"><p class="api-sig"><code>fn int hook_threw(<a href="#HookFrame">HookFrame*</a> f)</code></p><p class="api-src">src/capi.c3:2221:8</p></div>
+<div class="api-item" id="host_instance"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> host_instance(<a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:1963:13</p></div>
+<div class="api-item" id="illegal_constructor"><p class="api-sig"><code>fn ulong illegal_constructor(void* ctxp, ulong this_value, uint argc, ulong* argv, void* opaque)</code></p><p class="api-src">src/capi.c3:1990:10</p></div>
+<div class="api-item" id="install_function"><p class="api-sig"><code>fn int install_function(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hobject.html#HObject">HObject*</a> target, char[] name, void* cfn, void* udata, <a href="boomkat-embed.html#BkFinalizer">BkFinalizer</a> finalize, void* finalize_opaque, int arity, uint flags)</code></p><p class="api-src">src/capi.c3:2930:8</p></div>
+<div class="api-item" id="instance_class"><p class="api-sig"><code>fn uint instance_class(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:1971:9</p></div>
+<div class="api-item" id="intern_atom"><p class="api-sig"><code>fn uint intern_atom(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/capi.c3:1291:9</p></div>
+<div class="api-item" id="jsx_copy"><p class="api-sig"><code>fn char[] jsx_copy(char* s, char** at)</code></p><p class="api-src">src/capi.c3:325:11</p></div>
+<div class="api-item" id="length_of"><p class="api-sig"><code>fn int length_of(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hobject.html#HObject">HObject*</a> obj, ulong* out)</code></p><p class="api-src">src/capi.c3:2518:8</p></div>
+<div class="api-item" id="loader_load"><p class="api-sig"><code>fn char[]? loader_load(char[] name, void* udata)</code></p><p class="api-src">src/capi.c3:444:12</p></div>
+<div class="api-item" id="loader_resolve"><p class="api-sig"><code>fn char[]? loader_resolve(char[] base_name, char[] specifier, void* udata)</code></p><p class="api-src">src/capi.c3:404:12</p></div>
+<div class="api-item" id="new_array"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> new_array(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/capi.c3:1080:13</p></div>
+<div class="api-item" id="new_buffer_object"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> new_buffer_object(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hobject.html#HObject">HObject*</a> proto)</code></p><p class="api-src">src/capi.c3:3255:13</p></div>
+<div class="api-item" id="park_module_error"><p class="api-sig"><code>fn void park_module_error(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req)</code></p><p class="api-src">src/capi.c3:395:9</p></div>
+<div class="api-item" id="promise_of"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> promise_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:1791:13</p></div>
+<div class="api-item" id="property_key"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> property_key(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:1316:13</p></div>
+<div class="api-item" id="resolve"><p class="api-sig"><code>fn bool resolve(void* ctxp, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:67:9</p></div>
+<div class="api-item" id="resolve_args"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal*</a> resolve_args(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong* argv, uint argc, <a href="boomkat-types.html#TVal">TVal*</a> local)</code></p><p class="api-src">src/capi.c3:2664:10</p></div>
+<div class="api-item" id="rt_of"><p class="api-sig"><code>fn <a href="#Runtime">Runtime*</a> rt_of(void* p) @inline</code></p><p class="api-src">src/capi.c3:47:13</p></div>
+<div class="api-item" id="set_key"><p class="api-sig"><code>fn int set_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k, ulong val_id)</code></p><p class="api-src">src/capi.c3:1200:8</p></div>
+<div class="api-item" id="store"><p class="api-sig"><code>fn ulong store(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:76:10</p></div>
+<div class="api-item" id="store_root"><p class="api-sig"><code>fn ulong store_root(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:85:10</p></div>
+<div class="api-item" id="store_string"><p class="api-sig"><code>fn ulong store_string(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> s)</code></p><p class="api-src">src/capi.c3:1020:10</p></div>
+<div class="api-item" id="string_of"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> string_of(<a href="#Runtime">Runtime*</a> rt, void* ctxp, ulong id)</code></p><p class="api-src">src/capi.c3:831:13</p></div>
+<div class="api-item" id="symbol_is_registered"><p class="api-sig"><code>fn bool symbol_is_registered(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="boomkat-hstring.html#HString">HString*</a> sym)</code></p><p class="api-src">src/capi.c3:3455:9</p></div>
+<div class="api-item" id="take_module_answer"><p class="api-sig"><code>fn char[]? take_module_answer(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req, bool fallback, char[] name)</code></p><p class="api-src">src/capi.c3:435:12</p></div>
+<div class="api-item" id="typed_array_proto"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> typed_array_proto(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="boomkat-hobject.html#ObjClass">ObjClass</a> cls)</code></p><p class="api-src">src/capi.c3:3235:13</p></div>
+<div class="api-item" id="vm_fault"><p class="api-sig"><code>fn int vm_fault(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/capi.c3:1149:8</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="@store_bigint"><p class="api-sig"><code>macro ulong @store_bigint(<a href="#Runtime">Runtime*</a> rt, #b)</code></p><p class="api-src">src/capi.c3:1656:13</p></div>
+<div class="api-item" id="bctx_of"><p class="api-sig"><code>macro void* bctx_of(void* p)</code></p><p class="api-src">src/capi.c3:55:13</p></div>
+<div class="api-item" id="call_depth"><p class="api-sig"><code>macro uint call_depth(void* bctx)</code></p><p class="api-src">src/capi.c3:2964:12</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

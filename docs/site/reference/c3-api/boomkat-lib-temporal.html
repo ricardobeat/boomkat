@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::lib::temporal · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html" aria-current="page">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::lib::temporal</code></h1>
+      <p class="lede">35 types, 222 functions and macros, 11 methods, 59 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="BrokenDownTime"><pre><code>struct BrokenDownTime {
+  long y;
+  long m;
+  long d;
+  int wday;
+  int h;
+  int mi;
+  int s;
+}</code></pre><p class="api-src">src/lib/temporal/civil.c3:47:8</p></div>
+<div class="api-item" id="CalendarDate"><pre><code>struct CalendarDate {
+  long year;
+  int month;
+  <a href="#MonthCode">MonthCode</a> month_code;
+  int day;
+  int day_of_year;
+  int days_in_month;
+  int days_in_year;
+  int months_in_year;
+  bool in_leap_year;
+  int era;
+  long era_year;
+}</code></pre><p class="api-src">src/lib/temporal/calendar_ops.c3:13:8</p></div>
+<div class="api-item" id="CalendarFields"><pre><code>struct CalendarFields {
+  <a href="#FieldSet">FieldSet</a> set;
+  long[14] value;
+}</code></pre><p class="api-src">src/lib/temporal/calendar_fields.c3:46:8</p></div>
+<div class="api-item" id="CalendarFields.clear"><p class="api-sig"><code>fn void CalendarFields.clear(<a href="#CalendarFields">CalendarFields*</a> self, <a href="#TemporalField">TemporalField</a> field) @inline</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:59:24</p></div>
+<div class="api-item" id="CalendarFields.get"><p class="api-sig"><code>fn long CalendarFields.get(<a href="#CalendarFields">CalendarFields*</a> self, <a href="#TemporalField">TemporalField</a> field) @inline</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:52:24</p></div>
+<div class="api-item" id="CalendarFields.has"><p class="api-sig"><code>fn bool CalendarFields.has(<a href="#CalendarFields">CalendarFields*</a> self, <a href="#TemporalField">TemporalField</a> field) @inline</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:51:24</p></div>
+<div class="api-item" id="CalendarFields.month_code"><p class="api-sig"><code>fn <a href="#MonthCode">MonthCode</a> CalendarFields.month_code(<a href="#CalendarFields">CalendarFields*</a> self)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:61:29</p></div>
+<div class="api-item" id="CalendarFields.put"><p class="api-sig"><code>fn void CalendarFields.put(<a href="#CalendarFields">CalendarFields*</a> self, <a href="#TemporalField">TemporalField</a> field, long value) @inline</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:54:24</p></div>
+<div class="api-item" id="CalendarId"><pre><code>enum CalendarId : char {
+  ISO8601,
+  BUDDHIST,
+  CHINESE,
+  COPTIC,
+  DANGI,
+  ETHIOAA,
+  ETHIOPIC,
+  GREGORY,
+  HEBREW,
+  INDIAN,
+  ISLAMIC_CIVIL,
+  ISLAMIC_TBLA,
+  ISLAMIC_UMALQURA,
+  JAPANESE,
+  PERSIAN,
+  ROC,
+}</code></pre><p class="api-src">src/lib/temporal/calendar_systems.c3:12:6</p></div>
+<div class="api-item" id="CalendarYear"><pre><code>struct CalendarYear {
+  long start;
+  int months;
+  int leap_month;
+  ushort[14] month_start;
+}</code></pre><p class="api-src">src/lib/temporal/calendar_systems.c3:241:8</p></div>
+<div class="api-item" id="CalendarYear.days_in_month"><p class="api-sig"><code>fn int CalendarYear.days_in_month(<a href="#CalendarYear">CalendarYear*</a> self, int ordinal)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:37:21</p></div>
+<div class="api-item" id="CalendarYear.length"><p class="api-sig"><code>fn int CalendarYear.length(<a href="#CalendarYear">CalendarYear*</a> self)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:41:21</p></div>
+<div class="api-item" id="CalendarYear.month_code"><p class="api-sig"><code>fn <a href="#MonthCode">MonthCode</a> CalendarYear.month_code(<a href="#CalendarYear">CalendarYear*</a> self, int ordinal)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:32:27</p></div>
+<div class="api-item" id="CalendarYearCacheEntry"><pre><code>struct CalendarYearCacheEntry {
+  bool valid;
+  <a href="#CalendarId">CalendarId</a> cal;
+  long year;
+  <a href="#CalendarYear">CalendarYear</a> value;
+}</code></pre><p class="api-src">src/lib/temporal/calendar_systems.c3:377:8</p></div>
+<div class="api-item" id="CalendarYearMonth"><pre><code>struct CalendarYearMonth {
+  long year;
+  long month;
+}</code></pre><p class="api-src">src/lib/temporal/calendar_ops.c3:185:8</p></div>
+<div class="api-item" id="CivilDate"><pre><code>struct CivilDate {
+  long y;
+  long m;
+  long d;
+}</code></pre><p class="api-src">src/lib/temporal/civil.c3:19:8</p></div>
+<div class="api-item" id="CivilDate.epoch_days"><p class="api-sig"><code>fn long CivilDate.epoch_days(<a href="#CivilDate">CivilDate</a> self) @inline</code></p><p class="api-src">src/lib/temporal/civil.c3:25:19</p></div>
+<div class="api-item" id="CivilDateTime"><pre><code>struct CivilDateTime {
+  <a href="#CivilDate">CivilDate</a> date;
+  <a href="#CivilTime">CivilTime</a> time;
+}</code></pre><p class="api-src">src/lib/temporal/civil.c3:41:8</p></div>
+<div class="api-item" id="CivilTime"><pre><code>struct CivilTime {
+  long h;
+  long mi;
+  long s;
+  long ms;
+  long us;
+  long ns;
+}</code></pre><p class="api-src">src/lib/temporal/civil.c3:30:8</p></div>
+<div class="api-item" id="DateDifference"><pre><code>struct DateDifference {
+  long years;
+  long months;
+  long days;
+}</code></pre><p class="api-src">src/lib/temporal/civil.c3:66:8</p></div>
+<div class="api-item" id="DifferenceUnit"><pre><code>enum DifferenceUnit : int {
+  SECONDS,
+  MINUTES,
+  HOURS,
+  DAYS,
+  WEEKS,
+  MONTHS,
+  YEARS,
+}</code></pre><p class="api-src">src/lib/temporal/calendar.c3:73:6</p></div>
+<div class="api-item" id="DurationParts"><pre><code>struct DurationParts {
+  long years;
+  long months;
+  long weeks;
+  long days;
+  long hours;
+  long minutes;
+  long seconds;
+  double ms;
+  double us;
+  double ns;
+}</code></pre><p class="api-src">src/lib/temporal/duration.c3:19:8</p></div>
+<div class="api-item" id="DurationParts.negate"><p class="api-sig"><code>fn <a href="#DurationParts">DurationParts</a> DurationParts.negate(<a href="#DurationParts">DurationParts</a> self)</code></p><p class="api-src">src/lib/temporal/duration.c3:32:32</p></div>
+<div class="api-item" id="EraInfo"><pre><code>struct EraInfo {
+  String name;
+  String other_name;
+  <a href="#EraKind">EraKind</a> kind;
+  long offset;
+}</code></pre><p class="api-src">src/lib/temporal/calendar_systems.c3:115:8</p></div>
+<div class="api-item" id="EraKind"><pre><code>enum EraKind : char {
+  EPOCH,
+  NEGATIVE,
+  OFFSET,
+}</code></pre><p class="api-src">src/lib/temporal/calendar_systems.c3:109:6</p></div>
+<div class="api-item" id="FIELD_MISSING"><pre><code>faultdef FIELD_MISSING</code></pre><p class="api-src">src/lib/temporal/calendar_fields.c3:35:10</p></div>
+<div class="api-item" id="FIELD_OUT_OF_RANGE"><pre><code>faultdef FIELD_OUT_OF_RANGE</code></pre><p class="api-src">src/lib/temporal/calendar_fields.c3:35:25</p></div>
+<div class="api-item" id="FieldSet"><pre><code>alias FieldSet = ushort</code></pre><p class="api-src">src/lib/temporal/calendar_fields.c3:25:7</p></div>
+<div class="api-item" id="FieldsType"><pre><code>enum FieldsType : char {
+  DATE,
+  YEAR_MONTH,
+  MONTH_DAY,
+}</code></pre><p class="api-src">src/lib/temporal/calendar_fields.c3:37:6</p></div>
+<div class="api-item" id="HebrewDate"><pre><code>struct HebrewDate {
+  long year;
+  long month;
+  long day;
+  bool leap;
+}</code></pre><p class="api-src">src/lib/temporal/lunisolar.c3:323:8</p></div>
+<div class="api-item" id="HijriDate"><pre><code>struct HijriDate {
+  long year;
+  long month;
+  long day;
+}</code></pre><p class="api-src">src/lib/temporal/lunisolar.c3:290:8</p></div>
+<div class="api-item" id="Instant"><pre><code>struct Instant {
+  int128 ns;
+}</code></pre><p class="api-src">src/lib/temporal/instant.c3:28:8</p></div>
+<div class="api-item" id="LunarDate"><pre><code>struct LunarDate {
+  long related_year;
+  long month;
+  bool leap;
+  long day;
+  long ordinal;
+  long this_moon;
+}</code></pre><p class="api-src">src/lib/temporal/lunisolar.c3:27:8</p></div>
+<div class="api-item" id="LunarMonth"><pre><code>struct LunarMonth {
+  long month;
+  long ordinal;
+  bool leap;
+  bool has_leap;
+  long this_moon;
+}</code></pre><p class="api-src">src/lib/temporal/lunisolar.c3:18:8</p></div>
+<div class="api-item" id="MonthCode"><pre><code>struct MonthCode {
+  int number;
+  bool leap;
+}</code></pre><p class="api-src">src/lib/temporal/calendar_ops.c3:7:8</p></div>
+<div class="api-item" id="MonthCode.encode"><p class="api-sig"><code>fn long MonthCode.encode(<a href="#MonthCode">MonthCode</a> self)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:63:19</p></div>
+<div class="api-item" id="NormalizedDuration"><pre><code>struct NormalizedDuration {
+  bool negative;
+  long years;
+  long months;
+  long weeks;
+  long days;
+  long hours;
+  long minutes;
+  long seconds;
+  long frac_ns;
+}</code></pre><p class="api-src">src/lib/temporal/iso8601.c3:52:8</p></div>
+<div class="api-item" id="OffsetKind"><pre><code>enum OffsetKind : char {
+  NONE,
+  NUMERIC,
+  Z,
+}</code></pre><p class="api-src">src/lib/temporal/parse.c3:40:6</p></div>
+<div class="api-item" id="OverflowKind"><pre><code>enum OverflowKind : int {
+  REJECT,
+  CONSTRAIN,
+}</code></pre><p class="api-src">src/lib/temporal/civil.c3:59:6</p></div>
+<div class="api-item" id="ParsedIsoDateTime"><pre><code>struct ParsedIsoDateTime {
+  long year;
+  int month;
+  int day;
+  bool has_time;
+  int hour;
+  int minute;
+  int second;
+  long nanos;
+  <a href="#OffsetKind">OffsetKind</a> offset_kind;
+  <a href="#CalendarId">CalendarId</a> calendar;
+}</code></pre><p class="api-src">src/lib/temporal/parse.c3:49:8</p></div>
+<div class="api-item" id="ParsedIsoInstant"><pre><code>struct ParsedIsoInstant {
+  long y;
+  int m;
+  int d;
+  int hour;
+  int minute;
+  int second;
+  long nanos;
+  long offset_seconds;
+  long offset_nanos;
+}</code></pre><p class="api-src">src/lib/temporal/parse.c3:699:8</p></div>
+<div class="api-item" id="ParsedIsoZonedDateTime"><pre><code>struct ParsedIsoZonedDateTime {
+  long year;
+  int month;
+  int day;
+  int hour;
+  int minute;
+  int second;
+  long nanos;
+  long offset_seconds;
+  long offset_nanos;
+  bool has_time;
+  bool offset_minutes;
+  char[] timezone;
+  <a href="#CalendarId">CalendarId</a> calendar;
+  bool has_offset;
+  bool is_z;
+}</code></pre><p class="api-src">src/lib/temporal/parse.c3:850:8</p></div>
+<div class="api-item" id="TemporalField"><pre><code>enum TemporalField : char {
+  DAY,
+  ERA,
+  ERA_YEAR,
+  HOUR,
+  MICROSECOND,
+  MILLISECOND,
+  MINUTE,
+  MONTH,
+  MONTH_CODE,
+  NANOSECOND,
+  OFFSET,
+  SECOND,
+  TIME_ZONE,
+  YEAR,
+}</code></pre><p class="api-src">src/lib/temporal/calendar_fields.c3:8:6</p></div>
+<div class="api-item" id="TemporalRoundMode"><pre><code>enum TemporalRoundMode : int {
+  CEIL,
+  FLOOR,
+  EXPAND,
+  TRUNC,
+  HALF_CEIL,
+  HALF_FLOOR,
+  HALF_EXPAND,
+  HALF_TRUNC,
+  HALF_EVEN,
+}</code></pre><p class="api-src">src/lib/temporal/units.c3:22:6</p></div>
+<div class="api-item" id="TemporalUnit"><pre><code>enum TemporalUnit : int {
+  YEAR,
+  MONTH,
+  WEEK,
+  DAY,
+  HOUR,
+  MINUTE,
+  SECOND,
+  MILLISECOND,
+  MICROSECOND,
+  NANOSECOND,
+}</code></pre><p class="api-src">src/lib/temporal/units.c3:17:6</p></div>
+<div class="api-item" id="TzdbCache"><pre><code>struct TzdbCache {
+  bool valid;
+  uint table;
+  int initial;
+  uint count;
+  long[253] at;
+  ushort[253] off;
+  bool has_footer;
+  int std_off;
+  int dst_off;
+  uint start_rule;
+  uint end_rule;
+}</code></pre><p class="api-src">src/lib/temporal/tzdb.c3:18:8</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="CALENDAR_DAYS_LIMIT"><p class="api-sig"><code>const long CALENDAR_DAYS_LIMIT = 100000400;</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:29:12</p></div>
+<div class="api-item" id="calendar_era_table"><p class="api-sig"><code><a href="#EraInfo">EraInfo[22]</a> calendar_era_table = { { &quot;reiwa&quot;, &quot;&quot;, OFFSET, 2019 }, // 0: japanese { &quot;heisei&quot;, &quot;&quot;, OFFSET, 1989 }, { &quot;showa&quot;, &quot;&quot;, OFFSET, 1926 }, { &quot;taisho&quot;, &quot;&quot;, OFFSET, 1912 }, { &quot;meiji&quot;, &quot;&quot;, OFFSET, 1868 }, { &quot;ce&quot;, &quot;ad&quot;, EPOCH, 0 }, // 5: gregory { &quot;bce&quot;, &quot;bc&quot;, NEGATIVE, 0 }, { &quot;be&quot;, &quot;&quot;, 
+...
+ah&quot;, &quot;&quot;, EPOCH, 0 }, // 13: islamic { &quot;bh&quot;, &quot;&quot;, NEGATIVE, 0 }, { &quot;ap&quot;, &quot;&quot;, EPOCH, 0 }, // 15: persian { &quot;roc&quot;, &quot;&quot;, EPOCH, 0 }, // 16: roc { &quot;broc&quot;, &quot;&quot;, NEGATIVE, 0 }, { &quot;&quot;, &quot;&quot;, EPOCH, 0 }, { &quot;&quot;, &quot;&quot;, EPOCH, 0 }, { &quot;&quot;, &quot;&quot;, EPOCH, 0 }, { &quot;&quot;, &quot;&quot;, EPOCH, 0 }, };</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:131:13 · private</p></div>
+<div class="api-item" id="calendar_year_cache"><p class="api-sig"><code><a href="#CalendarYearCacheEntry">CalendarYearCacheEntry[16]</a> calendar_year_cache;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:385:57 · private</p></div>
+<div class="api-item" id="calendar_year_cache_next"><p class="api-sig"><code>usz calendar_year_cache_next;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:386:12 · private</p></div>
+<div class="api-item" id="CALENDAR_YEAR_CACHE_SIZE"><p class="api-sig"><code>const usz CALENDAR_YEAR_CACHE_SIZE = 16;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:384:11</p></div>
+<div class="api-item" id="CALENDAR_YEARS_LIMIT"><p class="api-sig"><code>const long CALENDAR_YEARS_LIMIT = 300000;</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:30:12</p></div>
+<div class="api-item" id="CHINESE_REFERENCE_DAY_30"><p class="api-sig"><code>const short[2][13] CHINESE_REFERENCE_DAY_30 = { { 0, 0 }, { 1970, 0 }, { 1972, 0 }, { 1966, 1955 }, { 1970, 1944 }, { 1972, 1952 }, { 1971, 1941 }, { 1972, 1938 }, { 1971, 0 }, { 1972, 0 }, { 1972, 0 }, { 1970, 0 }, { 1972, 0 }, };</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:354:20</p></div>
+<div class="api-item" id="CHINESE_REFERENCE_DAYS_1_29"><p class="api-sig"><code>const short[2][13] CHINESE_REFERENCE_DAYS_1_29 = { { 0, 0 }, { 1972, 0 }, { 1972, 1947 }, { 1972, 1966 }, { 1972, 1963 }, { 1972, 1971 }, { 1972, 1960 }, { 1972, 1968 }, { 1972, 1957 }, { 1972, 2014 }, { 1972, 1984 }, { 1972, 2034 }, { 1972, 0 }, };</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:350:20</p></div>
+<div class="api-item" id="COPTIC_EPOCH_JD"><p class="api-sig"><code>const long COPTIC_EPOCH_JD = 1824665;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:250:12</p></div>
+<div class="api-item" id="ETHIOAA_YEAR_DELTA"><p class="api-sig"><code>const long ETHIOAA_YEAR_DELTA = 5500;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:252:12</p></div>
+<div class="api-item" id="ETHIOPIC_EPOCH_JD"><p class="api-sig"><code>const long ETHIOPIC_EPOCH_JD = 1723856;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:251:12</p></div>
+<div class="api-item" id="FIXED_DAY_UNIX_EPOCH"><p class="api-sig"><code>const long FIXED_DAY_UNIX_EPOCH = 719163;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:249:12</p></div>
+<div class="api-item" id="g_tzdb_cache"><p class="api-sig"><code><a href="#TzdbCache">TzdbCache</a> g_tzdb_cache;</code></p><p class="api-src">src/lib/temporal/tzdb.c3:32:18</p></div>
+<div class="api-item" id="HEBREW_EPOCH_RD"><p class="api-sig"><code>const long HEBREW_EPOCH_RD = -1373427;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:321:12</p></div>
+<div class="api-item" id="HIJRI_EPOCH_JD"><p class="api-sig"><code>const long HIJRI_EPOCH_JD = 1948440;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:298:12</p></div>
+<div class="api-item" id="INSTANT_MAX_DAYS"><p class="api-sig"><code>const long INSTANT_MAX_DAYS = 100000000;</code></p><p class="api-src">src/lib/temporal/instant.c3:17:12</p></div>
+<div class="api-item" id="INSTANT_MAX_NS"><p class="api-sig"><code>const int128 INSTANT_MAX_NS = 8640000000000000000000;</code></p><p class="api-src">src/lib/temporal/instant.c3:18:14</p></div>
+<div class="api-item" id="ISLAMIC_TBLA_EPOCH_JD"><p class="api-sig"><code>const long ISLAMIC_TBLA_EPOCH_JD = 1948439;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:254:12</p></div>
+<div class="api-item" id="ISO8601_DATE_BUFSIZE"><p class="api-sig"><code>const int ISO8601_DATE_BUFSIZE = 14;</code></p><p class="api-src">src/lib/temporal/iso8601.c3:21:11</p></div>
+<div class="api-item" id="ISO8601_TIME_BUFSIZE"><p class="api-sig"><code>const int ISO8601_TIME_BUFSIZE = 19;</code></p><p class="api-src">src/lib/temporal/iso8601.c3:349:11</p></div>
+<div class="api-item" id="ISO_DATE_MAX_DAY"><p class="api-sig"><code>const int ISO_DATE_MAX_DAY = 13;</code></p><p class="api-src">src/lib/temporal/civil.c3:83:12</p></div>
+<div class="api-item" id="ISO_DATE_MAX_MONTH"><p class="api-sig"><code>const int ISO_DATE_MAX_MONTH = 9;</code></p><p class="api-src">src/lib/temporal/civil.c3:82:12</p></div>
+<div class="api-item" id="ISO_DATE_MAX_YEAR"><p class="api-sig"><code>const long ISO_DATE_MAX_YEAR = 275760;</code></p><p class="api-src">src/lib/temporal/civil.c3:81:12</p></div>
+<div class="api-item" id="ISO_DATE_MIN_DAY"><p class="api-sig"><code>const int ISO_DATE_MIN_DAY = 19;</code></p><p class="api-src">src/lib/temporal/civil.c3:80:12</p></div>
+<div class="api-item" id="ISO_DATE_MIN_MONTH"><p class="api-sig"><code>const int ISO_DATE_MIN_MONTH = 4;</code></p><p class="api-src">src/lib/temporal/civil.c3:79:12</p></div>
+<div class="api-item" id="ISO_DATE_MIN_YEAR"><p class="api-sig"><code>const long ISO_DATE_MIN_YEAR = -271821;</code></p><p class="api-src">src/lib/temporal/civil.c3:78:12</p></div>
+<div class="api-item" id="JAPANESE_ERA_CE"><p class="api-sig"><code>const int JAPANESE_ERA_CE = 5;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:125:11</p></div>
+<div class="api-item" id="JAPANESE_ERA_STARTS"><p class="api-sig"><code>const <a href="#CivilDate">CivilDate[5]</a> JAPANESE_ERA_STARTS = { { 2019, 5, 1 }, { 1989, 1, 8 }, { 1926, 12, 25 }, { 1912, 7, 30 }, { 1873, 1, 1 }, };</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:126:20</p></div>
+<div class="api-item" id="JULIAN_DAY_UNIX_EPOCH"><p class="api-sig"><code>const long JULIAN_DAY_UNIX_EPOCH = 2440588;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:248:12</p></div>
+<div class="api-item" id="LUNAR_CYCLE_EPOCH"><p class="api-sig"><code>const long LUNAR_CYCLE_EPOCH = -2636;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:16:12</p></div>
+<div class="api-item" id="LUNAR_DAY_MS"><p class="api-sig"><code>const double LUNAR_DAY_MS = 8.64e+07;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:11:14</p></div>
+<div class="api-item" id="LUNAR_MINUTE_MS"><p class="api-sig"><code>const double LUNAR_MINUTE_MS = 60000;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:12:14</p></div>
+<div class="api-item" id="LUNAR_PI"><p class="api-sig"><code>const double LUNAR_PI = 3.14159;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:9:14</p></div>
+<div class="api-item" id="LUNAR_SYNODIC_GAP"><p class="api-sig"><code>const long LUNAR_SYNODIC_GAP = 25;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:15:12</p></div>
+<div class="api-item" id="LUNAR_SYNODIC_MONTH"><p class="api-sig"><code>const double LUNAR_SYNODIC_MONTH = 29.5306;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:14:14</p></div>
+<div class="api-item" id="LUNAR_TROPICAL_YEAR"><p class="api-sig"><code>const double LUNAR_TROPICAL_YEAR = 365.242;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:13:14</p></div>
+<div class="api-item" id="LUNAR_TWO_PI"><p class="api-sig"><code>const double LUNAR_TWO_PI = 6.28319;</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:10:14</p></div>
+<div class="api-item" id="NS_PER_DAY"><p class="api-sig"><code>const long NS_PER_DAY = 86400000000000;</code></p><p class="api-src">src/lib/temporal/units.c3:15:12</p></div>
+<div class="api-item" id="NS_PER_HOUR"><p class="api-sig"><code>const long NS_PER_HOUR = 3600000000000;</code></p><p class="api-src">src/lib/temporal/units.c3:14:12</p></div>
+<div class="api-item" id="NS_PER_MIN"><p class="api-sig"><code>const long NS_PER_MIN = 60000000000;</code></p><p class="api-src">src/lib/temporal/units.c3:13:12</p></div>
+<div class="api-item" id="NS_PER_MS"><p class="api-sig"><code>const long NS_PER_MS = 1000000;</code></p><p class="api-src">src/lib/temporal/units.c3:11:12</p></div>
+<div class="api-item" id="NS_PER_SEC"><p class="api-sig"><code>const long NS_PER_SEC = 1000000000;</code></p><p class="api-src">src/lib/temporal/units.c3:12:12</p></div>
+<div class="api-item" id="NS_PER_US"><p class="api-sig"><code>const long NS_PER_US = 1000;</code></p><p class="api-src">src/lib/temporal/units.c3:10:12</p></div>
+<div class="api-item" id="NS_POW10"><p class="api-sig"><code>const long[10] NS_POW10 = { 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000 };</code></p><p class="api-src">src/lib/temporal/units.c3:61:16</p></div>
+<div class="api-item" id="PERSIAN_EPOCH_JD"><p class="api-sig"><code>const long PERSIAN_EPOCH_JD = 1948320;</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:253:12</p></div>
+<div class="api-item" id="REFERENCE_FIRST_DAY"><p class="api-sig"><code>const long REFERENCE_FIRST_DAY = -25567;</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:377:12</p></div>
+<div class="api-item" id="REFERENCE_LAST_DAY"><p class="api-sig"><code>const long REFERENCE_LAST_DAY = 1095;</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:378:12</p></div>
+<div class="api-item" id="TZDB_MAX_TRANSITIONS"><p class="api-sig"><code>const usz TZDB_MAX_TRANSITIONS = 253;</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:8:11</p></div>
+<div class="api-item" id="TZDB_NAME_AT"><p class="api-sig"><code>const ushort[38] TZDB_NAME_AT = { 0, 134, 283, 425, 598, 747, 900, 1052, 1202, 1371, 1515, 1661, 1840, 1991, 2161, 2319, 2442, 2572, 2717, 2849, 2993, 3149, 3315, 3455, 3620, 3714, 3771, 3883, 4039, 4166, 4295, 4416, 4554, 4668, 4807, 4946, 5071, 5213, };</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:235:18</p></div>
+<div class="api-item" id="TZDB_NAME_BLOCK"><p class="api-sig"><code>const usz TZDB_NAME_BLOCK = 16;</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:7:11</p></div>
+<div class="api-item" id="TZDB_NAMES"><p class="api-sig"><code>const char[5244] TZDB_NAMES = { 0x00, 0x0e, 0x41, 0x66, 0x72, 0x69, 0x63, 0x61, 0x2f, 0x41, 0x62, 0x69, 0x64, 0x6a, 0x61, 0x6e, 0x08, 0x04, 0x63, 0x63, 0x72, 0x61, 0x08, 0x0a, 0x64, 0x64, 0x69, 0x73, 0x5f, 0x41, 0x62, 0x61, 0x62, 0x61, 0x08, 0x06, 0x6c, 0x67, 0x69, 0x65, 0x72, 0x73, 0x
+...
+3, 0x69, 0x66, 0x69, 0x63, 0x03, 0x05, 0x53, 0x61, 0x6d, 0x6f, 0x61, 0x00, 0x03, 0x55, 0x54, 0x43, 0x01, 0x08, 0x6e, 0x69, 0x76, 0x65, 0x72, 0x73, 0x61, 0x6c, 0x00, 0x04, 0x57, 0x2d, 0x53, 0x55, 0x01, 0x02, 0x45, 0x54, 0x00, 0x04, 0x5a, 0x75, 0x6c, 0x75, };</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:1591:18</p></div>
+<div class="api-item" id="TZDB_OFFSETS"><p class="api-sig"><code>const int[406] TZDB_OFFSETS = { -57368, -54124, -51660, -47284, -43200, -42398, -41400, -41216, -41096, -40968, -40800, -40780, -39698, -39600, -38400, -38344, -37886, -37800, -37760, -36000, -35976, -35896, -34200, -33535, -33480, -33460, -32473, -32412, -32400, -32388, -32261, -31578
+...
+0, 38076, 38180, 38388, 39116, 39600, 39948, 40060, 40160, 40312, 40320, 40396, 41400, 41524, 41944, 42596, 42944, 43200, 44002, 44028, 44100, 44352, 44400, 45000, 45184, 45432, 45900, 46702, 46800, 48056, 49500, 50400, 50424, 52865, 53927, 54139, 54822, };</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:9:16</p></div>
+<div class="api-item" id="TZDB_RULES"><p class="api-sig"><code>const uint[987] TZDB_RULES = { 0x00000011, 0x00000015, 0x00000017, 0x00000018, 0x00000051, 0x0000008a, 0x000000b3, 0x000000e4, 0x00000103, 0x00000166, 0x0000018a, 0x00000194, 0x000001aa, 0x000001b9, 0x000001d1, 0x0000089a, 0x00000a95, 0x00e10109, 0x00e1013b, 0x00e10183, 0x01c2008a, 0x
+...
+1, 0x02a301c3, 0x02a30821, 0x02a30831, 0x02a30852, 0x0000017c, 0x0003c1a1, 0x01c2010c, 0x01c20182, 0x01c201a5, 0x01c201b6, 0x01c201d1, 0x01c20858, 0x01c5c168, 0x000000f1, 0x01c200a2, 0x02a30023, 0x01c2001c, 0x000000cb, 0x000001ac, 0x01c20851, 0x02a300f1, };</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:45:17</p></div>
+<div class="api-item" id="TZDB_TABLE_AT"><p class="api-sig"><code>const ushort[340] TZDB_TABLE_AT = { 0, 14, 50, 177, 209, 229, 243, 498, 717, 839, 1029, 1061, 1137, 1213, 1233, 1256, 1286, 1369, 1483, 1566, 1699, 1832, 1857, 1981, 2133, 2289, 2434, 2586, 2745, 2903, 3059, 3209, 3370, 3535, 3695, 3851, 4021, 4041, 4175, 4281, 4339, 4423, 4563, 4659, 4682
+...
+3, 30604, 30709, 30830, 30961, 31065, 31244, 31283, 31301, 31315, 31346, 31391, 31507, 31576, 31613, 31669, 31697, 31717, 31790, 31804, 31830, 31844, 31858, 31945, 31973, 32031, 32045, 32065, 32097, 32117, 32166, 32199, 32219, 32239, 32295, 32309, 32353, };</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:171:19</p></div>
+<div class="api-item" id="TZDB_TABLES"><p class="api-sig"><code>const char[32353] TZDB_TABLES = { 0xbc, 0x00, 0x01, 0x00, 0x78, 0x07, 0x01, 0x00, 0x00, 0x01, 0xbf, 0x00, 0x00, 0x00, 0xf9, 0x00, 0x05, 0x00, 0x74, 0x07, 0x05, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x03, 0xfa, 0x00, 0xfe, 0x00, 0x03, 0x01, 0x00, 0x01, 0x39, 0x0a, 0x
+...
+1, 0x0a, 0x00, 0x99, 0x07, 0x07, 0x00, 0x00, 0x28, 0x00, 0x66, 0x03, 0xc0, 0x00, 0xd9, 0x03, 0xda, 0x03, 0x72, 0x00, 0x03, 0x87, 0x01, 0x8d, 0x01, 0x90, 0x01, 0x00, 0x01, 0x34, 0x08, 0x80, 0x9c, 0x09, 0xc0, 0x35, 0x61, 0x4d, 0x58, 0x73, 0x0e, 0x80, 0x16, };</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:240:19</p></div>
+<div class="api-item" id="TZDB_ZONE_TABLE"><p class="api-sig"><code>const ushort[597] TZDB_ZONE_TABLE = { 0, 0, 1, 2, 1, 1, 0, 3, 0, 4, 5, 3, 5, 6, 7, 8, 0, 0, 1, 1, 3, 9, 0, 5, 5, 10, 11, 1, 12, 5, 3, 3, 3, 0, 3, 5, 5, 3, 5, 10, 10, 1, 13, 1, 14, 3, 0, 0, 3, 15, 0, 16, 17, 18, 19, 20, 21, 21, 22, 23, 24, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 21, 35, 3
+...
+09, 309, 318, 326, 327, 313, 321, 328, 329, 330, 331, 332, 333, 329, 334, 335, 324, 324, 142, 336, 325, 329, 337, 321, 338, 142, 321, 321, 142, 308, 290, 214, 212, 195, 184, 249, 20, 19, 55, 50, 67, 110, 309, 79, 61, 60, 94, 329, 249, 249, 295, 290, 249, };</code></p><p class="api-src">src/lib/temporal/tzdata_generated.c3:195:19</p></div>
+<div class="api-item" id="UMALQURA_FIRST_YEAR"><p class="api-sig"><code>const long UMALQURA_FIRST_YEAR = 1300;</code></p><p class="api-src">src/lib/temporal/umalqura_data.c3:4:12</p></div>
+<div class="api-item" id="UMALQURA_LAST_YEAR"><p class="api-sig"><code>const long UMALQURA_LAST_YEAR = 1600;</code></p><p class="api-src">src/lib/temporal/umalqura_data.c3:5:12</p></div>
+<div class="api-item" id="UMALQURA_YEARS"><p class="api-sig"><code>const ushort[301] UMALQURA_YEARS = { 0x1555, 0x02ab, 0x0937, 0x12b6, 0x0576, 0x136c, 0x1b55, 0x1aaa, 0x1956, 0x049e, 0x095d, 0x12ba, 0x05b5, 0x13aa, 0x1b4b, 0x1a96, 0x152e, 0x02ad, 0x056d, 0x1b5a, 0x1752, 0x1f25, 0x2e8a, 0x1d16, 0x1a56, 0x1ab5, 0x16b4, 0x1da9, 0x1b92, 0x1b25, 0x164b, 0x0a9b
+...
+x02dd, 0x19da, 0x15b4, 0x15a9, 0x152d, 0x025b, 0x08b7, 0x1176, 0x056d, 0x1b6a, 0x1aca, 0x1a96, 0x152b, 0x015b, 0x02bb, 0x15b6, 0x1daa, 0x2b94, 0x1d46, 0x1a8d, 0x152d, 0x0a9d, 0x155a, 0x1755, 0x1749, 0x1f13, 0x2e4a, 0x1a96, 0x1556, 0x06b5, 0x1baa, 0x2b94, };</code></p><p class="api-src">src/lib/temporal/umalqura_data.c3:9:19</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="add_days"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate</a> add_days(<a href="#CivilDate">CivilDate</a> d, long days)</code></p><p class="api-src">src/lib/temporal/calendar.c3:39:14</p></div>
+<div class="api-item" id="add_durations_no_relative"><p class="api-sig"><code>fn bool add_durations_no_relative(<a href="#DurationParts">DurationParts</a> a, <a href="#DurationParts">DurationParts</a> b, <a href="#DurationParts">DurationParts*</a> out)</code></p><p class="api-src">src/lib/temporal/duration.c3:276:9</p></div>
+<div class="api-item" id="add_months"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate</a> add_months(<a href="#CivilDate">CivilDate</a> d, long months, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar.c3:48:14</p></div>
+<div class="api-item" id="add_months_rejected"><p class="api-sig"><code>fn bool add_months_rejected(<a href="#CivilDate">CivilDate</a> d)</code></p><p class="api-src">src/lib/temporal/calendar.c3:66:9</p></div>
+<div class="api-item" id="add_seconds_to_time"><p class="api-sig"><code>fn <a href="#CivilTime">CivilTime</a> add_seconds_to_time(<a href="#CivilTime">CivilTime</a> t, long seconds, long* out_day_delta)</code></p><p class="api-src">src/lib/temporal/civil.c3:258:14</p></div>
+<div class="api-item" id="apply_date_part"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate</a> apply_date_part(<a href="#CalendarId">CalendarId</a> cal, <a href="#CivilDate">CivilDate</a> d, <a href="#DurationParts">DurationParts</a> dp)</code></p><p class="api-src">src/lib/temporal/duration.c3:394:14</p></div>
+<div class="api-item" id="bit_length_i128"><p class="api-sig"><code>fn int bit_length_i128(int128 v)</code></p><p class="api-src">src/lib/temporal/duration.c3:458:8</p></div>
+<div class="api-item" id="cal_floor_div"><p class="api-sig"><code>fn long cal_floor_div(long a, long b) @inline</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:256:9</p></div>
+<div class="api-item" id="calendar_add"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate?</a> calendar_add(<a href="#CalendarId">CalendarId</a> cal, <a href="#CivilDate">CivilDate</a> iso, long years, long months, long weeks, long days, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:257:15</p></div>
+<div class="api-item" id="calendar_arithmetic_year_start"><p class="api-sig"><code>fn long calendar_arithmetic_year_start(<a href="#CalendarId">CalendarId</a> cal, long year)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:259:9</p></div>
+<div class="api-item" id="calendar_balance_year_month"><p class="api-sig"><code>fn <a href="#CalendarYearMonth">CalendarYearMonth</a> calendar_balance_year_month(<a href="#CalendarId">CalendarId</a> cal, long year, long month)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:195:22</p></div>
+<div class="api-item" id="calendar_compare_surpasses"><p class="api-sig"><code>fn bool calendar_compare_surpasses(long sign, long year, bool use_code, <a href="#MonthCode">MonthCode</a> code, long month, long day, <a href="#CalendarDate">CalendarDate*</a> target)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:275:9</p></div>
+<div class="api-item" id="calendar_constrain_month_code"><p class="api-sig"><code>fn <a href="#MonthCode">MonthCode</a> calendar_constrain_month_code(<a href="#CalendarId">CalendarId</a> cal, <a href="#MonthCode">MonthCode</a> code)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:130:14</p></div>
+<div class="api-item" id="calendar_date"><p class="api-sig"><code>fn <a href="#CalendarDate">CalendarDate</a> calendar_date(<a href="#CalendarId">CalendarId</a> cal, long epoch_days)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:43:17</p></div>
+<div class="api-item" id="calendar_date_add"><p class="api-sig"><code>fn bool calendar_date_add(<a href="#CalendarId">CalendarId</a> cal, long epoch_days, long years, long months, long weeks, long days, <a href="#OverflowKind">OverflowKind</a> overflow, long* out)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:231:9</p></div>
+<div class="api-item" id="calendar_date_era"><p class="api-sig"><code>fn void calendar_date_era(<a href="#CalendarId">CalendarId</a> cal, long year, long epoch_days, int* era, long* era_year)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:198:9</p></div>
+<div class="api-item" id="calendar_date_from_fields"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate?</a> calendar_date_from_fields(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields*</a> fields, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:199:15</p></div>
+<div class="api-item" id="calendar_date_surpasses"><p class="api-sig"><code>fn bool calendar_date_surpasses(<a href="#CalendarId">CalendarId</a> cal, long sign, <a href="#CalendarDate">CalendarDate*</a> from, <a href="#CalendarDate">CalendarDate*</a> to, long years, long months)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:288:9</p></div>
+<div class="api-item" id="calendar_date_to_iso"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate?</a> calendar_date_to_iso(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields*</a> fields, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:110:15</p></div>
+<div class="api-item" id="calendar_date_until"><p class="api-sig"><code>fn <a href="#DateDifference">DateDifference</a> calendar_date_until(<a href="#CalendarId">CalendarId</a> cal, long one, long two, <a href="#DifferenceUnit">DifferenceUnit</a> largest)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:302:19</p></div>
+<div class="api-item" id="calendar_days_in_month"><p class="api-sig"><code>fn int calendar_days_in_month(<a href="#CalendarId">CalendarId</a> cal, long year, int month)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:98:8</p></div>
+<div class="api-item" id="calendar_epoch_days"><p class="api-sig"><code>fn long calendar_epoch_days(<a href="#CalendarId">CalendarId</a> cal, long year, int month, int day)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:84:9</p></div>
+<div class="api-item" id="calendar_era_arithmetic_year"><p class="api-sig"><code>fn long calendar_era_arithmetic_year(<a href="#CalendarId">CalendarId</a> cal, int era, long era_year)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:188:9</p></div>
+<div class="api-item" id="calendar_era_index"><p class="api-sig"><code>fn int calendar_era_index(<a href="#CalendarId">CalendarId</a> cal, char[] text)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:181:8</p></div>
+<div class="api-item" id="calendar_eras"><p class="api-sig"><code>fn <a href="#EraInfo">EraInfo[]</a> calendar_eras(<a href="#CalendarId">CalendarId</a> cal)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:157:14</p></div>
+<div class="api-item" id="calendar_field_keys_to_ignore"><p class="api-sig"><code>fn <a href="#FieldSet">FieldSet</a> calendar_field_keys_to_ignore(<a href="#CalendarId">CalendarId</a> cal, <a href="#FieldSet">FieldSet</a> keys)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:171:13</p></div>
+<div class="api-item" id="calendar_from_fields"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate?</a> calendar_from_fields(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields*</a> fields, <a href="#FieldsType">FieldsType</a> type, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:222:15</p></div>
+<div class="api-item" id="calendar_from_name"><p class="api-sig"><code>fn bool calendar_from_name(char[] text, <a href="#CalendarId">CalendarId*</a> out)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:55:9</p></div>
+<div class="api-item" id="calendar_has_mid_year_eras"><p class="api-sig"><code>fn bool calendar_has_mid_year_eras(<a href="#CalendarId">CalendarId</a> cal)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:178:9</p></div>
+<div class="api-item" id="calendar_is_iso_based"><p class="api-sig"><code>fn bool calendar_is_iso_based(<a href="#CalendarId">CalendarId</a> cal)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:74:9</p></div>
+<div class="api-item" id="calendar_is_lunisolar"><p class="api-sig"><code>fn bool calendar_is_lunisolar(<a href="#CalendarId">CalendarId</a> cal)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:98:9</p></div>
+<div class="api-item" id="calendar_iso_date"><p class="api-sig"><code>fn <a href="#CalendarDate">CalendarDate</a> calendar_iso_date(<a href="#CalendarId">CalendarId</a> cal, <a href="#CivilDate">CivilDate</a> iso)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:66:17</p></div>
+<div class="api-item" id="calendar_iso_year"><p class="api-sig"><code>fn long calendar_iso_year(<a href="#CalendarId">CalendarId</a> cal, long year)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:88:9</p></div>
+<div class="api-item" id="calendar_lunisolar_year"><p class="api-sig"><code>fn void calendar_lunisolar_year(bool dangi, long year, <a href="#CalendarYear">CalendarYear*</a> out)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:358:9</p></div>
+<div class="api-item" id="calendar_merge_fields"><p class="api-sig"><code>fn <a href="#CalendarFields">CalendarFields</a> calendar_merge_fields(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields</a> fields, <a href="#CalendarFields">CalendarFields</a> additional)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:181:19</p></div>
+<div class="api-item" id="calendar_month_code_max_days"><p class="api-sig"><code>fn int calendar_month_code_max_days(<a href="#CalendarId">CalendarId</a> cal, <a href="#MonthCode">MonthCode</a> code)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:152:8</p></div>
+<div class="api-item" id="calendar_month_code_to_ordinal"><p class="api-sig"><code>fn int calendar_month_code_to_ordinal(<a href="#CalendarId">CalendarId</a> cal, long year, <a href="#MonthCode">MonthCode</a> code)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:136:8</p></div>
+<div class="api-item" id="calendar_month_code_valid"><p class="api-sig"><code>fn bool calendar_month_code_valid(<a href="#CalendarId">CalendarId</a> cal, <a href="#MonthCode">MonthCode</a> code)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:107:9</p></div>
+<div class="api-item" id="calendar_month_day_from_fields"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate?</a> calendar_month_day_from_fields(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields*</a> fields, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:215:15</p></div>
+<div class="api-item" id="calendar_month_day_in_year"><p class="api-sig"><code>fn bool calendar_month_day_in_year(<a href="#CalendarId">CalendarId</a> cal, long year, <a href="#MonthCode">MonthCode</a> code, int day, long* out)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:381:9</p></div>
+<div class="api-item" id="calendar_month_day_known"><p class="api-sig"><code>fn bool calendar_month_day_known(<a href="#CalendarId">CalendarId</a> cal, <a href="#MonthCode">MonthCode</a> code, int day)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:372:9</p></div>
+<div class="api-item" id="calendar_month_day_reference"><p class="api-sig"><code>fn long calendar_month_day_reference(<a href="#CalendarId">CalendarId</a> cal, <a href="#MonthCode">MonthCode</a> code, int day)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:392:9</p></div>
+<div class="api-item" id="calendar_month_day_to_iso"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate?</a> calendar_month_day_to_iso(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields*</a> fields, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:129:15</p></div>
+<div class="api-item" id="calendar_months_in_year"><p class="api-sig"><code>fn int calendar_months_in_year(<a href="#CalendarId">CalendarId</a> cal, long year)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:90:8</p></div>
+<div class="api-item" id="calendar_name"><p class="api-sig"><code>fn String calendar_name(<a href="#CalendarId">CalendarId</a> cal)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:32:11</p></div>
+<div class="api-item" id="calendar_resolve_fields"><p class="api-sig"><code>fn void? calendar_resolve_fields(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields*</a> fields, <a href="#FieldsType">FieldsType</a> type)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:68:10</p></div>
+<div class="api-item" id="calendar_supports_era"><p class="api-sig"><code>fn bool calendar_supports_era(<a href="#CalendarId">CalendarId</a> cal)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:176:9</p></div>
+<div class="api-item" id="calendar_until"><p class="api-sig"><code>fn <a href="#DateDifference">DateDifference</a> calendar_until(<a href="#CalendarId">CalendarId</a> cal, <a href="#CivilDate">CivilDate</a> one, <a href="#CivilDate">CivilDate</a> two, <a href="#DifferenceUnit">DifferenceUnit</a> largest)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:269:19</p></div>
+<div class="api-item" id="calendar_year"><p class="api-sig"><code>fn <a href="#CalendarYear">CalendarYear</a> calendar_year(<a href="#CalendarId">CalendarId</a> cal, long year)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:388:17</p></div>
+<div class="api-item" id="calendar_year_compute"><p class="api-sig"><code>fn <a href="#CalendarYear">CalendarYear</a> calendar_year_compute(<a href="#CalendarId">CalendarId</a> cal, long year)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:298:17</p></div>
+<div class="api-item" id="calendar_year_has_month_code"><p class="api-sig"><code>fn bool calendar_year_has_month_code(<a href="#CalendarId">CalendarId</a> cal, long year, <a href="#MonthCode">MonthCode</a> code)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:121:9</p></div>
+<div class="api-item" id="calendar_year_in_range"><p class="api-sig"><code>fn bool calendar_year_in_range(long year) @inline</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:226:9</p></div>
+<div class="api-item" id="calendar_year_month_from_fields"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate?</a> calendar_year_month_from_fields(<a href="#CalendarId">CalendarId</a> cal, <a href="#CalendarFields">CalendarFields*</a> fields, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:207:15</p></div>
+<div class="api-item" id="calendar_year_of"><p class="api-sig"><code>fn long calendar_year_of(<a href="#CalendarId">CalendarId</a> cal, long epoch_days)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:405:9</p></div>
+<div class="api-item" id="calendar_year_set_months"><p class="api-sig"><code>fn void calendar_year_set_months(<a href="#CalendarYear">CalendarYear*</a> out, int[] lengths)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:288:9</p></div>
+<div class="api-item" id="calendar_year_start"><p class="api-sig"><code>fn long calendar_year_start(<a href="#CalendarId">CalendarId</a> cal, long year)</code></p><p class="api-src">src/lib/temporal/calendar_systems.c3:399:9</p></div>
+<div class="api-item" id="chinese_reference_year"><p class="api-sig"><code>fn long chinese_reference_year(<a href="#CalendarId">CalendarId</a> cal, <a href="#MonthCode">MonthCode</a> code, int day)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:361:9</p></div>
+<div class="api-item" id="ci_eq"><p class="api-sig"><code>fn bool ci_eq(String a, char[] b)</code></p><p class="api-src">src/lib/temporal/parse.c3:1166:9</p></div>
+<div class="api-item" id="ci_equals"><p class="api-sig"><code>fn bool ci_equals(char[] a, char[] b)</code></p><p class="api-src">src/lib/temporal/parse.c3:23:9</p></div>
+<div class="api-item" id="ci_zone_eq"><p class="api-sig"><code>fn bool ci_zone_eq(String a, String b)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:336:9</p></div>
+<div class="api-item" id="civil_date_from_epoch_days"><p class="api-sig"><code>fn <a href="#CivilDate">CivilDate</a> civil_date_from_epoch_days(long days)</code></p><p class="api-src">src/lib/temporal/civil.c3:147:14</p></div>
+<div class="api-item" id="civil_from_seconds"><p class="api-sig"><code>fn <a href="#BrokenDownTime">BrokenDownTime</a> civil_from_seconds(long secs)</code></p><p class="api-src">src/lib/temporal/civil.c3:172:19</p></div>
+<div class="api-item" id="civil_time_from_ns"><p class="api-sig"><code>fn <a href="#CivilTime">CivilTime</a> civil_time_from_ns(long total)</code></p><p class="api-src">src/lib/temporal/civil.c3:302:14</p></div>
+<div class="api-item" id="civil_time_to_ns"><p class="api-sig"><code>fn long civil_time_to_ns(<a href="#CivilTime">CivilTime</a> t)</code></p><p class="api-src">src/lib/temporal/civil.c3:313:9</p></div>
+<div class="api-item" id="clear_below"><p class="api-sig"><code>fn void clear_below(<a href="#DurationParts">DurationParts*</a> dp, <a href="#TemporalUnit">TemporalUnit</a> unit)</code></p><p class="api-src">src/lib/temporal/duration.c3:384:9</p></div>
+<div class="api-item" id="date_compare"><p class="api-sig"><code>fn int date_compare(<a href="#CivilDate">CivilDate</a> a, <a href="#CivilDate">CivilDate</a> b)</code></p><p class="api-src">src/lib/temporal/calendar.c3:151:8</p></div>
+<div class="api-item" id="date_equals"><p class="api-sig"><code>fn bool date_equals(<a href="#CivilDate">CivilDate</a> a, <a href="#CivilDate">CivilDate</a> b)</code></p><p class="api-src">src/lib/temporal/calendar.c3:147:9</p></div>
+<div class="api-item" id="days_in_month"><p class="api-sig"><code>fn int days_in_month(long y, int m)</code></p><p class="api-src">src/lib/temporal/calendar.c3:16:8</p></div>
+<div class="api-item" id="decompose_ns"><p class="api-sig"><code>fn void decompose_ns(long ns, <a href="#TemporalUnit">TemporalUnit</a> largest, <a href="#DurationParts">DurationParts*</a> out)</code></p><p class="api-src">src/lib/temporal/duration.c3:144:9</p></div>
+<div class="api-item" id="decompose_ns_128"><p class="api-sig"><code>fn void decompose_ns_128(int128 ns, <a href="#TemporalUnit">TemporalUnit</a> largest, <a href="#DurationParts">DurationParts*</a> out)</code></p><p class="api-src">src/lib/temporal/duration.c3:194:9</p></div>
+<div class="api-item" id="default_largest_unit"><p class="api-sig"><code>fn <a href="#TemporalUnit">TemporalUnit</a> default_largest_unit(<a href="#DurationParts">DurationParts</a> d)</code></p><p class="api-src">src/lib/temporal/duration.c3:102:17</p></div>
+<div class="api-item" id="diff_seconds"><p class="api-sig"><code>fn long diff_seconds(<a href="#CivilTime">CivilTime</a> a, <a href="#CivilTime">CivilTime</a> b)</code></p><p class="api-src">src/lib/temporal/civil.c3:276:9</p></div>
+<div class="api-item" id="diff_sign"><p class="api-sig"><code>fn long diff_sign(<a href="#CivilDate">CivilDate</a> a, <a href="#CivilDate">CivilDate</a> b)</code></p><p class="api-src">src/lib/temporal/calendar.c3:83:9</p></div>
+<div class="api-item" id="difference_date"><p class="api-sig"><code>fn <a href="#DateDifference">DateDifference</a> difference_date(<a href="#CivilDate">CivilDate</a> start, <a href="#CivilDate">CivilDate</a> end, <a href="#DifferenceUnit">DifferenceUnit</a> unit)</code></p><p class="api-src">src/lib/temporal/calendar.c3:97:19</p></div>
+<div class="api-item" id="digit_at"><p class="api-sig"><code>fn int digit_at(char[] text, usz i)</code></p><p class="api-src">src/lib/temporal/parse.c3:62:8</p></div>
+<div class="api-item" id="divide_time_duration"><p class="api-sig"><code>fn double divide_time_duration(int128 num, int128 div)</code></p><p class="api-src">src/lib/temporal/duration.c3:405:11</p></div>
+<div class="api-item" id="dtoa_pow2"><p class="api-sig"><code>fn double dtoa_pow2(int n)</code></p><p class="api-src">src/lib/temporal/duration.c3:466:11</p></div>
+<div class="api-item" id="duration_time_part_ns"><p class="api-sig"><code>fn int128 duration_time_part_ns(<a href="#DurationParts">DurationParts</a> d)</code></p><p class="api-src">src/lib/temporal/duration.c3:87:11</p></div>
+<div class="api-item" id="duration_to_time_ns"><p class="api-sig"><code>fn int128 duration_to_time_ns(<a href="#DurationParts">DurationParts</a> d)</code></p><p class="api-src">src/lib/temporal/duration.c3:98:11</p></div>
+<div class="api-item" id="duration_total_ns_from"><p class="api-sig"><code>fn bool duration_total_ns_from(<a href="#CivilDate">CivilDate</a> rel_date, <a href="#DurationParts">DurationParts</a> dur, int128* out)</code></p><p class="api-src">src/lib/temporal/duration.c3:248:9</p></div>
+<div class="api-item" id="epoch_days_from_civil"><p class="api-sig"><code>fn long epoch_days_from_civil(long y, int m, int d)</code></p><p class="api-src">src/lib/temporal/civil.c3:137:9</p></div>
+<div class="api-item" id="epoch_days_in_range"><p class="api-sig"><code>fn bool epoch_days_in_range(long days)</code></p><p class="api-src">src/lib/temporal/instant.c3:23:9</p></div>
+<div class="api-item" id="f64_field"><p class="api-sig"><code>fn long f64_field(long x)</code></p><p class="api-src">src/lib/temporal/duration.c3:474:9</p></div>
+<div class="api-item" id="field_set"><p class="api-sig"><code>fn <a href="#FieldSet">FieldSet</a> field_set(<a href="#TemporalField">TemporalField...</a> fields) @inline</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:27:13</p></div>
+<div class="api-item" id="floor_mod_field"><p class="api-sig"><code>fn long floor_mod_field(double time_val, long unit_ms, long modulus)</code></p><p class="api-src">src/lib/temporal/civil.c3:208:9</p></div>
+<div class="api-item" id="format_civil_date"><p class="api-sig"><code>fn usz format_civil_date(<a href="#CivilDate">CivilDate</a> d, char* buf, usz buf_size)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:26:8</p></div>
+<div class="api-item" id="format_civil_datetime"><p class="api-sig"><code>fn usz format_civil_datetime(<a href="#CivilDateTime">CivilDateTime</a> dt, char* buf, usz buf_size, int ns_digits)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:401:8</p></div>
+<div class="api-item" id="format_civil_time"><p class="api-sig"><code>fn usz format_civil_time(<a href="#CivilTime">CivilTime</a> t, char* buf, usz buf_size, int ns_digits)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:354:8</p></div>
+<div class="api-item" id="format_duration"><p class="api-sig"><code>fn usz format_duration(<a href="#DurationParts">DurationParts</a> d, char* buf, usz buf_size)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:137:8</p></div>
+<div class="api-item" id="format_duration_precision"><p class="api-sig"><code>fn usz format_duration_precision(<a href="#DurationParts">DurationParts</a> d, int precision, char* buf, usz buf_size)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:145:8</p></div>
+<div class="api-item" id="format_fractional_seconds"><p class="api-sig"><code>fn int format_fractional_seconds(char* buf, long ns_rem, int digits, <a href="#TemporalRoundMode">TemporalRoundMode</a> mode)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:427:8</p></div>
+<div class="api-item" id="format_offset_seconds"><p class="api-sig"><code>fn void format_offset_seconds(char* buf, int off)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:466:9</p></div>
+<div class="api-item" id="fraction_to_ns"><p class="api-sig"><code>fn long fraction_to_ns(long digits, int len)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:194:9 · private</p></div>
+<div class="api-item" id="hebrew_date"><p class="api-sig"><code>fn <a href="#HebrewDate">HebrewDate</a> hebrew_date(long rd)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:367:15</p></div>
+<div class="api-item" id="hebrew_elapsed_days"><p class="api-sig"><code>fn long hebrew_elapsed_days(long y)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:338:9</p></div>
+<div class="api-item" id="hebrew_leap_year"><p class="api-sig"><code>fn bool hebrew_leap_year(long y)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:334:9</p></div>
+<div class="api-item" id="hebrew_month_length"><p class="api-sig"><code>fn long hebrew_month_length(long year_length, bool leap, long idx)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:355:9</p></div>
+<div class="api-item" id="hebrew_new_year"><p class="api-sig"><code>fn long hebrew_new_year(long y)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:345:9</p></div>
+<div class="api-item" id="hijri_year_start"><p class="api-sig"><code>fn long hijri_year_start(long year)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:300:9</p></div>
+<div class="api-item" id="instant_add"><p class="api-sig"><code>fn int128 instant_add(int128 a, int128 delta_ns)</code></p><p class="api-src">src/lib/temporal/instant.c3:46:11</p></div>
+<div class="api-item" id="instant_cmp"><p class="api-sig"><code>fn int instant_cmp(int128 a, int128 b)</code></p><p class="api-src">src/lib/temporal/instant.c3:56:8</p></div>
+<div class="api-item" id="instant_fits_in_long"><p class="api-sig"><code>fn bool instant_fits_in_long(int128 ns)</code></p><p class="api-src">src/lib/temporal/instant.c3:40:9</p></div>
+<div class="api-item" id="instant_in_range"><p class="api-sig"><code>fn bool instant_in_range(int128 ns)</code></p><p class="api-src">src/lib/temporal/instant.c3:34:9</p></div>
+<div class="api-item" id="instant_sub"><p class="api-sig"><code>fn int128 instant_sub(int128 a, int128 delta_ns)</code></p><p class="api-src">src/lib/temporal/instant.c3:51:11</p></div>
+<div class="api-item" id="is_ambiguous_plain_time_string"><p class="api-sig"><code>fn bool is_ambiguous_plain_time_string(char[] text)</code></p><p class="api-src">src/lib/temporal/parse.c3:625:9</p></div>
+<div class="api-item" id="is_cal_unit"><p class="api-sig"><code>fn bool is_cal_unit(<a href="#TemporalUnit">TemporalUnit</a> u)</code></p><p class="api-src">src/lib/temporal/units.c3:28:9</p></div>
+<div class="api-item" id="is_date_unit"><p class="api-sig"><code>fn bool is_date_unit(<a href="#TemporalUnit">TemporalUnit</a> u)</code></p><p class="api-src">src/lib/temporal/units.c3:31:9</p></div>
+<div class="api-item" id="is_half_mode"><p class="api-sig"><code>fn bool is_half_mode(<a href="#TemporalRoundMode">TemporalRoundMode</a> m)</code></p><p class="api-src">src/lib/temporal/units.c3:266:9</p></div>
+<div class="api-item" id="is_instant_representable_date"><p class="api-sig"><code>fn bool is_instant_representable_date(<a href="#CivilDate">CivilDate</a> d)</code></p><p class="api-src">src/lib/temporal/civil.c3:252:9</p></div>
+<div class="api-item" id="is_leap_year"><p class="api-sig"><code>fn bool is_leap_year(long y)</code></p><p class="api-src">src/lib/temporal/civil.c3:127:9</p></div>
+<div class="api-item" id="is_valid_duration"><p class="api-sig"><code>fn bool is_valid_duration(<a href="#DurationParts">DurationParts*</a> d)</code></p><p class="api-src">src/lib/temporal/duration.c3:37:9</p></div>
+<div class="api-item" id="is_valid_iso_date"><p class="api-sig"><code>fn bool is_valid_iso_date(long y, int m, int d)</code></p><p class="api-src">src/lib/temporal/civil.c3:112:9</p></div>
+<div class="api-item" id="is_valid_iso_date_days"><p class="api-sig"><code>fn bool is_valid_iso_date_days(long epoch_days)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:166:9 · private</p></div>
+<div class="api-item" id="is_valid_iso_datetime"><p class="api-sig"><code>fn bool is_valid_iso_datetime(long y, long m, long d, long h, long mi, long s, long ms, long us, long ns)</code></p><p class="api-src">src/lib/temporal/civil.c3:235:9</p></div>
+<div class="api-item" id="is_valid_iso_yearmonth"><p class="api-sig"><code>fn bool is_valid_iso_yearmonth(long y, int m)</code></p><p class="api-src">src/lib/temporal/civil.c3:87:9</p></div>
+<div class="api-item" id="is_valid_plain_datetime"><p class="api-sig"><code>fn bool is_valid_plain_datetime(long y, int m, int d, int h, int mi, int s, int ms, int us, int ns)</code></p><p class="api-src">src/lib/temporal/civil.c3:98:9</p></div>
+<div class="api-item" id="is_valid_time"><p class="api-sig"><code>fn bool is_valid_time(int h, int mi, int s, int ms, int us, int ns)</code></p><p class="api-src">src/lib/temporal/civil.c3:223:9</p></div>
+<div class="api-item" id="islamic_civil_date"><p class="api-sig"><code>fn <a href="#HijriDate">HijriDate</a> islamic_civil_date(long days)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:305:14</p></div>
+<div class="api-item" id="iso_date_to_fields"><p class="api-sig"><code>fn <a href="#CalendarFields">CalendarFields</a> iso_date_to_fields(<a href="#CalendarId">CalendarId</a> cal, <a href="#CivilDate">CivilDate</a> iso, <a href="#FieldsType">FieldsType</a> type)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:190:19</p></div>
+<div class="api-item" id="iso_day_of_week"><p class="api-sig"><code>fn long iso_day_of_week(long epoch_days)</code></p><p class="api-src">src/lib/temporal/civil.c3:332:9</p></div>
+<div class="api-item" id="iso_week_of_year"><p class="api-sig"><code>fn long iso_week_of_year(<a href="#CivilDate">CivilDate</a> d, long* week_year)</code></p><p class="api-src">src/lib/temporal/civil.c3:344:9</p></div>
+<div class="api-item" id="iso_weeks_in_year"><p class="api-sig"><code>fn long iso_weeks_in_year(long year)</code></p><p class="api-src">src/lib/temporal/civil.c3:338:9</p></div>
+<div class="api-item" id="larger_unit"><p class="api-sig"><code>fn <a href="#TemporalUnit">TemporalUnit</a> larger_unit(<a href="#TemporalUnit">TemporalUnit</a> a, <a href="#TemporalUnit">TemporalUnit</a> b)</code></p><p class="api-src">src/lib/temporal/units.c3:57:17</p></div>
+<div class="api-item" id="lunar_date"><p class="api-sig"><code>fn <a href="#LunarDate">LunarDate</a> lunar_date(bool dangi, long days)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:272:14</p></div>
+<div class="api-item" id="lunar_days_to_millis"><p class="api-sig"><code>fn double lunar_days_to_millis(bool dangi, double days)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:89:11</p></div>
+<div class="api-item" id="lunar_delta_t"><p class="api-sig"><code>fn double lunar_delta_t(double y)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:123:11</p></div>
+<div class="api-item" id="lunar_floor_mod"><p class="api-sig"><code>fn long lunar_floor_mod(long a, long b)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:330:9</p></div>
+<div class="api-item" id="lunar_leap_between"><p class="api-sig"><code>fn bool lunar_leap_between(bool dangi, long first, long last)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:216:9</p></div>
+<div class="api-item" id="lunar_major_term"><p class="api-sig"><code>fn long lunar_major_term(bool dangi, long days)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:203:9</p></div>
+<div class="api-item" id="lunar_millis_to_days"><p class="api-sig"><code>fn double lunar_millis_to_days(bool dangi, double millis)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:94:11</p></div>
+<div class="api-item" id="lunar_month"><p class="api-sig"><code>fn <a href="#LunarMonth">LunarMonth</a> lunar_month(bool dangi, long gyear, long days)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:245:15</p></div>
+<div class="api-item" id="lunar_new_moon_near"><p class="api-sig"><code>fn long lunar_new_moon_near(bool dangi, double days, bool after)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:182:9</p></div>
+<div class="api-item" id="lunar_new_moon_time"><p class="api-sig"><code>fn double lunar_new_moon_time(long k)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:137:11</p></div>
+<div class="api-item" id="lunar_new_year"><p class="api-sig"><code>fn long lunar_new_year(bool dangi, long gyear)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:231:9</p></div>
+<div class="api-item" id="lunar_no_major_term"><p class="api-sig"><code>fn bool lunar_no_major_term(bool dangi, long new_moon)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:209:9</p></div>
+<div class="api-item" id="lunar_norm2pi"><p class="api-sig"><code>fn double lunar_norm2pi(double angle)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:40:11</p></div>
+<div class="api-item" id="lunar_normalize"><p class="api-sig"><code>fn double lunar_normalize(double value, double range)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:36:11</p></div>
+<div class="api-item" id="lunar_normpi"><p class="api-sig"><code>fn double lunar_normpi(double angle)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:42:11</p></div>
+<div class="api-item" id="lunar_offset"><p class="api-sig"><code>fn double lunar_offset(bool dangi, double millis)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:81:11</p></div>
+<div class="api-item" id="lunar_sun_angle"><p class="api-sig"><code>fn double lunar_sun_angle(double millis)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:48:11</p></div>
+<div class="api-item" id="lunar_synodic_between"><p class="api-sig"><code>fn long lunar_synodic_between(long day1, long day2)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:224:9</p></div>
+<div class="api-item" id="lunar_time_of_angle"><p class="api-sig"><code>fn double lunar_time_of_angle(double desired, double period_days, double start, bool next)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:100:11</p></div>
+<div class="api-item" id="lunar_winter_solstice"><p class="api-sig"><code>fn long lunar_winter_solstice(bool dangi, long gyear)</code></p><p class="api-src">src/lib/temporal/lunisolar.c3:196:9</p></div>
+<div class="api-item" id="max_round_incr"><p class="api-sig"><code>fn long max_round_incr(<a href="#TemporalUnit">TemporalUnit</a> u)</code></p><p class="api-src">src/lib/temporal/units.c3:45:9</p></div>
+<div class="api-item" id="mode_for_negative"><p class="api-sig"><code>fn <a href="#TemporalRoundMode">TemporalRoundMode</a> mode_for_negative(<a href="#TemporalRoundMode">TemporalRoundMode</a> m)</code></p><p class="api-src">src/lib/temporal/units.c3:256:22</p></div>
+<div class="api-item" id="mode_for_negative_magnitude"><p class="api-sig"><code>fn <a href="#TemporalRoundMode">TemporalRoundMode</a> mode_for_negative_magnitude(<a href="#TemporalRoundMode">TemporalRoundMode</a> m)</code></p><p class="api-src">src/lib/temporal/units.c3:103:22</p></div>
+<div class="api-item" id="month_code_compare"><p class="api-sig"><code>fn int month_code_compare(<a href="#MonthCode">MonthCode</a> a, <a href="#MonthCode">MonthCode</a> b)</code></p><p class="api-src">src/lib/temporal/calendar_ops.c3:145:8</p></div>
+<div class="api-item" id="month_code_decode"><p class="api-sig"><code>fn <a href="#MonthCode">MonthCode</a> month_code_decode(long value)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:64:14</p></div>
+<div class="api-item" id="ms_to_sec_floor"><p class="api-sig"><code>fn long ms_to_sec_floor(double time_val)</code></p><p class="api-src">src/lib/temporal/civil.c3:202:9</p></div>
+<div class="api-item" id="normalize_duration"><p class="api-sig"><code>fn <a href="#NormalizedDuration">NormalizedDuration</a> normalize_duration(<a href="#DurationParts">DurationParts</a> d)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:73:23</p></div>
+<div class="api-item" id="now_epoch_milliseconds"><p class="api-sig"><code>fn long now_epoch_milliseconds()</code></p><p class="api-src">src/lib/temporal/instant.c3:70:9</p></div>
+<div class="api-item" id="now_epoch_nanoseconds"><p class="api-sig"><code>fn int128 now_epoch_nanoseconds()</code></p><p class="api-src">src/lib/temporal/instant.c3:75:11</p></div>
+<div class="api-item" id="now_epoch_seconds"><p class="api-sig"><code>fn long now_epoch_seconds()</code></p><p class="api-src">src/lib/temporal/instant.c3:65:9</p></div>
+<div class="api-item" id="now_find_bracket_zone"><p class="api-sig"><code>fn bool now_find_bracket_zone(char[] text, usz* i, usz* out_start, usz* out_len)</code></p><p class="api-src">src/lib/temporal/parse.c3:1143:9</p></div>
+<div class="api-item" id="now_skip_iso_prefix"><p class="api-sig"><code>fn bool now_skip_iso_prefix(char[] text, usz* i)</code></p><p class="api-src">src/lib/temporal/parse.c3:1094:9</p></div>
+<div class="api-item" id="ns_pow10"><p class="api-sig"><code>fn long ns_pow10(int e)</code></p><p class="api-src">src/lib/temporal/units.c3:63:9</p></div>
+<div class="api-item" id="parse_annotations"><p class="api-sig"><code>fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_len, usz* out_tz_start, usz* out_tz_len, bool allow_sub_minute_tz = true)</code></p><p class="api-src">src/lib/temporal/parse.c3:203:9</p></div>
+<div class="api-item" id="parse_calendar_annotations"><p class="api-sig"><code>fn bool parse_calendar_annotations(char[] text, usz* i, <a href="#CalendarId">CalendarId*</a> calendar, bool strict, bool allow_sub_minute_tz = true)</code></p><p class="api-src">src/lib/temporal/parse.c3:399:9</p></div>
+<div class="api-item" id="parse_duration"><p class="api-sig"><code>fn bool parse_duration(char[] text, <a href="#DurationParts">DurationParts*</a> out)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:247:9</p></div>
+<div class="api-item" id="parse_fraction"><p class="api-sig"><code>fn bool parse_fraction(char[] text, usz* i, long* nanos)</code></p><p class="api-src">src/lib/temporal/parse.c3:77:9</p></div>
+<div class="api-item" id="parse_iso_date_string"><p class="api-sig"><code>fn bool parse_iso_date_string(char[] text, <a href="#ParsedIsoDateTime">ParsedIsoDateTime*</a> out)</code></p><p class="api-src">src/lib/temporal/parse.c3:331:9</p></div>
+<div class="api-item" id="parse_iso_instant_string"><p class="api-sig"><code>fn bool parse_iso_instant_string(char[] text, <a href="#ParsedIsoInstant">ParsedIsoInstant*</a> out)</code></p><p class="api-src">src/lib/temporal/parse.c3:714:9</p></div>
+<div class="api-item" id="parse_iso_monthday_string"><p class="api-sig"><code>fn bool parse_iso_monthday_string(char[] text, <a href="#ParsedIsoDateTime">ParsedIsoDateTime*</a> out)</code></p><p class="api-src">src/lib/temporal/parse.c3:495:9</p></div>
+<div class="api-item" id="parse_iso_time_string"><p class="api-sig"><code>fn bool parse_iso_time_string(char[] text, <a href="#ParsedIsoDateTime">ParsedIsoDateTime*</a> out)</code></p><p class="api-src">src/lib/temporal/parse.c3:667:9</p></div>
+<div class="api-item" id="parse_iso_yearmonth_string"><p class="api-sig"><code>fn bool parse_iso_yearmonth_string(char[] text, <a href="#ParsedIsoDateTime">ParsedIsoDateTime*</a> out)</code></p><p class="api-src">src/lib/temporal/parse.c3:412:9</p></div>
+<div class="api-item" id="parse_iso_zoneddatetime_string"><p class="api-sig"><code>fn bool parse_iso_zoneddatetime_string(char[] text, <a href="#ParsedIsoZonedDateTime">ParsedIsoZonedDateTime*</a> out)</code></p><p class="api-src">src/lib/temporal/parse.c3:875:9</p></div>
+<div class="api-item" id="parse_offset"><p class="api-sig"><code>fn bool parse_offset(char[] text, usz* i, <a href="#OffsetKind">OffsetKind*</a> out_offset_kind)</code></p><p class="api-src">src/lib/temporal/parse.c3:146:9</p></div>
+<div class="api-item" id="parse_offset_nanoseconds"><p class="api-sig"><code>fn bool parse_offset_nanoseconds(char[] text, usz* pos, long* nanos, bool* minute_precision = null)</code></p><p class="api-src">src/lib/temporal/parse.c3:994:9</p></div>
+<div class="api-item" id="parse_offset_only"><p class="api-sig"><code>fn bool parse_offset_only(char[] text, usz* i, long* offset_seconds)</code></p><p class="api-src">src/lib/temporal/parse.c3:1030:9</p></div>
+<div class="api-item" id="parse_rm_str"><p class="api-sig"><code>fn bool parse_rm_str(char[] s, <a href="#TemporalRoundMode">TemporalRoundMode*</a> out)</code></p><p class="api-src">src/lib/temporal/units.c3:88:9</p></div>
+<div class="api-item" id="parse_simple_offset"><p class="api-sig"><code>fn bool parse_simple_offset(char[] text, usz* i)</code></p><p class="api-src">src/lib/temporal/parse.c3:970:9</p></div>
+<div class="api-item" id="parse_time"><p class="api-sig"><code>fn bool parse_time(char[] text, usz* i, int* h, int* mi, int* s, long* nanos)</code></p><p class="api-src">src/lib/temporal/parse.c3:103:9</p></div>
+<div class="api-item" id="parse_two_digits"><p class="api-sig"><code>fn bool parse_two_digits(char[] text, usz* i, int* out)</code></p><p class="api-src">src/lib/temporal/parse.c3:66:9</p></div>
+<div class="api-item" id="parse_unit_str"><p class="api-sig"><code>fn bool parse_unit_str(char[] s, <a href="#TemporalUnit">TemporalUnit*</a> out)</code></p><p class="api-src">src/lib/temporal/units.c3:74:9</p></div>
+<div class="api-item" id="read_duration_number"><p class="api-sig"><code>fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int* frac_len)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:216:9</p></div>
+<div class="api-item" id="regulate_field"><p class="api-sig"><code>fn long? regulate_field(long value, long max, <a href="#OverflowKind">OverflowKind</a> overflow)</code></p><p class="api-src">src/lib/temporal/calendar_fields.c3:122:10 · private</p></div>
+<div class="api-item" id="regulate_time_constrain"><p class="api-sig"><code>fn <a href="#CivilTime">CivilTime</a> regulate_time_constrain(<a href="#CivilTime">CivilTime</a> f)</code></p><p class="api-src">src/lib/temporal/civil.c3:320:14</p></div>
+<div class="api-item" id="round_long_ns"><p class="api-sig"><code>fn long round_long_ns(long v, long incr_ns, <a href="#TemporalRoundMode">TemporalRoundMode</a> mode)</code></p><p class="api-src">src/lib/temporal/units.c3:116:9</p></div>
+<div class="api-item" id="round_long_ns_128"><p class="api-sig"><code>fn int128 round_long_ns_128(int128 v, int128 incr_ns, <a href="#TemporalRoundMode">TemporalRoundMode</a> mode)</code></p><p class="api-src">src/lib/temporal/units.c3:156:11</p></div>
+<div class="api-item" id="round_num_to_incr"><p class="api-sig"><code>fn double round_num_to_incr(double x, double incr, <a href="#TemporalRoundMode">TemporalRoundMode</a> mode)</code></p><p class="api-src">src/lib/temporal/units.c3:193:11</p></div>
+<div class="api-item" id="set_smallest_unit_count"><p class="api-sig"><code>fn void set_smallest_unit_count(<a href="#DurationParts">DurationParts*</a> dp, <a href="#TemporalUnit">TemporalUnit</a> unit, long n)</code></p><p class="api-src">src/lib/temporal/duration.c3:374:9</p></div>
+<div class="api-item" id="smallest_unit_count"><p class="api-sig"><code>fn long smallest_unit_count(<a href="#DurationParts">DurationParts</a> dp, <a href="#TemporalUnit">TemporalUnit</a> unit)</code></p><p class="api-src">src/lib/temporal/duration.c3:364:9</p></div>
+<div class="api-item" id="split_subseconds"><p class="api-sig"><code>fn void split_subseconds(long total_ns, long sign, <a href="#DurationParts">DurationParts*</a> out)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:205:9 · private</p></div>
+<div class="api-item" id="string_compare"><p class="api-sig"><code>fn int string_compare(String a, String b)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:324:8</p></div>
+<div class="api-item" id="time_compare"><p class="api-sig"><code>fn int time_compare(<a href="#CivilTime">CivilTime</a> a, <a href="#CivilTime">CivilTime</a> b)</code></p><p class="api-src">src/lib/temporal/civil.c3:289:8</p></div>
+<div class="api-item" id="time_equals"><p class="api-sig"><code>fn bool time_equals(<a href="#CivilTime">CivilTime</a> a, <a href="#CivilTime">CivilTime</a> b)</code></p><p class="api-src">src/lib/temporal/civil.c3:283:9</p></div>
+<div class="api-item" id="time_ns_split"><p class="api-sig"><code>fn <a href="#DurationParts">DurationParts</a> time_ns_split(long v, <a href="#TemporalUnit">TemporalUnit</a> largest)</code></p><p class="api-src">src/lib/temporal/duration.c3:118:18</p></div>
+<div class="api-item" id="total_days_between"><p class="api-sig"><code>fn long total_days_between(<a href="#CivilDate">CivilDate</a> a, <a href="#CivilDate">CivilDate</a> b)</code></p><p class="api-src">src/lib/temporal/duration.c3:398:9</p></div>
+<div class="api-item" id="tz_cand_add"><p class="api-sig"><code>fn void tz_cand_add(int[] cand, int* nc, int o)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:445:9</p></div>
+<div class="api-item" id="tzdb_bits"><p class="api-sig"><code>fn uint tzdb_bits(usz base, usz* bitpos, uint width)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:118:9 · private</p></div>
+<div class="api-item" id="tzdb_cache_next"><p class="api-sig"><code>fn bool tzdb_cache_next(<a href="#TzdbCache">TzdbCache*</a> c, long t, long* at, int* off)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:226:9 · private</p></div>
+<div class="api-item" id="tzdb_cache_offset_at"><p class="api-sig"><code>fn int tzdb_cache_offset_at(<a href="#TzdbCache">TzdbCache*</a> c, long epoch)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:218:8 · private</p></div>
+<div class="api-item" id="tzdb_cache_prev"><p class="api-sig"><code>fn bool tzdb_cache_prev(<a href="#TzdbCache">TzdbCache*</a> c, long t, long* at, int* off)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:242:9 · private</p></div>
+<div class="api-item" id="tzdb_floor"><p class="api-sig"><code>fn long tzdb_floor(<a href="#TzdbCache">TzdbCache*</a> c)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:214:9 · private</p></div>
+<div class="api-item" id="tzdb_footer_next"><p class="api-sig"><code>fn bool tzdb_footer_next(<a href="#TzdbCache">TzdbCache*</a> c, long t, long floor, long* at, int* off)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:100:9 · private</p></div>
+<div class="api-item" id="tzdb_footer_prev"><p class="api-sig"><code>fn bool tzdb_footer_prev(<a href="#TzdbCache">TzdbCache*</a> c, long t, long floor, long* at, int* off)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:80:9 · private</p></div>
+<div class="api-item" id="tzdb_footer_year"><p class="api-sig"><code>fn void tzdb_footer_year(<a href="#TzdbCache">TzdbCache*</a> c, long year, long* t0, int* o0, long* t1, int* o1)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:68:9 · private</p></div>
+<div class="api-item" id="tzdb_load"><p class="api-sig"><code>fn <a href="#TzdbCache">TzdbCache*</a> tzdb_load(int idx)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:136:15 · private</p></div>
+<div class="api-item" id="tzdb_name_step"><p class="api-sig"><code>fn usz tzdb_name_step(char* buf, usz* pos)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:261:8 · private</p></div>
+<div class="api-item" id="tzdb_next_transition"><p class="api-sig"><code>fn bool tzdb_next_transition(String zone_name, long t_sec, long* at, int* offset_after)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:428:9</p></div>
+<div class="api-item" id="tzdb_next_transition_for_index"><p class="api-sig"><code>fn bool tzdb_next_transition_for_index(int idx, long t_sec, long* at, int* offset_after)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:460:9</p></div>
+<div class="api-item" id="tzdb_offset_at_index"><p class="api-sig"><code>fn int tzdb_offset_at_index(int idx, long epoch_sec)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:372:8 · private</p></div>
+<div class="api-item" id="tzdb_offset_for_index"><p class="api-sig"><code>fn int tzdb_offset_for_index(String zone, int idx, long epoch_sec)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:455:8</p></div>
+<div class="api-item" id="tzdb_offset_for_zone_at"><p class="api-sig"><code>fn int tzdb_offset_for_zone_at(String zone_name, long epoch_sec)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:395:8</p></div>
+<div class="api-item" id="tzdb_offset_for_zone_ci"><p class="api-sig"><code>fn int tzdb_offset_for_zone_ci(String zone_name, long epoch_sec, char* canonical_buf, usz buf_cap)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:379:8</p></div>
+<div class="api-item" id="tzdb_prev_transition"><p class="api-sig"><code>fn bool tzdb_prev_transition(String zone_name, long t_sec, long* at)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:435:9</p></div>
+<div class="api-item" id="tzdb_resolve_local"><p class="api-sig"><code>fn long tzdb_resolve_local(String zone, long wall_secs, int mode, bool* rejected)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:476:9</p></div>
+<div class="api-item" id="tzdb_rule_epoch"><p class="api-sig"><code>fn long tzdb_rule_epoch(long year, uint rule, int offset_before)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:46:9 · private</p></div>
+<div class="api-item" id="tzdb_upper"><p class="api-sig"><code>fn uint tzdb_upper(<a href="#TzdbCache">TzdbCache*</a> c, long t)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:204:9 · private</p></div>
+<div class="api-item" id="tzdb_weekday"><p class="api-sig"><code>fn long tzdb_weekday(long y, int m, long d)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:39:9 · private</p></div>
+<div class="api-item" id="tzdb_width"><p class="api-sig"><code>fn uint tzdb_width(uint count)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:128:9 · private</p></div>
+<div class="api-item" id="tzdb_zone_count"><p class="api-sig"><code>fn usz tzdb_zone_count()</code></p><p class="api-src">src/lib/temporal/tzdb.c3:269:8</p></div>
+<div class="api-item" id="tzdb_zone_exists"><p class="api-sig"><code>fn bool tzdb_zone_exists(String zone_name)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:352:9</p></div>
+<div class="api-item" id="tzdb_zone_exists_ci"><p class="api-sig"><code>fn bool tzdb_zone_exists_ci(String zone_name, char* canonical_buf, usz buf_cap)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:359:9</p></div>
+<div class="api-item" id="tzdb_zone_index"><p class="api-sig"><code>fn int tzdb_zone_index(String zone_name)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:283:8</p></div>
+<div class="api-item" id="tzdb_zone_index_ci"><p class="api-sig"><code>fn int tzdb_zone_index_ci(String zone_name)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:308:8 · private</p></div>
+<div class="api-item" id="tzdb_zone_initial_offset"><p class="api-sig"><code>fn int tzdb_zone_initial_offset(String zone_name)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:419:8</p></div>
+<div class="api-item" id="tzdb_zone_name"><p class="api-sig"><code>fn usz tzdb_zone_name(int idx, char* buf)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:274:8</p></div>
+<div class="api-item" id="unit_ns_divisor"><p class="api-sig"><code>fn long unit_ns_divisor(<a href="#TemporalUnit">TemporalUnit</a> u)</code></p><p class="api-src">src/lib/temporal/units.c3:33:9</p></div>
+<div class="api-item" id="write_fraction"><p class="api-sig"><code>fn usz write_fraction(long frac_ns, int precision, char* buf)</code></p><p class="api-src">src/lib/temporal/iso8601.c3:116:8 · private</p></div>
+<div class="api-item" id="zdt_local_to_epoch_ns"><p class="api-sig"><code>fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns, int mode = 0, bool* rejected = null)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:515:11</p></div>
+<div class="api-item" id="zdt_start_of_day_ns"><p class="api-sig"><code>fn int128 zdt_start_of_day_ns(String zone, long day_secs)</code></p><p class="api-src">src/lib/temporal/tzdb.c3:527:11</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

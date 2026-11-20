@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::types · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html" aria-current="page">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::types</code></h1>
+      <p class="lede">24 types, 20 functions and macros, 66 methods, 25 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="ALLOC_ERROR"><pre><code>faultdef ALLOC_ERROR</code></pre><p class="api-src">src/types.c3:44:10</p></div>
+<div class="api-item" id="API_ERROR"><pre><code>faultdef API_ERROR</code></pre><p class="api-src">src/types.c3:54:10</p></div>
+<div class="api-item" id="BkBool"><pre><code>alias BkBool = bool</code></pre><p class="api-src">src/types.c3:25:7</p></div>
+<div class="api-item" id="BkCodepoint"><pre><code>alias BkCodepoint = uint</code></pre><p class="api-src">src/types.c3:29:7</p></div>
+<div class="api-item" id="BkDouble"><pre><code>alias BkDouble = double</code></pre><p class="api-src">src/types.c3:27:7</p></div>
+<div class="api-item" id="BkIdx"><pre><code>alias BkIdx = int</code></pre><p class="api-src">src/types.c3:19:7</p></div>
+<div class="api-item" id="BkInt"><pre><code>alias BkInt = int</code></pre><p class="api-src">src/types.c3:14:7</p></div>
+<div class="api-item" id="BkSize"><pre><code>alias BkSize = usz</code></pre><p class="api-src">src/types.c3:18:7</p></div>
+<div class="api-item" id="BkSmallInt"><pre><code>alias BkSmallInt = short</code></pre><p class="api-src">src/types.c3:21:7</p></div>
+<div class="api-item" id="BkSmallUint"><pre><code>alias BkSmallUint = ushort</code></pre><p class="api-src">src/types.c3:23:7</p></div>
+<div class="api-item" id="BkUint"><pre><code>alias BkUint = uint</code></pre><p class="api-src">src/types.c3:16:7</p></div>
+<div class="api-item" id="EVAL_ERROR"><pre><code>faultdef EVAL_ERROR</code></pre><p class="api-src">src/types.c3:50:10</p></div>
+<div class="api-item" id="GcBits"><pre><code>bitstruct GcBits : uint {
+  bool verify_live : 0..0;
+  bool old : 1..1;
+  bool remembered : 2..2;
+  bool ic_bound : 3..3;
+  bool compact_props : 4..4;
+  bool prototype_observed : 5..5;
+  bool computed_names : 6..6;
+  bool weak_target : 7..7;
+  uint shaped_props : 8..10;
+  uint inline_words : 11..15;
+  char mark : 24..31;
+}</code></pre><p class="api-src">src/types.c3:882:11</p></div>
+<div class="api-item" id="HeapFlags"><pre><code>bitstruct HeapFlags : uint {
+  <a href="#HType">HType</a> htype : 0..1;
+  bool temproot : 3..3;
+  bool finalizable : 4..4;
+  bool finalized : 5..5;
+  bool readonly : 6..6;
+}</code></pre><p class="api-src">src/types.c3:872:11</p></div>
+<div class="api-item" id="HeapHeader"><pre><code>struct HeapHeader {
+  <a href="#HeapFlags">HeapFlags</a> flags;
+  union {
+    uint refcount;
+    <a href="#GcBits">GcBits</a> gc;
+  }
+}</code></pre><p class="api-src">src/types.c3:912:8</p></div>
+<div class="api-item" id="HeapHeader.clear_finalizable"><p class="api-sig"><code>fn void HeapHeader.clear_finalizable(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:947:20</p></div>
+<div class="api-item" id="HeapHeader.clear_finalized"><p class="api-sig"><code>fn void HeapHeader.clear_finalized(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:950:20</p></div>
+<div class="api-item" id="HeapHeader.clear_readonly"><p class="api-sig"><code>fn void HeapHeader.clear_readonly(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:952:20</p></div>
+<div class="api-item" id="HeapHeader.clear_temproot"><p class="api-sig"><code>fn void HeapHeader.clear_temproot(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:944:20</p></div>
+<div class="api-item" id="HeapHeader.get_type"><p class="api-sig"><code>fn <a href="#HType">HType</a> HeapHeader.get_type(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:925:21</p></div>
+<div class="api-item" id="HeapHeader.incref"><p class="api-sig"><code>fn void HeapHeader.incref(<a href="#HeapHeader">HeapHeader*</a> self) @inline</code></p><p class="api-src">src/types.c3:933:20</p></div>
+<div class="api-item" id="HeapHeader.init"><p class="api-sig"><code>fn void HeapHeader.init(<a href="#HeapHeader">HeapHeader*</a> self, <a href="#HType">HType</a> htype)</code></p><p class="api-src">src/types.c3:964:20</p></div>
+<div class="api-item" id="HeapHeader.is_bigint"><p class="api-sig"><code>fn bool HeapHeader.is_bigint(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:929:21</p></div>
+<div class="api-item" id="HeapHeader.is_buffer"><p class="api-sig"><code>fn bool HeapHeader.is_buffer(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:928:21</p></div>
+<div class="api-item" id="HeapHeader.is_object"><p class="api-sig"><code>fn bool HeapHeader.is_object(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:926:21</p></div>
+<div class="api-item" id="HeapHeader.is_pinned"><p class="api-sig"><code>fn bool HeapHeader.is_pinned(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:958:20</p></div>
+<div class="api-item" id="HeapHeader.is_string"><p class="api-sig"><code>fn bool HeapHeader.is_string(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:927:21</p></div>
+<div class="api-item" id="HeapHeader.is_temproot"><p class="api-sig"><code>fn bool HeapHeader.is_temproot(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:945:20</p></div>
+<div class="api-item" id="HeapHeader.set_finalizable"><p class="api-sig"><code>fn void HeapHeader.set_finalizable(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:946:20</p></div>
+<div class="api-item" id="HeapHeader.set_finalized"><p class="api-sig"><code>fn void HeapHeader.set_finalized(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:948:20</p></div>
+<div class="api-item" id="HeapHeader.set_pinned"><p class="api-sig"><code>fn void HeapHeader.set_pinned(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:956:20</p></div>
+<div class="api-item" id="HeapHeader.set_readonly"><p class="api-sig"><code>fn void HeapHeader.set_readonly(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:951:20</p></div>
+<div class="api-item" id="HeapHeader.set_temproot"><p class="api-sig"><code>fn void HeapHeader.set_temproot(<a href="#HeapHeader">HeapHeader*</a> self)</code></p><p class="api-src">src/types.c3:943:20</p></div>
+<div class="api-item" id="HType"><pre><code>enum HType : char {
+  STRING,
+  OBJECT,
+  BUFFER,
+  BIGINT,
+}</code></pre><p class="api-src">src/types.c3:855:6</p></div>
+<div class="api-item" id="INTERNAL_ERROR"><pre><code>faultdef INTERNAL_ERROR</code></pre><p class="api-src">src/types.c3:52:10</p></div>
+<div class="api-item" id="RANGE_ERROR"><pre><code>faultdef RANGE_ERROR</code></pre><p class="api-src">src/types.c3:46:10</p></div>
+<div class="api-item" id="REFERENCE_ERROR"><pre><code>faultdef REFERENCE_ERROR</code></pre><p class="api-src">src/types.c3:48:10</p></div>
+<div class="api-item" id="SYNTAX_ERROR"><pre><code>faultdef SYNTAX_ERROR</code></pre><p class="api-src">src/types.c3:47:10</p></div>
+<div class="api-item" id="TVal"><pre><code>struct TVal {
+  ulong bits;
+}</code></pre><p class="api-src">src/types.c3:176:8</p></div>
+<div class="api-item" id="TVal.get_boolean"><p class="api-sig"><code>macro bool TVal.get_boolean(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:464:17</p></div>
+<div class="api-item" id="TVal.get_fastint"><p class="api-sig"><code>macro long TVal.get_fastint(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:480:17</p></div>
+<div class="api-item" id="TVal.get_heapptr"><p class="api-sig"><code>macro void* TVal.get_heapptr(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:491:18</p></div>
+<div class="api-item" id="TVal.get_number"><p class="api-sig"><code>macro double TVal.get_number(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:472:19</p></div>
+<div class="api-item" id="TVal.get_number_or_fastint"><p class="api-sig"><code>macro double TVal.get_number_or_fastint(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:499:19</p></div>
+<div class="api-item" id="TVal.get_raw_bits"><p class="api-sig"><code>macro ulong TVal.get_raw_bits(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:228:18</p></div>
+<div class="api-item" id="TVal.get_tag"><p class="api-sig"><code>macro <a href="#TValTag">TValTag</a> TVal.get_tag(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:198:20</p></div>
+<div class="api-item" id="TVal.incref_if_heap"><p class="api-sig"><code>fn void TVal.incref_if_heap(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:453:14</p></div>
+<div class="api-item" id="TVal.is_bigint"><p class="api-sig"><code>macro bool TVal.is_bigint(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:323:17</p></div>
+<div class="api-item" id="TVal.is_boolean"><p class="api-sig"><code>macro bool TVal.is_boolean(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:275:17</p></div>
+<div class="api-item" id="TVal.is_buffer"><p class="api-sig"><code>macro bool TVal.is_buffer(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:315:17</p></div>
+<div class="api-item" id="TVal.is_deleted"><p class="api-sig"><code>macro bool TVal.is_deleted(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:266:17</p></div>
+<div class="api-item" id="TVal.is_envref"><p class="api-sig"><code>macro bool TVal.is_envref(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:342:17</p></div>
+<div class="api-item" id="TVal.is_fastint"><p class="api-sig"><code>macro bool TVal.is_fastint(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:291:17</p></div>
+<div class="api-item" id="TVal.is_heap_allocated"><p class="api-sig"><code>macro bool TVal.is_heap_allocated(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:412:17</p></div>
+<div class="api-item" id="TVal.is_inert"><p class="api-sig"><code>macro bool TVal.is_inert(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:365:17</p></div>
+<div class="api-item" id="TVal.is_lightfunc"><p class="api-sig"><code>macro bool TVal.is_lightfunc(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:385:17</p></div>
+<div class="api-item" id="TVal.is_null"><p class="api-sig"><code>macro bool TVal.is_null(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:258:17</p></div>
+<div class="api-item" id="TVal.is_nullish"><p class="api-sig"><code>macro bool TVal.is_nullish(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:393:17</p></div>
+<div class="api-item" id="TVal.is_number"><p class="api-sig"><code>macro bool TVal.is_number(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:283:17</p></div>
+<div class="api-item" id="TVal.is_numeric"><p class="api-sig"><code>macro bool TVal.is_numeric(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:404:17</p></div>
+<div class="api-item" id="TVal.is_object"><p class="api-sig"><code>macro bool TVal.is_object(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:307:17</p></div>
+<div class="api-item" id="TVal.is_pointer"><p class="api-sig"><code>macro bool TVal.is_pointer(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:332:17</p></div>
+<div class="api-item" id="TVal.is_poison"><p class="api-sig"><code>macro bool TVal.is_poison(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:580:17</p></div>
+<div class="api-item" id="TVal.is_refcounted"><p class="api-sig"><code>macro bool TVal.is_refcounted(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:433:17</p></div>
+<div class="api-item" id="TVal.is_string"><p class="api-sig"><code>macro bool TVal.is_string(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:299:17</p></div>
+<div class="api-item" id="TVal.is_traced"><p class="api-sig"><code>macro bool TVal.is_traced(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:423:17</p></div>
+<div class="api-item" id="TVal.is_undefined"><p class="api-sig"><code>macro bool TVal.is_undefined(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:250:17</p></div>
+<div class="api-item" id="TVal.needs_gc_scan"><p class="api-sig"><code>macro bool TVal.needs_gc_scan(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:353:17</p></div>
+<div class="api-item" id="TVal.same_bits"><p class="api-sig"><code>macro bool TVal.same_bits(<a href="#TVal">TVal*</a> self, <a href="#TVal">TVal*</a> other)</code></p><p class="api-src">src/types.c3:377:17</p></div>
+<div class="api-item" id="TVal.set_bigint"><p class="api-sig"><code>macro void TVal.set_bigint(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:721:17</p></div>
+<div class="api-item" id="TVal.set_boolean"><p class="api-sig"><code>macro void TVal.set_boolean(<a href="#TVal">TVal*</a> self, bool val)</code></p><p class="api-src">src/types.c3:597:17</p></div>
+<div class="api-item" id="TVal.set_buffer"><p class="api-sig"><code>macro void TVal.set_buffer(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:682:17</p></div>
+<div class="api-item" id="TVal.set_deleted"><p class="api-sig"><code>macro void TVal.set_deleted(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:560:17</p></div>
+<div class="api-item" id="TVal.set_envref"><p class="api-sig"><code>macro void TVal.set_envref(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:703:17</p></div>
+<div class="api-item" id="TVal.set_fastint"><p class="api-sig"><code>macro void TVal.set_fastint(<a href="#TVal">TVal*</a> self, long val)</code></p><p class="api-src">src/types.c3:621:17</p></div>
+<div class="api-item" id="TVal.set_fastint_or_number"><p class="api-sig"><code>macro void TVal.set_fastint_or_number(<a href="#TVal">TVal*</a> self, long val)</code></p><p class="api-src">src/types.c3:636:17</p></div>
+<div class="api-item" id="TVal.set_lightfunc"><p class="api-sig"><code>macro void TVal.set_lightfunc(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:712:17</p></div>
+<div class="api-item" id="TVal.set_null"><p class="api-sig"><code>macro void TVal.set_null(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:588:17</p></div>
+<div class="api-item" id="TVal.set_number"><p class="api-sig"><code>macro void TVal.set_number(<a href="#TVal">TVal*</a> self, double val)</code></p><p class="api-src">src/types.c3:606:17</p></div>
+<div class="api-item" id="TVal.set_object"><p class="api-sig"><code>macro void TVal.set_object(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:661:17</p></div>
+<div class="api-item" id="TVal.set_object_borrowed"><p class="api-sig"><code>macro void TVal.set_object_borrowed(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:673:17</p></div>
+<div class="api-item" id="TVal.set_pointer"><p class="api-sig"><code>macro void TVal.set_pointer(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:691:17</p></div>
+<div class="api-item" id="TVal.set_poison"><p class="api-sig"><code>macro void TVal.set_poison(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:571:17</p></div>
+<div class="api-item" id="TVal.set_string"><p class="api-sig"><code>macro void TVal.set_string(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:645:17</p></div>
+<div class="api-item" id="TVal.set_string_borrowed"><p class="api-sig"><code>macro void TVal.set_string_borrowed(<a href="#TVal">TVal*</a> self, void* ptr)</code></p><p class="api-src">src/types.c3:652:17</p></div>
+<div class="api-item" id="TVal.set_temproot"><p class="api-sig"><code>macro void TVal.set_temproot(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:441:17</p></div>
+<div class="api-item" id="TVal.set_undefined"><p class="api-sig"><code>macro void TVal.set_undefined(<a href="#TVal">TVal*</a> self)</code></p><p class="api-src">src/types.c3:551:17</p></div>
+<div class="api-item" id="TValTag"><pre><code>enum TValTag : char {
+  UNDEFINED,
+  NULL_VAL,
+  BOOLEAN,
+  NUMBER,
+  FASTINT,
+  STRING,
+  OBJECT,
+  BUFFER,
+  POINTER,
+  LIGHTFUNC,
+  BIGINT,
+  DELETED,
+  ENVREF,
+  POISON,
+}</code></pre><p class="api-src">src/types.c3:61:6</p></div>
+<div class="api-item" id="TYPE_ERROR"><pre><code>faultdef TYPE_ERROR</code></pre><p class="api-src">src/types.c3:45:10</p></div>
+<div class="api-item" id="URI_ERROR"><pre><code>faultdef URI_ERROR</code></pre><p class="api-src">src/types.c3:49:10</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="ENV_STRICT"><p class="api-sig"><code>const bool ENV_STRICT = false;</code></p><p class="api-src">src/types.c3:104:12</p></div>
+<div class="api-item" id="ERROR_MSG_BUF"><p class="api-sig"><code>const int ERROR_MSG_BUF = 160;</code></p><p class="api-src">src/types.c3:115:11</p></div>
+<div class="api-item" id="FASTINT_MAX"><p class="api-sig"><code>const long FASTINT_MAX = 140737488355327;</code></p><p class="api-src">src/types.c3:94:12</p></div>
+<div class="api-item" id="FASTINT_MIN"><p class="api-sig"><code>const long FASTINT_MIN = -140737488355328;</code></p><p class="api-src">src/types.c3:93:12</p></div>
+<div class="api-item" id="FORMAT_BUF"><p class="api-sig"><code>const int FORMAT_BUF = 32;</code></p><p class="api-src">src/types.c3:117:11</p></div>
+<div class="api-item" id="MAX_SAFE_INT"><p class="api-sig"><code>const long MAX_SAFE_INT = 9007199254740991;</code></p><p class="api-src">src/types.c3:36:14</p></div>
+<div class="api-item" id="MEMBER_STRICT"><p class="api-sig"><code>const bool MEMBER_STRICT = false;</code></p><p class="api-src">src/types.c3:112:12</p></div>
+<div class="api-item" id="MIN_SAFE_INT"><p class="api-sig"><code>const long MIN_SAFE_INT = -9007199254740991;</code></p><p class="api-src">src/types.c3:38:14</p></div>
+<div class="api-item" id="NANBOX_PAYLOAD_MASK"><p class="api-sig"><code>const ulong NANBOX_PAYLOAD_MASK = 281474976710655;</code></p><p class="api-src">src/types.c3:123:13</p></div>
+<div class="api-item" id="POISON_PAYLOAD"><p class="api-sig"><code>const ulong POISON_PAYLOAD = 14349704695053;</code></p><p class="api-src">src/types.c3:150:13</p></div>
+<div class="api-item" id="STRING_PINNED_REFCOUNT"><p class="api-sig"><code>const uint STRING_PINNED_REFCOUNT = 2147483647;</code></p><p class="api-src">src/types.c3:908:12</p></div>
+<div class="api-item" id="TAG_BIGINT"><p class="api-sig"><code>const ulong TAG_BIGINT = 65531;</code></p><p class="api-src">src/types.c3:142:13</p></div>
+<div class="api-item" id="TAG_BOOLEAN"><p class="api-sig"><code>const ulong TAG_BOOLEAN = 65525;</code></p><p class="api-src">src/types.c3:136:13</p></div>
+<div class="api-item" id="TAG_BUFFER"><p class="api-sig"><code>const ulong TAG_BUFFER = 65530;</code></p><p class="api-src">src/types.c3:141:13</p></div>
+<div class="api-item" id="TAG_DELETED"><p class="api-sig"><code>const ulong TAG_DELETED = 65535;</code></p><p class="api-src">src/types.c3:145:13</p></div>
+<div class="api-item" id="TAG_ENVREF"><p class="api-sig"><code>const ulong TAG_ENVREF = 65532;</code></p><p class="api-src">src/types.c3:143:13</p></div>
+<div class="api-item" id="TAG_FASTINT"><p class="api-sig"><code>const ulong TAG_FASTINT = 65521;</code></p><p class="api-src">src/types.c3:133:13</p></div>
+<div class="api-item" id="TAG_LIGHTFUNC"><p class="api-sig"><code>const ulong TAG_LIGHTFUNC = 65527;</code></p><p class="api-src">src/types.c3:138:13</p></div>
+<div class="api-item" id="TAG_NULL_VAL"><p class="api-sig"><code>const ulong TAG_NULL_VAL = 65524;</code></p><p class="api-src">src/types.c3:135:13</p></div>
+<div class="api-item" id="TAG_OBJECT"><p class="api-sig"><code>const ulong TAG_OBJECT = 65529;</code></p><p class="api-src">src/types.c3:140:13</p></div>
+<div class="api-item" id="TAG_POINTER"><p class="api-sig"><code>const ulong TAG_POINTER = 65526;</code></p><p class="api-src">src/types.c3:137:13</p></div>
+<div class="api-item" id="TAG_POISON"><p class="api-sig"><code>const ulong TAG_POISON = 65533;</code></p><p class="api-src">src/types.c3:144:13</p></div>
+<div class="api-item" id="TAG_STRING"><p class="api-sig"><code>const ulong TAG_STRING = 65528;</code></p><p class="api-src">src/types.c3:139:13</p></div>
+<div class="api-item" id="TAG_UNDEFINED"><p class="api-sig"><code>const ulong TAG_UNDEFINED = 65523;</code></p><p class="api-src">src/types.c3:134:13</p></div>
+<div class="api-item" id="USE_NANBOX"><p class="api-sig"><code>const bool USE_NANBOX = true;</code></p><p class="api-src">src/types.c3:99:12</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="toint32"><p class="api-sig"><code>fn int toint32(double d) @inline</code></p><p class="api-src">src/types.c3:971:8</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="both_fastint"><p class="api-sig"><code>macro bool both_fastint(<a href="#TVal">TVal*</a> b, <a href="#TVal">TVal*</a> c)</code></p><p class="api-src">src/types.c3:532:12</p></div>
+<div class="api-item" id="either_heap_allocated"><p class="api-sig"><code>macro bool either_heap_allocated(<a href="#TVal">TVal*</a> b, <a href="#TVal">TVal*</a> c)</code></p><p class="api-src">src/types.c3:543:12</p></div>
+<div class="api-item" id="exact_fastint_quotient"><p class="api-sig"><code>macro bool exact_fastint_quotient(<a href="#TVal">TVal*</a> b, <a href="#TVal">TVal*</a> c, long* out)</code></p><p class="api-src">src/types.c3:521:12</p></div>
+<div class="api-item" id="fits_fastint"><p class="api-sig"><code>macro bool fits_fastint(long val)</code></p><p class="api-src">src/types.c3:631:12</p></div>
+<div class="api-item" id="make_boolean"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_boolean(bool val)</code></p><p class="api-src">src/types.c3:754:12</p></div>
+<div class="api-item" id="make_buffer"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_buffer(void* ptr)</code></p><p class="api-src">src/types.c3:815:12</p></div>
+<div class="api-item" id="make_fastint"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_fastint(long val)</code></p><p class="api-src">src/types.c3:780:12</p></div>
+<div class="api-item" id="make_lightfunc"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_lightfunc(void* ptr)</code></p><p class="api-src">src/types.c3:838:12</p></div>
+<div class="api-item" id="make_null"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_null()</code></p><p class="api-src">src/types.c3:744:12</p></div>
+<div class="api-item" id="make_number"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_number(double val)</code></p><p class="api-src">src/types.c3:765:12</p></div>
+<div class="api-item" id="make_object"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_object(void* ptr)</code></p><p class="api-src">src/types.c3:803:12</p></div>
+<div class="api-item" id="make_pointer"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_pointer(void* ptr)</code></p><p class="api-src">src/types.c3:827:12</p></div>
+<div class="api-item" id="make_string"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_string(void* ptr)</code></p><p class="api-src">src/types.c3:791:12</p></div>
+<div class="api-item" id="make_undefined"><p class="api-sig"><code>macro <a href="#TVal">TVal</a> make_undefined()</code></p><p class="api-src">src/types.c3:734:12</p></div>
+<div class="api-item" id="nanbox_encode_tagged"><p class="api-sig"><code>macro ulong nanbox_encode_tagged(ulong tag, ulong payload)</code></p><p class="api-src">src/types.c3:152:13</p></div>
+<div class="api-item" id="nanbox_get_payload"><p class="api-sig"><code>macro ulong nanbox_get_payload(ulong v)</code></p><p class="api-src">src/types.c3:171:13</p></div>
+<div class="api-item" id="nanbox_get_tag"><p class="api-sig"><code>macro ulong nanbox_get_tag(ulong v)</code></p><p class="api-src">src/types.c3:162:13</p></div>
+<div class="api-item" id="nanbox_is_double"><p class="api-sig"><code>macro bool nanbox_is_double(ulong v)</code></p><p class="api-src">src/types.c3:158:12</p></div>
+<div class="api-item" id="nanbox_tag_in"><p class="api-sig"><code>macro bool nanbox_tag_in(ulong v, ulong lo, ulong hi)</code></p><p class="api-src">src/types.c3:167:12</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

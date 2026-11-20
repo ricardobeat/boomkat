@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::addon · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html" aria-current="page">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::addon</code></h1>
+      <p class="lede">35 types, 41 functions and macros, 0 methods, 8 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="BkAddonApi"><pre><code>struct BkAddonApi {
+  uint version;
+  <a href="#FnClassRegister">FnClassRegister</a> class_register;
+  <a href="#FnProtoNew">FnProtoNew</a> proto_new;
+  <a href="#FnObjectNew">FnObjectNew</a> object_new;
+  <a href="#FnFnNew">FnFnNew</a> fn_new;
+  <a href="#FnObjectSet">FnObjectSet</a> object_set;
+  <a href="#FnObjectSetByHandle">FnObjectSetByHandle</a> object_set_by_handle;
+  <a href="#FnObjectSetGetter">FnObjectSetGetter</a> object_set_getter;
+  <a href="#FnGlobalSet">FnGlobalSet</a> global_set;
+  <a href="#FnHandleForObject">FnHandleForObject</a> handle_for_object;
+  <a href="#FnInstanceNew">FnInstanceNew</a> instance_new;
+  <a href="#FnInstancePayload">FnInstancePayload</a> instance_payload;
+  <a href="#FnArgCount">FnArgCount</a> arg_count;
+  <a href="#FnArgString">FnArgString</a> arg_string;
+  <a href="#FnArgNumber">FnArgNumber</a> arg_number;
+  <a href="#FnArgHandle">FnArgHandle</a> arg_handle;
+  <a href="#FnThisHandle">FnThisHandle</a> this_handle;
+  <a href="#FnReturnNumber">FnReturnNumber</a> return_number;
+  <a href="#FnReturnString">FnReturnString</a> return_string;
+  <a href="#FnReturnObject">FnReturnObject</a> return_object;
+  <a href="#FnReturnHandle">FnReturnHandle</a> return_handle;
+  <a href="#FnReturnUndefined">FnReturnUndefined</a> return_undefined;
+  <a href="#FnThrowMsg">FnThrowMsg</a> throw_type_error;
+  <a href="#FnThrowMsg">FnThrowMsg</a> throw_range_error;
+  <a href="#FnHandleStore">FnHandleStore</a> handle_store;
+  <a href="#FnHandleLoad">FnHandleLoad</a> handle_load;
+  <a href="#FnHandleObject">FnHandleObject</a> handle_object;
+  <a href="#FnMarkValue">FnMarkValue</a> mark_value;
+  <a href="#FnMemAlloc">FnMemAlloc</a> mem_alloc;
+  <a href="#FnMemRealloc">FnMemRealloc</a> mem_realloc;
+  <a href="#FnMemFree">FnMemFree</a> mem_free;
+  <a href="#FnValueInit">FnValueInit</a> value_init;
+  <a href="#FnValueClear">FnValueClear</a> value_clear;
+}</code></pre><p class="api-src">src/addon.c3:98:8</p></div>
+<div class="api-item" id="BkAddonCtx"><pre><code>struct BkAddonCtx {
+  <a href="boomkat-heap.html#Heap">Heap*</a> heap;
+  <a href="boomkat-env.html#EnvRecord">EnvRecord*</a> global_env;
+  void* reserved;
+}</code></pre><p class="api-src">src/addon.c3:46:8</p></div>
+<div class="api-item" id="BkAddonFn"><pre><code>alias BkAddonFn = fn void(void* bctx, void* udata)</code></pre><p class="api-src">src/addon.c3:55:7</p></div>
+<div class="api-item" id="BkAddonInitFn"><pre><code>alias BkAddonInitFn = fn int(<a href="#BkAddonCtx">BkAddonCtx*</a>, <a href="#BkAddonApi">BkAddonApi*</a>)</code></pre><p class="api-src">src/addon.c3:152:7</p></div>
+<div class="api-item" id="FnArgCount"><pre><code>alias FnArgCount = fn uint(void*)</code></pre><p class="api-src">src/addon.c3:72:7</p></div>
+<div class="api-item" id="FnArgHandle"><pre><code>alias FnArgHandle = fn ulong(void*, uint)</code></pre><p class="api-src">src/addon.c3:75:7</p></div>
+<div class="api-item" id="FnArgNumber"><pre><code>alias FnArgNumber = fn double(void*, uint)</code></pre><p class="api-src">src/addon.c3:74:7</p></div>
+<div class="api-item" id="FnArgString"><pre><code>alias FnArgString = fn char*(void*, uint, usz*)</code></pre><p class="api-src">src/addon.c3:73:7</p></div>
+<div class="api-item" id="FnClassRegister"><pre><code>alias FnClassRegister = fn long(<a href="#BkAddonCtx">BkAddonCtx*</a>, char*, void*, void*, void*, void*)</code></pre><p class="api-src">src/addon.c3:61:7</p></div>
+<div class="api-item" id="FnFnNew"><pre><code>alias FnFnNew = fn int(<a href="#BkAddonCtx">BkAddonCtx*</a>, char*, <a href="#BkAddonFn">BkAddonFn</a>, void*, int, bool, ulong*)</code></pre><p class="api-src">src/addon.c3:64:7</p></div>
+<div class="api-item" id="FnGlobalSet"><pre><code>alias FnGlobalSet = fn int(<a href="#BkAddonCtx">BkAddonCtx*</a>, char*, ulong)</code></pre><p class="api-src">src/addon.c3:68:7</p></div>
+<div class="api-item" id="FnHandleForObject"><pre><code>alias FnHandleForObject = fn ulong(<a href="#BkAddonCtx">BkAddonCtx*</a>, void*)</code></pre><p class="api-src">src/addon.c3:69:7</p></div>
+<div class="api-item" id="FnHandleLoad"><pre><code>alias FnHandleLoad = fn ulong(void*, void*)</code></pre><p class="api-src">src/addon.c3:84:7</p></div>
+<div class="api-item" id="FnHandleObject"><pre><code>alias FnHandleObject = fn void*(void*, ulong)</code></pre><p class="api-src">src/addon.c3:85:7</p></div>
+<div class="api-item" id="FnHandleStore"><pre><code>alias FnHandleStore = fn void(void*, ulong, void*)</code></pre><p class="api-src">src/addon.c3:83:7</p></div>
+<div class="api-item" id="FnInstanceNew"><pre><code>alias FnInstanceNew = fn void*(<a href="#BkAddonCtx">BkAddonCtx*</a>, long, void*)</code></pre><p class="api-src">src/addon.c3:70:7</p></div>
+<div class="api-item" id="FnInstancePayload"><pre><code>alias FnInstancePayload = fn void*(void*, long)</code></pre><p class="api-src">src/addon.c3:71:7</p></div>
+<div class="api-item" id="FnMarkValue"><pre><code>alias FnMarkValue = fn void(void*, void*)</code></pre><p class="api-src">src/addon.c3:86:7</p></div>
+<div class="api-item" id="FnMemAlloc"><pre><code>alias FnMemAlloc = fn void*(<a href="#BkAddonCtx">BkAddonCtx*</a>, usz)</code></pre><p class="api-src">src/addon.c3:87:7</p></div>
+<div class="api-item" id="FnMemFree"><pre><code>alias FnMemFree = fn void(<a href="#BkAddonCtx">BkAddonCtx*</a>, void*)</code></pre><p class="api-src">src/addon.c3:89:7</p></div>
+<div class="api-item" id="FnMemRealloc"><pre><code>alias FnMemRealloc = fn void*(<a href="#BkAddonCtx">BkAddonCtx*</a>, void*, usz)</code></pre><p class="api-src">src/addon.c3:88:7</p></div>
+<div class="api-item" id="FnObjectNew"><pre><code>alias FnObjectNew = fn void*(<a href="#BkAddonCtx">BkAddonCtx*</a>)</code></pre><p class="api-src">src/addon.c3:63:7</p></div>
+<div class="api-item" id="FnObjectSet"><pre><code>alias FnObjectSet = fn int(<a href="#BkAddonCtx">BkAddonCtx*</a>, void*, char*, ulong)</code></pre><p class="api-src">src/addon.c3:65:7</p></div>
+<div class="api-item" id="FnObjectSetByHandle"><pre><code>alias FnObjectSetByHandle = fn int(<a href="#BkAddonCtx">BkAddonCtx*</a>, ulong, char*, ulong)</code></pre><p class="api-src">src/addon.c3:66:7</p></div>
+<div class="api-item" id="FnObjectSetGetter"><pre><code>alias FnObjectSetGetter = fn int(<a href="#BkAddonCtx">BkAddonCtx*</a>, void*, char*, <a href="#BkAddonFn">BkAddonFn</a>, void*)</code></pre><p class="api-src">src/addon.c3:67:7</p></div>
+<div class="api-item" id="FnProtoNew"><pre><code>alias FnProtoNew = fn void*(<a href="#BkAddonCtx">BkAddonCtx*</a>)</code></pre><p class="api-src">src/addon.c3:62:7</p></div>
+<div class="api-item" id="FnReturnHandle"><pre><code>alias FnReturnHandle = fn void(void*, ulong)</code></pre><p class="api-src">src/addon.c3:80:7</p></div>
+<div class="api-item" id="FnReturnNumber"><pre><code>alias FnReturnNumber = fn void(void*, double)</code></pre><p class="api-src">src/addon.c3:77:7</p></div>
+<div class="api-item" id="FnReturnObject"><pre><code>alias FnReturnObject = fn void(void*, void*)</code></pre><p class="api-src">src/addon.c3:79:7</p></div>
+<div class="api-item" id="FnReturnString"><pre><code>alias FnReturnString = fn void(void*, char*, usz)</code></pre><p class="api-src">src/addon.c3:78:7</p></div>
+<div class="api-item" id="FnReturnUndefined"><pre><code>alias FnReturnUndefined = fn void(void*)</code></pre><p class="api-src">src/addon.c3:81:7</p></div>
+<div class="api-item" id="FnThisHandle"><pre><code>alias FnThisHandle = fn ulong(void*)</code></pre><p class="api-src">src/addon.c3:76:7</p></div>
+<div class="api-item" id="FnThrowMsg"><pre><code>alias FnThrowMsg = fn void(void*, char*)</code></pre><p class="api-src">src/addon.c3:82:7</p></div>
+<div class="api-item" id="FnValueClear"><pre><code>alias FnValueClear = fn void(<a href="#BkAddonCtx">BkAddonCtx*</a>, void*)</code></pre><p class="api-src">src/addon.c3:91:7</p></div>
+<div class="api-item" id="FnValueInit"><pre><code>alias FnValueInit = fn void(void*)</code></pre><p class="api-src">src/addon.c3:90:7</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="BK_ADDON_ABI_VERSION"><p class="api-sig"><code>const uint BK_ADDON_ABI_VERSION = 3;</code></p><p class="api-src">src/addon.c3:24:12</p></div>
+<div class="api-item" id="BK_ADDON_ERR_DISABLED"><p class="api-sig"><code>const int BK_ADDON_ERR_DISABLED = -5;</code></p><p class="api-src">src/addon.c3:31:11</p></div>
+<div class="api-item" id="BK_ADDON_ERR_INIT"><p class="api-sig"><code>const int BK_ADDON_ERR_INIT = -4;</code></p><p class="api-src">src/addon.c3:30:11</p></div>
+<div class="api-item" id="BK_ADDON_ERR_OPEN"><p class="api-sig"><code>const int BK_ADDON_ERR_OPEN = -1;</code></p><p class="api-src">src/addon.c3:27:11</p></div>
+<div class="api-item" id="BK_ADDON_ERR_SYMBOL"><p class="api-sig"><code>const int BK_ADDON_ERR_SYMBOL = -2;</code></p><p class="api-src">src/addon.c3:28:11</p></div>
+<div class="api-item" id="BK_ADDON_ERR_VERSION"><p class="api-sig"><code>const int BK_ADDON_ERR_VERSION = -3;</code></p><p class="api-src">src/addon.c3:29:11</p></div>
+<div class="api-item" id="BK_ADDON_OK"><p class="api-sig"><code>const int BK_ADDON_OK = 0;</code></p><p class="api-src">src/addon.c3:26:11</p></div>
+<div class="api-item" id="g_addon_api"><p class="api-sig"><code><a href="#BkAddonApi">BkAddonApi</a> g_addon_api = { .version = BK_ADDON_ABI_VERSION, .class_register = &amp;api_class_register, .proto_new = &amp;api_proto_new, .object_new = &amp;api_object_new, .fn_new = &amp;api_fn_new, .object_set = &amp;api_object_set, .object_set_by_handle = &amp;api_object_set_by_handle, .object_set_gette
+...
+ .handle_load = &amp;api_handle_load, .handle_object = &amp;api_handle_object, .mark_value = &amp;api_mark_value, .mem_alloc = &amp;api_mem_alloc, .mem_realloc = &amp;api_mem_realloc, .mem_free = &amp;api_mem_free, .value_init = &amp;api_value_init, .value_clear = &amp;api_value_clear, };</code></p><p class="api-src">src/addon.c3:420:12</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="addon_close"><p class="api-sig"><code>fn void addon_close(void* handle)</code></p><p class="api-src">src/addon.c3:42:9</p></div>
+<div class="api-item" id="addon_open"><p class="api-sig"><code>fn void* addon_open(ZString path)</code></p><p class="api-src">src/addon.c3:38:10</p></div>
+<div class="api-item" id="addon_symbol"><p class="api-sig"><code>fn void* addon_symbol(void* handle, ZString name)</code></p><p class="api-src">src/addon.c3:40:10</p></div>
+<div class="api-item" id="api_arg_count"><p class="api-sig"><code>fn uint api_arg_count(void* bctx)</code></p><p class="api-src">src/addon.c3:255:9 · private</p></div>
+<div class="api-item" id="api_arg_handle"><p class="api-sig"><code>fn ulong api_arg_handle(void* bctx, uint i)</code></p><p class="api-src">src/addon.c3:283:10 · private</p></div>
+<div class="api-item" id="api_arg_number"><p class="api-sig"><code>fn double api_arg_number(void* bctx, uint i)</code></p><p class="api-src">src/addon.c3:274:11 · private</p></div>
+<div class="api-item" id="api_arg_string"><p class="api-sig"><code>fn char* api_arg_string(void* bctx, uint i, usz* out_len)</code></p><p class="api-src">src/addon.c3:260:10 · private</p></div>
+<div class="api-item" id="api_class_register"><p class="api-sig"><code>fn long api_class_register(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, char* name, void* finalizer, void* gc_mark, void* udata, void* proto)</code></p><p class="api-src">src/addon.c3:158:9 · private</p></div>
+<div class="api-item" id="api_fn_new"><p class="api-sig"><code>fn int api_fn_new(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, char* name, <a href="#BkAddonFn">BkAddonFn</a> cfn, void* udata, int arity, bool constructable, ulong* out_handle)</code></p><p class="api-src">src/addon.c3:175:8 · private</p></div>
+<div class="api-item" id="api_global_set"><p class="api-sig"><code>fn int api_global_set(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, char* name, ulong h)</code></p><p class="api-src">src/addon.c3:219:8 · private</p></div>
+<div class="api-item" id="api_handle_for_object"><p class="api-sig"><code>fn ulong api_handle_for_object(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, void* obj)</code></p><p class="api-src">src/addon.c3:227:10 · private</p></div>
+<div class="api-item" id="api_handle_load"><p class="api-sig"><code>fn ulong api_handle_load(void* bctx, void* tval)</code></p><p class="api-src">src/addon.c3:349:10 · private</p></div>
+<div class="api-item" id="api_handle_object"><p class="api-sig"><code>fn void* api_handle_object(void* bctx, ulong h)</code></p><p class="api-src">src/addon.c3:355:10 · private</p></div>
+<div class="api-item" id="api_handle_store"><p class="api-sig"><code>fn void api_handle_store(void* bctx, ulong h, void* out_tval)</code></p><p class="api-src">src/addon.c3:332:9 · private</p></div>
+<div class="api-item" id="api_instance_new"><p class="api-sig"><code>fn void* api_instance_new(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, long class_id, void* payload)</code></p><p class="api-src">src/addon.c3:234:10 · private</p></div>
+<div class="api-item" id="api_instance_payload"><p class="api-sig"><code>fn void* api_instance_payload(void* obj, long class_id)</code></p><p class="api-src">src/addon.c3:247:10 · private</p></div>
+<div class="api-item" id="api_mark_value"><p class="api-sig"><code>fn void api_mark_value(void* h, void* tval)</code></p><p class="api-src">src/addon.c3:363:9 · private</p></div>
+<div class="api-item" id="api_mem_alloc"><p class="api-sig"><code>fn void* api_mem_alloc(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, usz n)</code></p><p class="api-src">src/addon.c3:368:10 · private</p></div>
+<div class="api-item" id="api_mem_free"><p class="api-sig"><code>fn void api_mem_free(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, void* p)</code></p><p class="api-src">src/addon.c3:378:9 · private</p></div>
+<div class="api-item" id="api_mem_realloc"><p class="api-sig"><code>fn void* api_mem_realloc(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, void* p, usz n)</code></p><p class="api-src">src/addon.c3:373:10 · private</p></div>
+<div class="api-item" id="api_object_new"><p class="api-sig"><code>fn void* api_object_new(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx)</code></p><p class="api-src">src/addon.c3:173:10 · private</p></div>
+<div class="api-item" id="api_object_set"><p class="api-sig"><code>fn int api_object_set(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, void* obj, char* name, ulong h)</code></p><p class="api-src">src/addon.c3:189:8 · private</p></div>
+<div class="api-item" id="api_object_set_by_handle"><p class="api-sig"><code>fn int api_object_set_by_handle(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, ulong target, char* name, ulong h)</code></p><p class="api-src">src/addon.c3:198:8 · private</p></div>
+<div class="api-item" id="api_object_set_getter"><p class="api-sig"><code>fn int api_object_set_getter(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, void* obj, char* name, <a href="#BkAddonFn">BkAddonFn</a> cfn, void* udata)</code></p><p class="api-src">src/addon.c3:205:8 · private</p></div>
+<div class="api-item" id="api_proto_new"><p class="api-sig"><code>fn void* api_proto_new(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx)</code></p><p class="api-src">src/addon.c3:164:10 · private</p></div>
+<div class="api-item" id="api_return_handle"><p class="api-sig"><code>fn void api_return_handle(void* bctx, ulong h)</code></p><p class="api-src">src/addon.c3:312:9 · private</p></div>
+<div class="api-item" id="api_return_number"><p class="api-sig"><code>fn void api_return_number(void* bctx, double v)</code></p><p class="api-src">src/addon.c3:294:9 · private</p></div>
+<div class="api-item" id="api_return_object"><p class="api-sig"><code>fn void api_return_object(void* bctx, void* obj)</code></p><p class="api-src">src/addon.c3:306:9 · private</p></div>
+<div class="api-item" id="api_return_string"><p class="api-sig"><code>fn void api_return_string(void* bctx, char* bytes, usz len)</code></p><p class="api-src">src/addon.c3:298:9 · private</p></div>
+<div class="api-item" id="api_return_undefined"><p class="api-sig"><code>fn void api_return_undefined(void* bctx)</code></p><p class="api-src">src/addon.c3:318:9 · private</p></div>
+<div class="api-item" id="api_this_handle"><p class="api-sig"><code>fn ulong api_this_handle(void* bctx)</code></p><p class="api-src">src/addon.c3:289:10 · private</p></div>
+<div class="api-item" id="api_throw_range_error"><p class="api-sig"><code>fn void api_throw_range_error(void* bctx, char* msg)</code></p><p class="api-src">src/addon.c3:327:9 · private</p></div>
+<div class="api-item" id="api_throw_type_error"><p class="api-sig"><code>fn void api_throw_type_error(void* bctx, char* msg)</code></p><p class="api-src">src/addon.c3:322:9 · private</p></div>
+<div class="api-item" id="api_value_clear"><p class="api-sig"><code>fn void api_value_clear(<a href="#BkAddonCtx">BkAddonCtx*</a> ctx, void* slot)</code></p><p class="api-src">src/addon.c3:343:9 · private</p></div>
+<div class="api-item" id="api_value_init"><p class="api-sig"><code>fn void api_value_init(void* slot)</code></p><p class="api-src">src/addon.c3:339:9 · private</p></div>
+<div class="api-item" id="builtin_load_addon"><p class="api-sig"><code>fn void builtin_load_addon(void* bctx, void* udata)</code></p><p class="api-src">src/addon.c3:510:9 · private</p></div>
+<div class="api-item" id="cstr_slice"><p class="api-sig"><code>fn char[] cstr_slice(char* p)</code></p><p class="api-src">src/addon.c3:409:11 · private</p></div>
+<div class="api-item" id="enable_loading"><p class="api-sig"><code>fn bool enable_loading(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-env.html#EnvRecord">EnvRecord*</a> global_env)</code></p><p class="api-src">src/addon.c3:547:9</p></div>
+<div class="api-item" id="handle_to_tval"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal</a> handle_to_tval(<a href="boomkat-heap.html#Heap">Heap*</a> h, ulong handle)</code></p><p class="api-src">src/addon.c3:402:16 · private</p></div>
+<div class="api-item" id="load_addon"><p class="api-sig"><code>fn int load_addon(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-env.html#EnvRecord">EnvRecord*</a> global_env, char[] path)</code></p><p class="api-src">src/addon.c3:465:8</p></div>
+<div class="api-item" id="tval_to_handle"><p class="api-sig"><code>fn ulong tval_to_handle(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/addon.c3:394:10 · private</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

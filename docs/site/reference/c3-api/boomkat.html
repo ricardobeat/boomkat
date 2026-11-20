@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html" aria-current="page">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat</code></h1>
+      <p class="lede">26 types, 20 functions and macros, 88 methods, 5 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="ALREADY_CREATED"><pre><code>faultdef ALREADY_CREATED</code></pre><p class="api-src">src/embedding.c3:44:5</p></div>
+<div class="api-item" id="ENCODING_ERROR"><pre><code>faultdef ENCODING_ERROR</code></pre><p class="api-src">src/embedding.c3:50:5</p></div>
+<div class="api-item" id="HostReg"><pre><code>struct HostReg {
+  <a href="boomkat-embed.html#HostPayload">HostPayload</a> lifetime;
+  <a href="#JsHostFn">JsHostFn</a> handler;
+  void* udata;
+}</code></pre><p class="api-src">src/embedding.c3:831:8</p></div>
+<div class="api-item" id="INTERNAL_ERROR"><pre><code>faultdef INTERNAL_ERROR</code></pre><p class="api-src">src/embedding.c3:48:5</p></div>
+<div class="api-item" id="INTERRUPTED"><pre><code>faultdef INTERRUPTED</code></pre><p class="api-src">src/embedding.c3:49:5</p></div>
+<div class="api-item" id="InterruptHandler"><pre><code>alias InterruptHandler = <a href="boomkat-heap.html#BkInterruptFn">BkInterruptFn</a></code></pre><p class="api-src">src/embedding.c3:1169:7</p></div>
+<div class="api-item" id="JS_EXCEPTION"><pre><code>faultdef JS_EXCEPTION</code></pre><p class="api-src">src/embedding.c3:47:5</p></div>
+<div class="api-item" id="JsArg"><pre><code>struct JsArg {
+  <a href="boomkat-types.html#TVal">TVal</a> tv;
+}</code></pre><p class="api-src">src/embedding.c3:796:8</p></div>
+<div class="api-item" id="JsArg.as_bool"><p class="api-sig"><code>fn bool? JsArg.as_bool(<a href="#JsArg">JsArg</a> self)</code></p><p class="api-src">src/embedding.c3:994:16</p></div>
+<div class="api-item" id="JsArg.as_number"><p class="api-sig"><code>fn double? JsArg.as_number(<a href="#JsArg">JsArg</a> self)</code></p><p class="api-src">src/embedding.c3:988:18</p></div>
+<div class="api-item" id="JsArg.as_string"><p class="api-sig"><code>fn String? JsArg.as_string(<a href="#JsArg">JsArg</a> self, Allocator allocator = tmem)</code></p><p class="api-src">src/embedding.c3:1003:18</p></div>
+<div class="api-item" id="JsArg.is_number"><p class="api-sig"><code>fn bool JsArg.is_number(<a href="#JsArg">JsArg</a> self)</code></p><p class="api-src">src/embedding.c3:984:15</p></div>
+<div class="api-item" id="JsArg.is_string"><p class="api-sig"><code>fn bool JsArg.is_string(<a href="#JsArg">JsArg</a> self)</code></p><p class="api-src">src/embedding.c3:985:15</p></div>
+<div class="api-item" id="JsArg.is_undefined"><p class="api-sig"><code>fn bool JsArg.is_undefined(<a href="#JsArg">JsArg</a> self)</code></p><p class="api-src">src/embedding.c3:983:15</p></div>
+<div class="api-item" id="JsArg.type_of"><p class="api-sig"><code>fn <a href="#JsType">JsType</a> JsArg.type_of(<a href="#JsArg">JsArg</a> self)</code></p><p class="api-src">src/embedding.c3:981:17</p></div>
+<div class="api-item" id="JsContext"><pre><code>struct JsContext {
+  <a href="boomkat-embed.html#Runtime">Runtime*</a> rt;
+  <a href="boomkat-embed.html#Ctx">Ctx*</a> context;
+  Vec{JsValue} scoped;
+  uint scope_depth;
+  <a href="#JsRuntime">JsRuntime</a> private_runtime;
+  <a href="#JsRuntime">JsRuntime*</a> owner;
+}</code></pre><p class="api-src">src/embedding.c3:132:8</p></div>
+<div class="api-item" id="JsContext.@scope"><p class="api-sig"><code>macro void JsContext.@scope(<a href="#JsContext">JsContext*</a> self, @body)</code></p><p class="api-src">src/embedding.c3:696:22</p></div>
+<div class="api-item" id="JsContext.alloc_plain"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.alloc_plain(<a href="#JsContext">JsContext*</a> self, <a href="boomkat-hobject.html#ObjClass">ObjClass</a> cls)</code></p><p class="api-src">src/embedding.c3:494:23</p></div>
+<div class="api-item" id="JsContext.array"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.array(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:510:23</p></div>
+<div class="api-item" id="JsContext.as_bool"><p class="api-sig"><code>fn bool? JsContext.as_bool(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v)</code></p><p class="api-src">src/embedding.c3:633:20</p></div>
+<div class="api-item" id="JsContext.as_number"><p class="api-sig"><code>fn double? JsContext.as_number(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v)</code></p><p class="api-src">src/embedding.c3:625:22</p></div>
+<div class="api-item" id="JsContext.as_string"><p class="api-sig"><code>fn String? JsContext.as_string(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v, Allocator allocator = tmem)</code></p><p class="api-src">src/embedding.c3:644:22</p></div>
+<div class="api-item" id="JsContext.boolean"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.boolean(<a href="#JsContext">JsContext*</a> self, bool b)</code></p><p class="api-src">src/embedding.c3:340:23</p></div>
+<div class="api-item" id="JsContext.call"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.call(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> func, <a href="#JsValue">JsValue[]</a> args = {}, <a href="#JsValue">JsValue</a> this_value = UNDEFINED_VALUE)</code></p><p class="api-src">src/embedding.c3:373:23</p></div>
+<div class="api-item" id="JsContext.create"><p class="api-sig"><code>fn void? JsContext.create(<a href="#JsContext">JsContext*</a> self, <a href="#JsRuntime">JsRuntime*</a> runtime = null)</code></p><p class="api-src">src/embedding.c3:187:20</p></div>
+<div class="api-item" id="JsContext.deferred"><p class="api-sig"><code>fn <a href="#JsDeferred">JsDeferred?</a> JsContext.deferred(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:433:26</p></div>
+<div class="api-item" id="JsContext.define_module"><p class="api-sig"><code>fn void? JsContext.define_module(<a href="#JsContext">JsContext*</a> self, String name, String source)</code></p><p class="api-src">src/embedding.c3:264:20</p></div>
+<div class="api-item" id="JsContext.destroy"><p class="api-sig"><code>fn void JsContext.destroy(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:202:19</p></div>
+<div class="api-item" id="JsContext.enqueue_job"><p class="api-sig"><code>fn void? JsContext.enqueue_job(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> callback)</code></p><p class="api-src">src/embedding.c3:301:20</p></div>
+<div class="api-item" id="JsContext.eval"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.eval(<a href="#JsContext">JsContext*</a> self, String source, String name = &quot;&lt;eval&gt;&quot;, bool strict = false)</code></p><p class="api-src">src/embedding.c3:230:23</p></div>
+<div class="api-item" id="JsContext.eval_module"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.eval_module(<a href="#JsContext">JsContext*</a> self, String source, String name = &quot;&lt;module&gt;&quot;)</code></p><p class="api-src">src/embedding.c3:251:23</p></div>
+<div class="api-item" id="JsContext.exec"><p class="api-sig"><code>fn void? JsContext.exec(<a href="#JsContext">JsContext*</a> self, String source, String name = &quot;&lt;eval&gt;&quot;)</code></p><p class="api-src">src/embedding.c3:284:20</p></div>
+<div class="api-item" id="JsContext.get"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.get(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj, String key)</code></p><p class="api-src">src/embedding.c3:532:23</p></div>
+<div class="api-item" id="JsContext.get_exception"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.get_exception(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:735:23</p></div>
+<div class="api-item" id="JsContext.get_index"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.get_index(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj, uint index)</code></p><p class="api-src">src/embedding.c3:538:23</p></div>
+<div class="api-item" id="JsContext.get_key"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.get_key(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/embedding.c3:566:23</p></div>
+<div class="api-item" id="JsContext.get_runtime"><p class="api-sig"><code>fn <a href="#JsRuntime">JsRuntime*</a> JsContext.get_runtime(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:216:25</p></div>
+<div class="api-item" id="JsContext.global"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.global(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:517:23</p></div>
+<div class="api-item" id="JsContext.is_created"><p class="api-sig"><code>fn bool JsContext.is_created(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:214:19</p></div>
+<div class="api-item" id="JsContext.last_error"><p class="api-sig"><code>fn String JsContext.last_error(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:746:21</p></div>
+<div class="api-item" id="JsContext.last_error_col"><p class="api-sig"><code>fn int JsContext.last_error_col(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:760:18</p></div>
+<div class="api-item" id="JsContext.last_error_line"><p class="api-sig"><code>fn int JsContext.last_error_line(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:753:18</p></div>
+<div class="api-item" id="JsContext.length"><p class="api-sig"><code>fn uint? JsContext.length(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj)</code></p><p class="api-src">src/embedding.c3:558:20</p></div>
+<div class="api-item" id="JsContext.load"><p class="api-sig"><code>fn bool JsContext.load(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/embedding.c3:725:19</p></div>
+<div class="api-item" id="JsContext.null_value"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.null_value(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:347:23</p></div>
+<div class="api-item" id="JsContext.number"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.number(<a href="#JsContext">JsContext*</a> self, double d)</code></p><p class="api-src">src/embedding.c3:333:23</p></div>
+<div class="api-item" id="JsContext.object"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.object(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:505:23</p></div>
+<div class="api-item" id="JsContext.observe_promise"><p class="api-sig"><code>fn void? JsContext.observe_promise(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> promise, <a href="#JsValue">JsValue</a> fulfilled, <a href="#JsValue">JsValue</a> rejected)</code></p><p class="api-src">src/embedding.c3:478:20</p></div>
+<div class="api-item" id="JsContext.persist"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.persist(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v)</code></p><p class="api-src">src/embedding.c3:710:23</p></div>
+<div class="api-item" id="JsContext.register_fn"><p class="api-sig"><code>fn void? JsContext.register_fn(<a href="#JsContext">JsContext*</a> self, String name, <a href="#JsHostFn">JsHostFn</a> handler, void* udata = null, int arity = 0, bool constructable = false)</code></p><p class="api-src">src/embedding.c3:877:20</p></div>
+<div class="api-item" id="JsContext.register_method"><p class="api-sig"><code>fn void? JsContext.register_method(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj, String name, <a href="#JsHostFn">JsHostFn</a> handler, void* udata = null, int arity = 0)</code></p><p class="api-src">src/embedding.c3:904:20</p></div>
+<div class="api-item" id="JsContext.release"><p class="api-sig"><code>fn void JsContext.release(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v)</code></p><p class="api-src">src/embedding.c3:720:19</p></div>
+<div class="api-item" id="JsContext.release_deferred"><p class="api-sig"><code>fn void JsContext.release_deferred(<a href="#JsContext">JsContext*</a> self, <a href="#JsDeferred">JsDeferred</a> deferred)</code></p><p class="api-src">src/embedding.c3:462:19</p></div>
+<div class="api-item" id="JsContext.root"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.root(<a href="#JsContext">JsContext*</a> self, <a href="boomkat-types.html#TVal">TVal</a> tv)</code></p><p class="api-src">src/embedding.c3:677:23</p></div>
+<div class="api-item" id="JsContext.set"><p class="api-sig"><code>fn void? JsContext.set(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj, String key, <a href="#JsValue">JsValue</a> value)</code></p><p class="api-src">src/embedding.c3:546:20</p></div>
+<div class="api-item" id="JsContext.set_index"><p class="api-sig"><code>fn void? JsContext.set_index(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj, uint index, <a href="#JsValue">JsValue</a> value)</code></p><p class="api-src">src/embedding.c3:552:20</p></div>
+<div class="api-item" id="JsContext.set_key"><p class="api-sig"><code>fn void? JsContext.set_key(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> obj, <a href="boomkat-hstring.html#HString">HString*</a> key, <a href="#JsValue">JsValue</a> value)</code></p><p class="api-src">src/embedding.c3:580:20</p></div>
+<div class="api-item" id="JsContext.settle_deferred"><p class="api-sig"><code>fn void? JsContext.settle_deferred(<a href="#JsContext">JsContext*</a> self, <a href="#JsDeferred">JsDeferred</a> deferred, bool ok, <a href="#JsValue">JsValue</a> value = {})</code></p><p class="api-src">src/embedding.c3:469:20</p></div>
+<div class="api-item" id="JsContext.string"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsContext.string(<a href="#JsContext">JsContext*</a> self, String s)</code></p><p class="api-src">src/embedding.c3:324:23</p></div>
+<div class="api-item" id="JsContext.to_display_string"><p class="api-sig"><code>fn String? JsContext.to_display_string(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v, Allocator allocator = tmem)</code></p><p class="api-src">src/embedding.c3:656:22</p></div>
+<div class="api-item" id="JsContext.type_of"><p class="api-sig"><code>fn <a href="#JsType">JsType</a> JsContext.type_of(<a href="#JsContext">JsContext*</a> self, <a href="#JsValue">JsValue</a> v)</code></p><p class="api-src">src/embedding.c3:618:21</p></div>
+<div class="api-item" id="JsContext.vm_fault"><p class="api-sig"><code>fn fault JsContext.vm_fault(<a href="#JsContext">JsContext*</a> self)</code></p><p class="api-src">src/embedding.c3:599:20</p></div>
+<div class="api-item" id="JsCtx"><pre><code>struct JsCtx {
+  <a href="boomkat-builtins.html#BuiltinContext">BuiltinContext*</a> ctx;
+}</code></pre><p class="api-src">src/embedding.c3:825:8</p></div>
+<div class="api-item" id="JsCtx.arg"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.arg(<a href="#JsCtx">JsCtx</a> self, uint i)</code></p><p class="api-src">src/embedding.c3:936:16</p></div>
+<div class="api-item" id="JsCtx.argc"><p class="api-sig"><code>fn uint JsCtx.argc(<a href="#JsCtx">JsCtx</a> self)</code></p><p class="api-src">src/embedding.c3:933:15</p></div>
+<div class="api-item" id="JsCtx.boolean"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.boolean(<a href="#JsCtx">JsCtx</a> self, bool b)</code></p><p class="api-src">src/embedding.c3:1023:16</p></div>
+<div class="api-item" id="JsCtx.call"><p class="api-sig"><code>fn <a href="#JsArg">JsArg?</a> JsCtx.call(<a href="#JsCtx">JsCtx</a> self, <a href="#JsArg">JsArg</a> func, <a href="#JsArg">JsArg[]</a> args = {}, <a href="#JsArg">JsArg</a> this_value = {})</code></p><p class="api-src">src/embedding.c3:1111:17</p></div>
+<div class="api-item" id="JsCtx.get_prop"><p class="api-sig"><code>fn <a href="#JsArg">JsArg?</a> JsCtx.get_prop(<a href="#JsCtx">JsCtx</a> self, <a href="#JsArg">JsArg</a> obj, String key)</code></p><p class="api-src">src/embedding.c3:1062:17</p></div>
+<div class="api-item" id="JsCtx.is_construct"><p class="api-sig"><code>fn bool JsCtx.is_construct(<a href="#JsCtx">JsCtx</a> self)</code></p><p class="api-src">src/embedding.c3:956:15</p></div>
+<div class="api-item" id="JsCtx.new_target"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.new_target(<a href="#JsCtx">JsCtx</a> self)</code></p><p class="api-src">src/embedding.c3:950:16</p></div>
+<div class="api-item" id="JsCtx.null_value"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.null_value(<a href="#JsCtx">JsCtx</a> self)</code></p><p class="api-src">src/embedding.c3:1029:16</p></div>
+<div class="api-item" id="JsCtx.number"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.number(<a href="#JsCtx">JsCtx</a> self, double d)</code></p><p class="api-src">src/embedding.c3:1017:16</p></div>
+<div class="api-item" id="JsCtx.persist"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsCtx.persist(<a href="#JsCtx">JsCtx</a> self, <a href="#JsArg">JsArg</a> v)</code></p><p class="api-src">src/embedding.c3:962:19</p></div>
+<div class="api-item" id="JsCtx.ret"><p class="api-sig"><code>fn void JsCtx.ret(<a href="#JsCtx">JsCtx</a> self, <a href="#JsArg">JsArg</a> v)</code></p><p class="api-src">src/embedding.c3:1043:15</p></div>
+<div class="api-item" id="JsCtx.ret_bool"><p class="api-sig"><code>fn void JsCtx.ret_bool(<a href="#JsCtx">JsCtx</a> self, bool b)</code></p><p class="api-src">src/embedding.c3:1046:15</p></div>
+<div class="api-item" id="JsCtx.ret_null"><p class="api-sig"><code>fn void JsCtx.ret_null(<a href="#JsCtx">JsCtx</a> self)</code></p><p class="api-src">src/embedding.c3:1048:15</p></div>
+<div class="api-item" id="JsCtx.ret_number"><p class="api-sig"><code>fn void JsCtx.ret_number(<a href="#JsCtx">JsCtx</a> self, double d)</code></p><p class="api-src">src/embedding.c3:1045:15</p></div>
+<div class="api-item" id="JsCtx.ret_string"><p class="api-sig"><code>fn void JsCtx.ret_string(<a href="#JsCtx">JsCtx</a> self, String s)</code></p><p class="api-src">src/embedding.c3:1047:15</p></div>
+<div class="api-item" id="JsCtx.set_prop"><p class="api-sig"><code>fn bool? JsCtx.set_prop(<a href="#JsCtx">JsCtx</a> self, <a href="#JsArg">JsArg</a> obj, String key, <a href="#JsArg">JsArg</a> value)</code></p><p class="api-src">src/embedding.c3:1078:16</p></div>
+<div class="api-item" id="JsCtx.string"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.string(<a href="#JsCtx">JsCtx</a> self, String s)</code></p><p class="api-src">src/embedding.c3:1012:16</p></div>
+<div class="api-item" id="JsCtx.this_value"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.this_value(<a href="#JsCtx">JsCtx</a> self)</code></p><p class="api-src">src/embedding.c3:944:16</p></div>
+<div class="api-item" id="JsCtx.throw_error"><p class="api-sig"><code>fn void JsCtx.throw_error(<a href="#JsCtx">JsCtx</a> self, <a href="#JsErrorKind">JsErrorKind</a> kind, String msg)</code></p><p class="api-src">src/embedding.c3:1091:15</p></div>
+<div class="api-item" id="JsCtx.throw_value"><p class="api-sig"><code>fn void JsCtx.throw_value(<a href="#JsCtx">JsCtx</a> self, <a href="#JsArg">JsArg</a> v)</code></p><p class="api-src">src/embedding.c3:1097:15</p></div>
+<div class="api-item" id="JsCtx.undefined_value"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.undefined_value(<a href="#JsCtx">JsCtx</a> self)</code></p><p class="api-src">src/embedding.c3:1035:16</p></div>
+<div class="api-item" id="JsCtx.value"><p class="api-sig"><code>fn <a href="#JsArg">JsArg</a> JsCtx.value(<a href="#JsCtx">JsCtx</a> self, <a href="#JsValue">JsValue</a> v)</code></p><p class="api-src">src/embedding.c3:972:16</p></div>
+<div class="api-item" id="JsDeferred"><pre><code>struct JsDeferred {
+  <a href="#JsValue">JsValue</a> promise;
+  <a href="#JsValue">JsValue</a> resolve;
+  <a href="#JsValue">JsValue</a> reject;
+}</code></pre><p class="api-src">src/embedding.c3:427:8</p></div>
+<div class="api-item" id="JsErrorKind"><pre><code>enum JsErrorKind : int {
+  ERROR,
+  TYPE,
+  RANGE,
+  REFERENCE,
+  SYNTAX,
+}</code></pre><p class="api-src">src/embedding.c3:808:6</p></div>
+<div class="api-item" id="JsHostFn"><pre><code>alias JsHostFn = fn void(<a href="#JsCtx">JsCtx</a> ctx, void* udata)</code></pre><p class="api-src">src/embedding.c3:804:7</p></div>
+<div class="api-item" id="JsRuntime"><pre><code>struct JsRuntime {
+  <a href="boomkat-embed.html#Runtime">Runtime*</a> rt;
+  <a href="boomkat-esm.html#ModuleHostHooks">ModuleHostHooks</a> hooks;
+  <a href="#PromiseRejectionHandler">PromiseRejectionHandler</a> rejection_handler;
+  void* rejection_udata;
+}</code></pre><p class="api-src">src/embedding.c3:125:8</p></div>
+<div class="api-item" id="JsRuntime.clear_interrupt"><p class="api-sig"><code>fn void JsRuntime.clear_interrupt(<a href="#JsRuntime">JsRuntime*</a> self)</code></p><p class="api-src">src/embedding.c3:1188:19</p></div>
+<div class="api-item" id="JsRuntime.create"><p class="api-sig"><code>fn void? JsRuntime.create(<a href="#JsRuntime">JsRuntime*</a> self)</code></p><p class="api-src">src/embedding.c3:151:20</p></div>
+<div class="api-item" id="JsRuntime.destroy"><p class="api-sig"><code>fn void JsRuntime.destroy(<a href="#JsRuntime">JsRuntime*</a> self)</code></p><p class="api-src">src/embedding.c3:159:19</p></div>
+<div class="api-item" id="JsRuntime.drain_microtasks"><p class="api-sig"><code>fn void? JsRuntime.drain_microtasks(<a href="#JsRuntime">JsRuntime*</a> self)</code></p><p class="api-src">src/embedding.c3:292:20</p></div>
+<div class="api-item" id="JsRuntime.is_created"><p class="api-sig"><code>fn bool JsRuntime.is_created(<a href="#JsRuntime">JsRuntime*</a> self)</code></p><p class="api-src">src/embedding.c3:182:19</p></div>
+<div class="api-item" id="JsRuntime.persist"><p class="api-sig"><code>fn <a href="#JsValue">JsValue?</a> JsRuntime.persist(<a href="#JsRuntime">JsRuntime*</a> self, <a href="#JsValue">JsValue</a> value)</code></p><p class="api-src">src/embedding.c3:164:23</p></div>
+<div class="api-item" id="JsRuntime.release"><p class="api-sig"><code>fn void JsRuntime.release(<a href="#JsRuntime">JsRuntime*</a> self, <a href="#JsValue">JsValue</a> value)</code></p><p class="api-src">src/embedding.c3:173:19</p></div>
+<div class="api-item" id="JsRuntime.request_interrupt"><p class="api-sig"><code>fn void JsRuntime.request_interrupt(<a href="#JsRuntime">JsRuntime*</a> self)</code></p><p class="api-src">src/embedding.c3:1181:19</p></div>
+<div class="api-item" id="JsRuntime.set_interrupt"><p class="api-sig"><code>fn void JsRuntime.set_interrupt(<a href="#JsRuntime">JsRuntime*</a> self, <a href="#InterruptHandler">InterruptHandler</a> handler, void* opaque = null)</code></p><p class="api-src">src/embedding.c3:1171:19</p></div>
+<div class="api-item" id="JsRuntime.set_module_reader"><p class="api-sig"><code>fn void JsRuntime.set_module_reader(<a href="#JsRuntime">JsRuntime*</a> self, <a href="#ModuleReader">ModuleReader</a> reader, void* udata = null)</code></p><p class="api-src">src/embedding.c3:273:19</p></div>
+<div class="api-item" id="JsRuntime.set_promise_rejection_tracker"><p class="api-sig"><code>fn void JsRuntime.set_promise_rejection_tracker(<a href="#JsRuntime">JsRuntime*</a> self, <a href="#PromiseRejectionHandler">PromiseRejectionHandler</a> handler, void* udata = null)</code></p><p class="api-src">src/embedding.c3:1148:19</p></div>
+<div class="api-item" id="JsRuntime.type_of"><p class="api-sig"><code>fn <a href="#JsType">JsType</a> JsRuntime.type_of(<a href="#JsRuntime">JsRuntime*</a> self, <a href="#JsValue">JsValue</a> value)</code></p><p class="api-src">src/embedding.c3:177:21</p></div>
+<div class="api-item" id="JsType"><pre><code>enum JsType : int {
+  UNDEFINED,
+  NULL,
+  BOOLEAN,
+  NUMBER,
+  STRING,
+  OBJECT,
+  FUNCTION,
+  SYMBOL,
+  BIGINT,
+}</code></pre><p class="api-src">src/embedding.c3:59:6</p></div>
+<div class="api-item" id="JsValue"><pre><code>struct JsValue {
+  ulong slot;
+}</code></pre><p class="api-src">src/embedding.c3:102:8</p></div>
+<div class="api-item" id="JsValue.is_empty"><p class="api-sig"><code>fn bool JsValue.is_empty(<a href="#JsValue">JsValue</a> self)</code></p><p class="api-src">src/embedding.c3:109:17</p></div>
+<div class="api-item" id="ModuleReader"><pre><code>alias ModuleReader = fn char[]?(String name, void* udata)</code></pre><p class="api-src">src/embedding.c3:145:7</p></div>
+<div class="api-item" id="NOT_CALLABLE"><pre><code>faultdef NOT_CALLABLE</code></pre><p class="api-src">src/embedding.c3:54:5</p></div>
+<div class="api-item" id="NOT_CREATED"><pre><code>faultdef NOT_CREATED</code></pre><p class="api-src">src/embedding.c3:43:5</p></div>
+<div class="api-item" id="OUT_OF_MEMORY"><pre><code>faultdef OUT_OF_MEMORY</code></pre><p class="api-src">src/embedding.c3:45:5</p></div>
+<div class="api-item" id="PromiseRejectionHandler"><pre><code>alias PromiseRejectionHandler = fn void(<a href="#JsRuntime">JsRuntime*</a> runtime, ulong promise_id, <a href="#JsValue">JsValue</a> promise, <a href="#JsValue">JsValue</a> reason, bool handled, void* udata)</code></pre><p class="api-src">src/embedding.c3:1145:7</p></div>
+<div class="api-item" id="REGISTER_FAILED"><pre><code>faultdef REGISTER_FAILED</code></pre><p class="api-src">src/embedding.c3:55:5</p></div>
+<div class="api-item" id="STALE_VALUE"><pre><code>faultdef STALE_VALUE</code></pre><p class="api-src">src/embedding.c3:52:5</p></div>
+<div class="api-item" id="SYNTAX_ERROR"><pre><code>faultdef SYNTAX_ERROR</code></pre><p class="api-src">src/embedding.c3:46:5</p></div>
+<div class="api-item" id="VALUE_TABLE_FULL"><pre><code>faultdef VALUE_TABLE_FULL</code></pre><p class="api-src">src/embedding.c3:53:5</p></div>
+<div class="api-item" id="WRONG_TYPE"><pre><code>faultdef WRONG_TYPE</code></pre><p class="api-src">src/embedding.c3:51:5</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="CLI_VERSION"><p class="api-sig"><code>const String CLI_VERSION = 0.3.0;</code></p><p class="api-src">cli/boomkat.c3:238:14</p></div>
+<div class="api-item" id="ignore_unhandled_rejections"><p class="api-sig"><code>bool ignore_unhandled_rejections = false;</code></p><p class="api-src">cli/boomkat.c3:33:6</p></div>
+<div class="api-item" id="MAX_INLINE_CALL_ARGS"><p class="api-sig"><code>const usz MAX_INLINE_CALL_ARGS = 8;</code></p><p class="api-src">src/embedding.c3:1139:11</p></div>
+<div class="api-item" id="UNDEFINED_VALUE"><p class="api-sig"><code>const <a href="#JsValue">JsValue</a> UNDEFINED_VALUE = { .slot = 0 };</code></p><p class="api-src">src/embedding.c3:107:15</p></div>
+<div class="api-item" id="unhandled_rejection_count"><p class="api-sig"><code>int unhandled_rejection_count = 0;</code></p><p class="api-src">cli/boomkat.c3:29:5</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="cli_fatal"><p class="api-sig"><code>fn void cli_fatal(void* udata, char* msg)</code></p><p class="api-src">cli/boomkat.c3:279:9</p></div>
+<div class="api-item" id="cli_rejection_tracker"><p class="api-sig"><code>fn void cli_rejection_tracker(void* heap_raw, void* vm, <a href="boomkat-types.html#TVal">TVal</a> promise, <a href="boomkat-types.html#TVal">TVal</a> reason, void* udata)</code></p><p class="api-src">cli/boomkat.c3:38:9</p></div>
+<div class="api-item" id="error_message_of"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> error_message_of(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> obj)</code></p><p class="api-src">cli/boomkat.c3:358:13</p></div>
+<div class="api-item" id="error_name_of"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> error_name_of(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> obj)</code></p><p class="api-src">cli/boomkat.c3:370:13</p></div>
+<div class="api-item" id="has_ts_extension"><p class="api-sig"><code>fn bool has_ts_extension(String path)</code></p><p class="api-src">cli/boomkat.c3:322:9</p></div>
+<div class="api-item" id="host_trampoline"><p class="api-sig"><code>fn void host_trampoline(<a href="boomkat-builtins.html#BuiltinContext">BuiltinContext*</a> bctx, void* udata)</code></p><p class="api-src">src/embedding.c3:839:9</p></div>
+<div class="api-item" id="main"><p class="api-sig"><code>fn int main(String[] args)</code></p><p class="api-src">cli/boomkat.c3:47:8</p></div>
+<div class="api-item" id="native_rejection_tracker"><p class="api-sig"><code>fn void native_rejection_tracker(void* heap_raw, <a href="boomkat-types.html#TVal">TVal</a> promise, <a href="boomkat-types.html#TVal">TVal</a> reason, bool handled, void* udata)</code></p><p class="api-src">src/embedding.c3:1156:9</p></div>
+<div class="api-item" id="print_hstring_stderr"><p class="api-sig"><code>fn void print_hstring_stderr(<a href="boomkat-hstring.html#HString">HString*</a> s)</code></p><p class="api-src">cli/boomkat.c3:429:9</p></div>
+<div class="api-item" id="print_tval_stderr"><p class="api-sig"><code>fn void print_tval_stderr(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-types.html#TVal">TVal*</a> v)</code></p><p class="api-src">cli/boomkat.c3:394:9</p></div>
+<div class="api-item" id="print_uncaught"><p class="api-sig"><code>fn void print_uncaught(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-types.html#TVal">TVal*</a> err_val)</code></p><p class="api-src">cli/boomkat.c3:333:9</p></div>
+<div class="api-item" id="print_usage"><p class="api-sig"><code>fn void print_usage()</code></p><p class="api-src">cli/boomkat.c3:240:9</p></div>
+<div class="api-item" id="print_usage_error"><p class="api-sig"><code>fn void print_usage_error()</code></p><p class="api-src">cli/boomkat.c3:284:9</p></div>
+<div class="api-item" id="read_module_file"><p class="api-sig"><code>fn char[]? read_module_file(String path)</code></p><p class="api-src">src/embedding.c3:281:12</p></div>
+<div class="api-item" id="run_module_source"><p class="api-sig"><code>fn int run_module_source(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-vm.html#Vm">Vm*</a> v, char[] source, String path, bool stdin_source)</code></p><p class="api-src">cli/boomkat.c3:210:8</p></div>
+<div class="api-item" id="run_script_source"><p class="api-sig"><code>fn int run_script_source(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-vm.html#Vm">Vm*</a> v, char[] source, String path, bool ts_mode, bool owned)</code></p><p class="api-src">cli/boomkat.c3:290:8</p></div>
+<div class="api-item" id="stderr_put_byte"><p class="api-sig"><code>fn void stderr_put_byte(char c, void* udata)</code></p><p class="api-src">cli/boomkat.c3:425:9</p></div>
+<div class="api-item" id="utf8_of"><p class="api-sig"><code>fn String utf8_of(<a href="boomkat-hstring.html#HString">HString*</a> s, Allocator allocator)</code></p><p class="api-src">src/embedding.c3:776:11</p></div>
+<div class="api-item" id="utf8_put"><p class="api-sig"><code>fn void utf8_put(char c, void* udata)</code></p><p class="api-src">src/embedding.c3:772:9</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="fault_of"><p class="api-sig"><code>macro fault_of(int code)</code></p><p class="api-src">src/embedding.c3:82:7</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

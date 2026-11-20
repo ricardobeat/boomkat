@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::re_bindings · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html" aria-current="page">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::re_bindings</code></h1>
+      <p class="lede">2 types, 7 functions and macros, 0 methods, 9 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="ReInterrupt"><pre><code>struct ReInterrupt {
+  <a href="#ReInterruptFn">ReInterruptFn</a> poll;
+  void* opaque;
+}</code></pre><p class="api-src">src/re_bindings_constants.c3:25:8</p></div>
+<div class="api-item" id="ReInterruptFn"><pre><code>alias ReInterruptFn = fn int(void*)</code></pre><p class="api-src">src/re_bindings_constants.c3:23:7</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="RE_FLAG_DOTALL"><p class="api-sig"><code>const int RE_FLAG_DOTALL = 8;</code></p><p class="api-src">src/re_bindings_constants.c3:6:11</p></div>
+<div class="api-item" id="RE_FLAG_IGNORECASE"><p class="api-sig"><code>const int RE_FLAG_IGNORECASE = 2;</code></p><p class="api-src">src/re_bindings_constants.c3:4:11</p></div>
+<div class="api-item" id="RE_FLAG_INDICES"><p class="api-sig"><code>const int RE_FLAG_INDICES = 64;</code></p><p class="api-src">src/re_bindings_constants.c3:9:11</p></div>
+<div class="api-item" id="RE_FLAG_MULTILINE"><p class="api-sig"><code>const int RE_FLAG_MULTILINE = 4;</code></p><p class="api-src">src/re_bindings_constants.c3:5:11</p></div>
+<div class="api-item" id="RE_FLAG_STICKY"><p class="api-sig"><code>const int RE_FLAG_STICKY = 32;</code></p><p class="api-src">src/re_bindings_constants.c3:8:11</p></div>
+<div class="api-item" id="RE_FLAG_UNICODE"><p class="api-sig"><code>const int RE_FLAG_UNICODE = 16;</code></p><p class="api-src">src/re_bindings_constants.c3:7:11</p></div>
+<div class="api-item" id="RE_FLAG_UNICODE_SETS"><p class="api-sig"><code>const int RE_FLAG_UNICODE_SETS = 128;</code></p><p class="api-src">src/re_bindings_constants.c3:10:11</p></div>
+<div class="api-item" id="RE_MATCH"><p class="api-sig"><code>const int RE_MATCH = 1;</code></p><p class="api-src">src/re_bindings_constants.c3:12:11</p></div>
+<div class="api-item" id="RE_MAX_CAPTURES"><p class="api-sig"><code>const int RE_MAX_CAPTURES = 256;</code></p><p class="api-src">src/re_bindings_constants.c3:21:11</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="re_compile"><p class="api-sig"><code>fn void* re_compile(char* pattern, usz pattern_len, int flags, char* error_msg, int error_msg_size)</code></p><p class="api-src">src/re_bindings.c3:6:17</p></div>
+<div class="api-item" id="re_free"><p class="api-sig"><code>fn void re_free(void* re)</code></p><p class="api-src">src/re_bindings.c3:18:16</p></div>
+<div class="api-item" id="re_get_capture_count"><p class="api-sig"><code>fn int re_get_capture_count(void* re)</code></p><p class="api-src">src/re_bindings.c3:24:15</p></div>
+<div class="api-item" id="re_get_groupnames"><p class="api-sig"><code>fn char* re_get_groupnames(void* re)</code></p><p class="api-src">src/re_bindings.c3:22:17</p></div>
+<div class="api-item" id="re_ref"><p class="api-sig"><code>fn void re_ref(void* re)</code></p><p class="api-src">src/re_bindings.c3:20:16</p></div>
+<div class="api-item" id="re_run"><p class="api-sig"><code>fn int re_run(void* re, void* input, int input_len, int start_offset, int input_wide, int* out_start, int* out_end, int* out_num_captures, int* caps_start, int* caps_end, int max_captures)</code></p><p class="api-src">src/re_bindings.c3:13:15</p></div>
+<div class="api-item" id="re_run_interruptible"><p class="api-sig"><code>fn int re_run_interruptible(void* re, void* input, int input_len, int start_offset, int input_wide, int* out_start, int* out_end, int* out_num_captures, int* caps_start, int* caps_end, int max_captures, <a href="#ReInterrupt">ReInterrupt*</a> interrupt)</code></p><p class="api-src">src/re_bindings.c3:26:15</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

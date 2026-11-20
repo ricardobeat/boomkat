@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::hobject · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html" aria-current="page">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::hobject</code></h1>
+      <p class="lede">54 types, 80 functions and macros, 88 methods, 78 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="AccessorResult"><pre><code>struct AccessorResult {
+  <a href="boomkat-types.html#TVal">TVal</a> accessor_fn;
+  <a href="#HObject">HObject*</a> this_obj;
+  <a href="#HObject">HObject*</a> owner;
+  bool found;
+  bool property_found;
+  bool property_writable;
+}</code></pre><p class="api-src">src/hobject.c3:542:8</p></div>
+<div class="api-item" id="CallableKind"><pre><code>enum CallableKind : ushort {
+  COMPILED_FN,
+  BUILTIN_FN,
+  BOUND_FN,
+  OTHER,
+}</code></pre><p class="api-src">src/hobject.c3:260:6</p></div>
+<div class="api-item" id="CaptureRef"><pre><code>struct CaptureRef {
+  union {
+    <a href="#HObject">HObject*</a> owner;
+    <a href="boomkat-types.html#TVal">TVal</a> value;
+  }
+  uint prop_idx;
+  bool is_cell;
+  bool guard_shadow;
+  bool is_value;
+}</code></pre><p class="api-src">src/hobject.c3:673:8</p></div>
+<div class="api-item" id="CollHashInfo"><pre><code>struct CollHashInfo {
+  uint* slots;
+  uint mask;
+  uint used;
+  uint built;
+}</code></pre><p class="api-src">src/hobject.c3:1096:8</p></div>
+<div class="api-item" id="HashEntry"><pre><code>struct HashEntry {
+  void* key;
+  uint index;
+}</code></pre><p class="api-src">src/hobject.c3:1625:8</p></div>
+<div class="api-item" id="HObject"><pre><code>struct HObject {
+  <a href="#HObjectBase">HObjectBase</a> base;
+  <a href="#HObjectExtra">HObjectExtra</a> extra;
+}</code></pre><p class="api-src">src/hobject.c3:1136:8</p></div>
+<div class="api-item" id="HObject.append_cached_prop"><p class="api-sig"><code>fn bool HObject.append_cached_prop(<a href="#HObject">HObject*</a> self, <a href="#ICEntry">ICEntry*</a> ic, <a href="boomkat-types.html#TVal">TVal</a> val, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:3809:17</p></div>
+<div class="api-item" id="HObject.array_inline_capacity"><p class="api-sig"><code>fn uint HObject.array_inline_capacity(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1320:17</p></div>
+<div class="api-item" id="HObject.array_inline_capacity_ptr"><p class="api-sig"><code>fn uint* HObject.array_inline_capacity_ptr(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1316:18</p></div>
+<div class="api-item" id="HObject.array_len_ptr"><p class="api-sig"><code>fn uint* HObject.array_len_ptr(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1309:18</p></div>
+<div class="api-item" id="HObject.array_part"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> HObject.array_part(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1453:23</p></div>
+<div class="api-item" id="HObject.as_header"><p class="api-sig"><code>fn <a href="boomkat-types.html#HeapHeader">HeapHeader*</a> HObject.as_header(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1466:24</p></div>
+<div class="api-item" id="HObject.callable_kind"><p class="api-sig"><code>fn <a href="#CallableKind">CallableKind</a> HObject.callable_kind(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1508:25</p></div>
+<div class="api-item" id="HObject.coll_hash_ptr"><p class="api-sig"><code>fn <a href="#CollHashInfo">CollHashInfo**</a> HObject.coll_hash_ptr(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1333:27</p></div>
+<div class="api-item" id="HObject.delete_own_index"><p class="api-sig"><code>fn void HObject.delete_own_index(<a href="#HObject">HObject*</a> self, ulong idx, <a href="#IndexProp">IndexProp*</a> own, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2144:17</p></div>
+<div class="api-item" id="HObject.delete_prop"><p class="api-sig"><code>fn bool HObject.delete_prop(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2394:17</p></div>
+<div class="api-item" id="HObject.dense_arridx_lookup"><p class="api-sig"><code>fn bool HObject.dense_arridx_lookup(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/hobject.c3:1997:17</p></div>
+<div class="api-item" id="HObject.dense_idx_present"><p class="api-sig"><code>fn bool HObject.dense_idx_present(<a href="#HObject">HObject*</a> self, uint idx)</code></p><p class="api-src">src/hobject.c3:2041:17</p></div>
+<div class="api-item" id="HObject.drop_prop_hash"><p class="api-sig"><code>fn void HObject.drop_prop_hash(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1722:17</p></div>
+<div class="api-item" id="HObject.ensure_prop_hash"><p class="api-sig"><code>fn void HObject.ensure_prop_hash(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1651:17</p></div>
+<div class="api-item" id="HObject.enumerable_count"><p class="api-sig"><code>fn uint HObject.enumerable_count(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3242:17</p></div>
+<div class="api-item" id="HObject.es_delete_prop"><p class="api-sig"><code>fn bool HObject.es_delete_prop(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:4513:17</p></div>
+<div class="api-item" id="HObject.extra_ptr"><p class="api-sig"><code>fn <a href="#HObjectExtra">HObjectExtra*</a> HObject.extra_ptr(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1303:26</p></div>
+<div class="api-item" id="HObject.find_accessor_proto"><p class="api-sig"><code>fn <a href="#AccessorResult">AccessorResult</a> HObject.find_accessor_proto(<a href="#HObject">HObject*</a> self, void* key, bool want_getter, <a href="boomkat-heap.html#Heap">Heap*</a> h, bool own_missed = false)</code></p><p class="api-src">src/hobject.c3:3314:27</p></div>
+<div class="api-item" id="HObject.find_index_holder"><p class="api-sig"><code>fn <a href="#HObject">HObject*</a> HObject.find_index_holder(<a href="#HObject">HObject*</a> self, ulong idx, <a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#IndexProp">IndexProp*</a> found)</code></p><p class="api-src">src/hobject.c3:2126:21</p></div>
+<div class="api-item" id="HObject.find_prop"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*?</a> HObject.find_prop(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1922:24</p></div>
+<div class="api-item" id="HObject.find_prop_idx"><p class="api-sig"><code>fn int HObject.find_prop_idx(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1871:16</p></div>
+<div class="api-item" id="HObject.freeze"><p class="api-sig"><code>fn void HObject.freeze(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1588:17</p></div>
+<div class="api-item" id="HObject.get_array_idx"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal?</a> HObject.get_array_idx(<a href="#HObject">HObject*</a> self, uint idx)</code></p><p class="api-src">src/hobject.c3:2504:18</p></div>
+<div class="api-item" id="HObject.get_array_idx_wide"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal?</a> HObject.get_array_idx_wide(<a href="#HObject">HObject*</a> self, ulong idx) @inline</code></p><p class="api-src">src/hobject.c3:2516:18</p></div>
+<div class="api-item" id="HObject.get_class"><p class="api-sig"><code>fn <a href="#ObjClass">ObjClass</a> HObject.get_class(<a href="#HObject">HObject*</a> self)</code></p><p class="api-src">src/hobject.c3:1486:21</p></div>
+<div class="api-item" id="HObject.get_prop"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal?</a> HObject.get_prop(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1935:18</p></div>
+<div class="api-item" id="HObject.get_prop_at"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*?</a> HObject.get_prop_at(<a href="#HObject">HObject*</a> self, uint idx)</code></p><p class="api-src">src/hobject.c3:3254:24</p></div>
+<div class="api-item" id="HObject.get_prop_flags"><p class="api-sig"><code>fn <a href="#PropFlags">PropFlags</a> HObject.get_prop_flags(<a href="#HObject">HObject*</a> self, uint idx, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:1758:22</p></div>
+<div class="api-item" id="HObject.get_prop_or_accessor_own"><p class="api-sig"><code>fn <a href="#PropLookupResult">PropLookupResult</a> HObject.get_prop_or_accessor_own(<a href="#HObject">HObject*</a> self, void* key, bool want_getter, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1954:29</p></div>
+<div class="api-item" id="HObject.get_prop_or_accessor_proto"><p class="api-sig"><code>fn <a href="#PropLookupResult">PropLookupResult</a> HObject.get_prop_or_accessor_proto(<a href="#HObject">HObject*</a> self, void* key, bool want_getter, <a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-types.html#TVal">TVal*</a> recv_override = null)</code></p><p class="api-src">src/hobject.c3:4277:29</p></div>
+<div class="api-item" id="HObject.get_prop_proto"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal?</a> HObject.get_prop_proto(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3267:18</p></div>
+<div class="api-item" id="HObject.get_prop_proto_full"><p class="api-sig"><code>fn <a href="#PropProtoResult">PropProtoResult</a> HObject.get_prop_proto_full(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:4442:28</p></div>
+<div class="api-item" id="HObject.get_shape"><p class="api-sig"><code>fn <a href="#Shape">Shape*</a> HObject.get_shape(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:1477:19</p></div>
+<div class="api-item" id="HObject.get_with_accessors"><p class="api-sig"><code>fn <a href="#PropLookupResult">PropLookupResult</a> HObject.get_with_accessors(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3340:29</p></div>
+<div class="api-item" id="HObject.grow_array"><p class="api-sig"><code>fn void HObject.grow_array(<a href="#HObject">HObject*</a> self, uint new_size, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2768:17</p></div>
+<div class="api-item" id="HObject.grow_props"><p class="api-sig"><code>fn void HObject.grow_props(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h, uint min_capacity = 0)</code></p><p class="api-src">src/hobject.c3:2703:17</p></div>
+<div class="api-item" id="HObject.has_coll_hash"><p class="api-sig"><code>fn bool HObject.has_coll_hash(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1339:17</p></div>
+<div class="api-item" id="HObject.has_prop"><p class="api-sig"><code>fn bool HObject.has_prop(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2009:17</p></div>
+<div class="api-item" id="HObject.has_prop_proto"><p class="api-sig"><code>fn bool HObject.has_prop_proto(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:4391:17</p></div>
+<div class="api-item" id="HObject.in_dict_mode"><p class="api-sig"><code>fn bool HObject.in_dict_mode(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:3910:17</p></div>
+<div class="api-item" id="HObject.index_store_unshadowed"><p class="api-sig"><code>macro bool HObject.index_store_unshadowed(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2050:20</p></div>
+<div class="api-item" id="HObject.init_header"><p class="api-sig"><code>fn void HObject.init_header(<a href="#HObject">HObject*</a> self, <a href="#ObjFlags">ObjFlags</a> flags, <a href="boomkat-types.html#GcBits">GcBits</a> gc, uint prop_capacity) @inline</code></p><p class="api-src">src/hobject.c3:2835:17</p></div>
+<div class="api-item" id="HObject.inline_props_ptr"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> HObject.inline_props_ptr(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1429:23</p></div>
+<div class="api-item" id="HObject.is_bound"><p class="api-sig"><code>fn bool HObject.is_bound(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1494:17</p></div>
+<div class="api-item" id="HObject.is_callable"><p class="api-sig"><code>fn bool HObject.is_callable(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1490:17</p></div>
+<div class="api-item" id="HObject.is_class_ctor"><p class="api-sig"><code>fn bool HObject.is_class_ctor(<a href="#HObject">HObject*</a> self)</code></p><p class="api-src">src/hobject.c3:1501:17</p></div>
+<div class="api-item" id="HObject.is_constructable"><p class="api-sig"><code>fn bool HObject.is_constructable(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1492:17</p></div>
+<div class="api-item" id="HObject.is_extensible"><p class="api-sig"><code>fn bool HObject.is_extensible(<a href="#HObject">HObject*</a> self)</code></p><p class="api-src">src/hobject.c3:1488:17</p></div>
+<div class="api-item" id="HObject.is_indexed_exotic"><p class="api-sig"><code>fn bool HObject.is_indexed_exotic(<a href="#HObject">HObject*</a> self)</code></p><p class="api-src">src/hobject.c3:1989:17</p></div>
+<div class="api-item" id="HObject.is_prop_writable"><p class="api-sig"><code>fn bool HObject.is_prop_writable(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2015:17</p></div>
+<div class="api-item" id="HObject.is_prototype_of"><p class="api-sig"><code>fn bool HObject.is_prototype_of(<a href="#HObject">HObject*</a> self, <a href="#HObject">HObject*</a> probe)</code></p><p class="api-src">src/hobject.c3:4497:17</p></div>
+<div class="api-item" id="HObject.is_proxy"><p class="api-sig"><code>macro bool HObject.is_proxy(<a href="#HObject">HObject*</a> self)</code></p><p class="api-src">src/hobject.c3:4565:20</p></div>
+<div class="api-item" id="HObject.layout_moved"><p class="api-sig"><code>fn void HObject.layout_moved(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:386:17</p></div>
+<div class="api-item" id="HObject.live_shape_generation"><p class="api-sig"><code>fn uint HObject.live_shape_generation(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:3901:17</p></div>
+<div class="api-item" id="HObject.make_shape_private"><p class="api-sig"><code>fn void HObject.make_shape_private(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1778:17</p></div>
+<div class="api-item" id="HObject.mapped_bits_ptr"><p class="api-sig"><code>fn ulong* HObject.mapped_bits_ptr(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1327:19</p></div>
+<div class="api-item" id="HObject.mega_cacheable"><p class="api-sig"><code>macro bool HObject.mega_cacheable(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:4246:20</p></div>
+<div class="api-item" id="HObject.move_dense"><p class="api-sig"><code>fn bool HObject.move_dense(<a href="#HObject">HObject*</a> self, uint to, uint from, uint count, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2594:17</p></div>
+<div class="api-item" id="HObject.move_dense_counts"><p class="api-sig"><code>fn void HObject.move_dense_counts(<a href="#HObject">HObject*</a> self, <a href="#PropValue">PropValue*</a> part, uint start, uint end, bool copied, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:2638:17</p></div>
+<div class="api-item" id="HObject.note_computed_name"><p class="api-sig"><code>fn void HObject.note_computed_name(<a href="#HObject">HObject*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/hobject.c3:397:17</p></div>
+<div class="api-item" id="HObject.observe_prototype"><p class="api-sig"><code>fn void HObject.observe_prototype(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:2857:17</p></div>
+<div class="api-item" id="HObject.own_index"><p class="api-sig"><code>fn <a href="#IndexProp">IndexProp</a> HObject.own_index(<a href="#HObject">HObject*</a> self, ulong idx, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2110:22</p></div>
+<div class="api-item" id="HObject.prop_alloc_size"><p class="api-sig"><code>fn usz HObject.prop_alloc_size(<a href="#HObject">HObject*</a> self)</code></p><p class="api-src">src/hobject.c3:1418:16</p></div>
+<div class="api-item" id="HObject.prop_flags_at"><p class="api-sig"><code>fn <a href="#PropFlags">PropFlags</a> HObject.prop_flags_at(<a href="#HObject">HObject*</a> self, uint idx, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:1745:22</p></div>
+<div class="api-item" id="HObject.prop_key_at"><p class="api-sig"><code>fn void* HObject.prop_key_at(<a href="#HObject">HObject*</a> self, uint idx, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:1731:18</p></div>
+<div class="api-item" id="HObject.prop_values"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> HObject.prop_values(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:1445:23</p></div>
+<div class="api-item" id="HObject.put_prop"><p class="api-sig"><code>fn bool HObject.put_prop(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-types.html#TVal">TVal</a> val, <a href="#PropFlags">PropFlags</a> pflags, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2164:17</p></div>
+<div class="api-item" id="HObject.put_prop_new"><p class="api-sig"><code>fn bool HObject.put_prop_new(<a href="#HObject">HObject*</a> self, void* key, <a href="boomkat-types.html#TVal">TVal</a> val, <a href="#PropFlags">PropFlags</a> pflags, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2246:17</p></div>
+<div class="api-item" id="HObject.reserve_array_storage"><p class="api-sig"><code>fn bool HObject.reserve_array_storage(<a href="#HObject">HObject*</a> self, uint prop_capacity, uint array_capacity, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2660:17</p></div>
+<div class="api-item" id="HObject.reserve_props"><p class="api-sig"><code>fn void HObject.reserve_props(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h, uint cap)</code></p><p class="api-src">src/hobject.c3:2688:17</p></div>
+<div class="api-item" id="HObject.resize_prop_hash"><p class="api-sig"><code>fn bool HObject.resize_prop_hash(<a href="#HObject">HObject*</a> self, uint new_mask, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1702:17</p></div>
+<div class="api-item" id="HObject.retransition_flags"><p class="api-sig"><code>fn bool HObject.retransition_flags(<a href="#HObject">HObject*</a> self, uint idx, <a href="#PropFlags">PropFlags</a> new_flags, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1810:17</p></div>
+<div class="api-item" id="HObject.seal"><p class="api-sig"><code>fn void HObject.seal(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h, bool frozen = false)</code></p><p class="api-src">src/hobject.c3:1518:17</p></div>
+<div class="api-item" id="HObject.set_array_idx"><p class="api-sig"><code>fn bool HObject.set_array_idx(<a href="#HObject">HObject*</a> self, uint idx, <a href="boomkat-types.html#TVal">TVal</a> val, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2549:17</p></div>
+<div class="api-item" id="HObject.set_prop_flags"><p class="api-sig"><code>fn void HObject.set_prop_flags(<a href="#HObject">HObject*</a> self, uint idx, <a href="#PropFlags">PropFlags</a> new_flags, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:1842:17</p></div>
+<div class="api-item" id="HObject.set_temproot"><p class="api-sig"><code>fn void HObject.set_temproot(<a href="#HObject">HObject*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:373:17</p></div>
+<div class="api-item" id="HObject.shape_generation"><p class="api-sig"><code>fn uint HObject.shape_generation(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:3893:17</p></div>
+<div class="api-item" id="HObject.sync_named_length"><p class="api-sig"><code>fn void HObject.sync_named_length(<a href="#HObject">HObject*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:2531:17</p></div>
+<div class="api-item" id="HObject.synthesizes_indices"><p class="api-sig"><code>fn bool HObject.synthesizes_indices(<a href="#HObject">HObject*</a> self)</code></p><p class="api-src">src/hobject.c3:2097:17</p></div>
+<div class="api-item" id="HObjectArguments"><pre><code>struct HObjectArguments {
+  uint nargs;
+  uint pad;
+  ulong mapped_bits;
+}</code></pre><p class="api-src">src/hobject.c3:960:8</p></div>
+<div class="api-item" id="HObjectArrayBuffer"><pre><code>struct HObjectArrayBuffer {
+  char* data;
+  uint byte_length;
+  <a href="#HObject">HObject*</a> views_head;
+  union {
+    uint max_byte_length;
+    uint external_index;
+  }
+  bool resizable;
+  bool is_shared;
+  bool immutable;
+  bool external;
+}</code></pre><p class="api-src">src/hobject.c3:925:8</p></div>
+<div class="api-item" id="HObjectAsyncContinuation"><pre><code>struct HObjectAsyncContinuation {
+  <a href="boomkat-heap.html#GeneratorState">GeneratorState*</a> state;
+  <a href="#HObject">HObject*</a> next;
+  bool rejected;
+}</code></pre><p class="api-src">src/hobject.c3:804:8</p></div>
+<div class="api-item" id="HObjectBase"><pre><code>struct HObjectBase {
+  <a href="#ObjFlags">ObjFlags</a> flags;
+  union {
+    uint refcount;
+    <a href="boomkat-types.html#GcBits">GcBits</a> gc;
+  }
+  <a href="#HObject">HObject*</a> prototype;
+  uint shape_id;
+  uint prop_capacity;
+  uint prop_count;
+  uint array_size;
+  uint array_used;
+  void* prop_alloc;
+  <a href="#PropHashInfo">PropHashInfo*</a> prop_hash;
+}</code></pre><p class="api-src">src/hobject.c3:1111:8</p></div>
+<div class="api-item" id="HObjectBound"><pre><code>struct HObjectBound {
+  <a href="boomkat-types.html#TVal">TVal</a> target;
+  <a href="boomkat-types.html#TVal">TVal</a> this_arg;
+  <a href="#HObject">HObject*</a> args;
+}</code></pre><p class="api-src">src/hobject.c3:684:8</p></div>
+<div class="api-item" id="HObjectBufferView"><pre><code>struct HObjectBufferView {
+  <a href="#HObject">HObject*</a> buffer;
+  <a href="#HObject">HObject*</a> next_view;
+  uint byte_offset;
+  uint byte_length;
+  bool length_tracking;
+}</code></pre><p class="api-src">src/hobject.c3:946:8</p></div>
+<div class="api-item" id="HObjectCollHash"><pre><code>struct HObjectCollHash {
+  <a href="#CollHashInfo">CollHashInfo*</a> info;
+}</code></pre><p class="api-src">src/hobject.c3:896:8</p></div>
+<div class="api-item" id="HObjectError"><pre><code>struct HObjectError {
+  <a href="boomkat-types.html#TVal">TVal</a> captured_stack;
+}</code></pre><p class="api-src">src/hobject.c3:742:8</p></div>
+<div class="api-item" id="HObjectExtra"><pre><code>union HObjectExtra {
+  <a href="#HObjectFunction">HObjectFunction</a> func;
+  <a href="#HObjectPrimitive">HObjectPrimitive</a> prim;
+  <a href="#HObjectError">HObjectError</a> err;
+  <a href="#HObjectRegExp">HObjectRegExp</a> regexp;
+  <a href="#HObjectGenerator">HObjectGenerator</a> gen;
+  <a href="#HObjectPromise">HObjectPromise</a> promise;
+  <a href="#HObjectReaction">HObjectReaction</a> reaction;
+  <a href="#HObjectAsyncContinuation">HObjectAsyncContinuation</a> async_cont;
+  <a href="#HObjectIterator">HObjectIterator</a> iter;
+  <a href="#HObjectStringIterator">HObjectStringIterator</a> str_iter;
+  <a href="#HObjectRegExpStringIterator">HObjectRegExpStringIterator</a> regexp_iter;
+  <a href="#HObjectWrapForValidIterator">HObjectWrapForValidIterator</a> wrap_iter;
+  <a href="#HObjectIteratorHelper">HObjectIteratorHelper</a> iter_helper;
+  <a href="#HObjectGetterSetter">HObjectGetterSetter</a> gs;
+  <a href="#HObjectCollHash">HObjectCollHash</a> coll;
+  <a href="#HObjectHost">HObjectHost</a> host;
+  <a href="#HObjectProxy">HObjectProxy</a> proxy;
+  <a href="#HObjectArrayBuffer">HObjectArrayBuffer</a> ab;
+  <a href="#HObjectBufferView">HObjectBufferView</a> view;
+  <a href="#HObjectTemporal">HObjectTemporal</a> temporal;
+  uint array_length;
+  <a href="#HObjectArguments">HObjectArguments</a> args;
+}</code></pre><p class="api-src">src/hobject.c3:967:7</p></div>
+<div class="api-item" id="HObjectFunction"><pre><code>struct HObjectFunction {
+  <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> comp_func;
+  <a href="boomkat-env.html#EnvRecord">EnvRecord*</a> var_env;
+  <a href="boomkat-env.html#EnvRecord">EnvRecord*</a> lex_env;
+  int builtin_fn_index;
+  <a href="boomkat-types.html#TVal">TVal</a> captured_this;
+  <a href="#HObject">HObject*</a> captured_new_target;
+  union {
+    <a href="#HObjectBound">HObjectBound</a> bound;
+    <a href="#CaptureRef">CaptureRef</a> inline_capture;
+  }
+  <a href="#CaptureRef">CaptureRef*</a> capture_refs;
+  <a href="boomkat-heap.html#Realm">Realm*</a> realm;
+}</code></pre><p class="api-src">src/hobject.c3:692:8</p></div>
+<div class="api-item" id="HObjectGenerator"><pre><code>struct HObjectGenerator {
+  void* generator_data;
+  <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> comp_func;
+  <a href="boomkat-env.html#EnvRecord">EnvRecord*</a> var_env;
+  <a href="boomkat-env.html#EnvRecord">EnvRecord*</a> lex_env;
+}</code></pre><p class="api-src">src/hobject.c3:759:8</p></div>
+<div class="api-item" id="HObjectGetterSetter"><pre><code>struct HObjectGetterSetter {
+  <a href="boomkat-types.html#TVal">TVal</a> getter;
+  <a href="boomkat-types.html#TVal">TVal</a> setter;
+}</code></pre><p class="api-src">src/hobject.c3:902:8</p></div>
+<div class="api-item" id="HObjectHost"><pre><code>struct HObjectHost {
+  void* payload;
+  uint class_id;
+}</code></pre><p class="api-src">src/hobject.c3:728:8</p></div>
+<div class="api-item" id="HObjectIterator"><pre><code>struct HObjectIterator {
+  <a href="#HObject">HObject*</a> target;
+  uint index;
+  uint kind;
+}</code></pre><p class="api-src">src/hobject.c3:812:8</p></div>
+<div class="api-item" id="HObjectIteratorHelper"><pre><code>struct HObjectIteratorHelper {
+  <a href="#HObject">HObject*</a> underlying;
+  <a href="boomkat-types.html#TVal">TVal</a> next_method;
+  <a href="boomkat-types.html#TVal">TVal</a> callback;
+  double remaining;
+  double counter;
+  uint kind;
+  uint state;
+  <a href="#HObject">HObject*</a> inner_iter;
+  <a href="boomkat-types.html#TVal">TVal</a> inner_next;
+  <a href="#HObject">HObject*</a> buffer;
+  uint buffer_head;
+  uint window_mode;
+  bool final_yield;
+}</code></pre><p class="api-src">src/hobject.c3:852:8</p></div>
+<div class="api-item" id="HObjectPrimitive"><pre><code>struct HObjectPrimitive {
+  <a href="boomkat-types.html#TVal">TVal</a> primitive_value;
+}</code></pre><p class="api-src">src/hobject.c3:734:8</p></div>
+<div class="api-item" id="HObjectPromise"><pre><code>struct HObjectPromise {
+  uint state;
+  <a href="boomkat-types.html#TVal">TVal</a> result;
+  <a href="#HObject">HObject*</a> reactions_head;
+  <a href="#HObject">HObject*</a> reactions_tail;
+  bool is_handled;
+  bool rejection_reported;
+  bool in_reject_list;
+}</code></pre><p class="api-src">src/hobject.c3:777:8</p></div>
+<div class="api-item" id="HObjectProxy"><pre><code>struct HObjectProxy {
+  <a href="#HObject">HObject*</a> target;
+  <a href="#HObject">HObject*</a> handler;
+  void* host_hooks;
+  int builtin_fn_index;
+}</code></pre><p class="api-src">src/hobject.c3:882:8</p></div>
+<div class="api-item" id="HObjectReaction"><pre><code>struct HObjectReaction {
+  <a href="boomkat-types.html#TVal">TVal[3]</a> values;
+  <a href="#HObject">HObject*</a> next;
+}</code></pre><p class="api-src">src/hobject.c3:799:8</p></div>
+<div class="api-item" id="HObjectRegExp"><pre><code>struct HObjectRegExp {
+  <a href="boomkat-types.html#TVal">TVal</a> pattern_str;
+  void* regexp_data;
+  int flags;
+}</code></pre><p class="api-src">src/hobject.c3:747:8</p></div>
+<div class="api-item" id="HObjectRegExpStringIterator"><pre><code>struct HObjectRegExpStringIterator {
+  <a href="boomkat-hstring.html#StringRef">StringRef</a> string;
+  <a href="#HObject">HObject*</a> regexp;
+  uint flags;
+}</code></pre><p class="api-src">src/hobject.c3:830:8</p></div>
+<div class="api-item" id="HObjectStringIterator"><pre><code>struct HObjectStringIterator {
+  <a href="boomkat-hstring.html#StringRef">StringRef</a> string;
+  uint index;
+}</code></pre><p class="api-src">src/hobject.c3:822:8</p></div>
+<div class="api-item" id="HObjectTemporal"><pre><code>struct HObjectTemporal {
+  <a href="boomkat-hbigint.html#HBigInt">HBigInt*</a> big_ns;
+  long long_a;
+  long long_b;
+  long long_c;
+  long long_d;
+  long long_e;
+  long long_f;
+  long long_g;
+  long long_h;
+  long long_i;
+  long long_j;
+  union {
+    <a href="boomkat-lib-temporal.html#CalendarId">CalendarId</a> calendar;
+    <a href="boomkat-hstring.html#StringRef">StringRef</a> identifier;
+  }
+  <a href="#HObject">HObject*</a> timezone;
+}</code></pre><p class="api-src">src/hobject.c3:1033:8</p></div>
+<div class="api-item" id="HObjectWrapForValidIterator"><pre><code>struct HObjectWrapForValidIterator {
+  <a href="#HObject">HObject*</a> iterated;
+  <a href="boomkat-types.html#TVal">TVal</a> next_method;
+}</code></pre><p class="api-src">src/hobject.c3:840:8</p></div>
+<div class="api-item" id="ICChain"><pre><code>union ICChain {
+  <a href="#ICChainSnapshot">ICChainSnapshot</a> snapshot;
+  <a href="#ICChainEpoch">ICChainEpoch</a> epoch;
+  <a href="#ICPolySet">ICPolySet</a> poly;
+}</code></pre><p class="api-src">src/hobject.c3:3625:7</p></div>
+<div class="api-item" id="ICChainEpoch"><pre><code>struct ICChainEpoch {
+  ulong value;
+  ulong* current;
+  <a href="#HObject">HObject*</a> first;
+  <a href="#HObject">HObject*</a> owner;
+}</code></pre><p class="api-src">src/hobject.c3:3608:8</p></div>
+<div class="api-item" id="ICChainSnapshot"><pre><code>struct ICChainSnapshot {
+  uint[4] shapes;
+  void*[4] protos;
+}</code></pre><p class="api-src">src/hobject.c3:3603:8</p></div>
+<div class="api-item" id="ICEntry"><pre><code>struct ICEntry {
+  uint shape_id;
+  uint shape_gen;
+  uint prop_idx;
+  <a href="#PropFlags">PropFlags</a> prop_flags;
+  char chain_len;
+  bool has_proto;
+  <a href="#ICChain">ICChain*</a> chain;
+  <a href="boomkat-hstring.html#StringRef">StringRef</a> key;
+  uint absent_next_shape;
+}</code></pre><p class="api-src">src/hobject.c3:3633:8</p></div>
+<div class="api-item" id="ICPolySet"><pre><code>struct ICPolySet {
+  uint count;
+  uint[5] shapes;
+  uint[5] prop_idx;
+}</code></pre><p class="api-src">src/hobject.c3:3617:8</p></div>
+<div class="api-item" id="IndexHold"><pre><code>enum IndexHold : char {
+  ABSENT,
+  DENSE,
+  NAMED,
+  EXOTIC,
+}</code></pre><p class="api-src">src/hobject.c3:2082:6</p></div>
+<div class="api-item" id="IndexProp"><pre><code>struct IndexProp {
+  <a href="#IndexHold">IndexHold</a> hold;
+  uint slot;
+  <a href="boomkat-types.html#TVal">TVal</a> value;
+}</code></pre><p class="api-src">src/hobject.c3:2089:8</p></div>
+<div class="api-item" id="JsonShapeEntry"><pre><code>struct JsonShapeEntry {
+  <a href="boomkat-hstring.html#StringRef">StringRef</a> key;
+  uint slot;
+  uint quoted_offset;
+  uint quoted_length;
+}</code></pre><p class="api-src">src/hobject.c3:3367:8</p></div>
+<div class="api-item" id="JsonShapePlan"><pre><code>struct JsonShapePlan {
+  uint refs;
+  uint count;
+  <a href="#JsonShapeEntry">JsonShapeEntry*</a> entries;
+  char* quoted_keys;
+  bool quoted_wide;
+}</code></pre><p class="api-src">src/hobject.c3:3376:8</p></div>
+<div class="api-item" id="MegamorphicEntry"><pre><code>struct MegamorphicEntry {
+  <a href="boomkat-hstring.html#StringRef">StringRef</a> key;
+  uint shape_id;
+  uint prop_idx;
+  void* proto;
+  uint proto_shape_id;
+  uint recycle_epoch;
+  bool is_accessor;
+  <a href="#PropFlags">PropFlags</a> flags;
+  void* first_proto;
+  ulong proto_epoch;
+}</code></pre><p class="api-src">src/hobject.c3:3968:8</p></div>
+<div class="api-item" id="OBJ_ALLOC_FAULT"><pre><code>faultdef OBJ_ALLOC_FAULT</code></pre><p class="api-src">src/hobject.c3:32:10</p></div>
+<div class="api-item" id="ObjClass"><pre><code>enum ObjClass : char {
+  NONE,
+  OBJECT,
+  ARRAY,
+  FUNCTION,
+  ARGUMENTS,
+  BOOLEAN,
+  DATE,
+  ERROR,
+  JSON,
+  MATH,
+  NUMBER,
+  REFLECT,
+  REGEXP,
+  STRING,
+  GLOBAL,
+  SYMBOL,
+  OBJENV,
+  DECENV,
+  BIGINT,
+  THREAD,
+  PROXY,
+  ARRAYBUFFER,
+  DATAVIEW,
+  INT8ARRAY,
+  UINT8ARRAY,
+  UINT8CLAMPEDARRAY,
+  INT16ARRAY,
+  UINT16ARRAY,
+  INT32ARRAY,
+  UINT32ARRAY,
+  FLOAT16ARRAY,
+  FLOAT32ARRAY,
+  FLOAT64ARRAY,
+  BIGINT64ARRAY,
+  BIGUINT64ARRAY,
+  MAP,
+  SET,
+  WEAKMAP,
+  WEAKSET,
+  WEAKREF,
+  FINALIZATION_REGISTRY,
+  PROMISE,
+  PROMISE_REACTION,
+  ASYNC_CONTINUATION,
+  GENERATOR,
+  ARRAY_ITERATOR,
+  STRING_ITERATOR,
+  MAP_ITERATOR,
+  SET_ITERATOR,
+  REGEXP_STRING_ITERATOR,
+  ITERATOR_HELPER,
+  WRAP_FOR_VALID_ITERATOR,
+  GETTER_SETTER,
+  TEMPORAL_PLAIN_DATE,
+  TEMPORAL_PLAIN_TIME,
+  TEMPORAL_PLAIN_DATETIME,
+  TEMPORAL_PLAIN_YEARMONTH,
+  TEMPORAL_PLAIN_MONTHDAY,
+  TEMPORAL_DURATION,
+  TEMPORAL_INSTANT,
+  TEMPORAL_TIMEZONE,
+  TEMPORAL_ZONEDDATETIME,
+  HOST,
+}</code></pre><p class="api-src">src/hobject.c3:177:6</p></div>
+<div class="api-item" id="ObjFlags"><pre><code>bitstruct ObjFlags : uint {
+  <a href="boomkat-types.html#HType">HType</a> htype : 0..1;
+  bool temproot : 3..3;
+  bool finalizable : 4..4;
+  bool finalized : 5..5;
+  bool readonly : 6..6;
+  bool extensible : 7..7;
+  bool constructable : 8..8;
+  bool callable : 9..9;
+  bool is_bound : 10..10;
+  bool has_finalizer : 11..11;
+  bool exotic_array : 12..12;
+  bool exotic_stringobj : 13..13;
+  bool exotic_arguments : 14..14;
+  bool exotic_proxyobj : 15..15;
+  <a href="#ObjClass">ObjClass</a> obj_class : 16..21;
+  bool pool_fallback : 22..22;
+  bool is_date_proto : 23..23;
+  bool is_async_state : 24..24;
+  bool array_len_writable : 25..25;
+  bool is_raw_json : 26..26;
+  bool has_nondefault_flags : 27..27;
+  bool exotic_module_ns : 28..28;
+  bool has_indexed_named_prop : 29..29;
+  bool exotic_deferred_ns : 30..30;
+  bool is_module_source : 31..31;
+}</code></pre><p class="api-src">src/hobject.c3:276:11</p></div>
+<div class="api-item" id="OwnKeyShapePlan"><pre><code>struct OwnKeyShapePlan {
+  uint count;
+  uint string_count;
+  ulong enumerable;
+  <a href="boomkat-hstring.html#StringRef">StringRef*</a> keys;
+}</code></pre><p class="api-src">src/hobject.c3:3396:8</p></div>
+<div class="api-item" id="PROP_NOT_FOUND"><pre><code>faultdef PROP_NOT_FOUND</code></pre><p class="api-src">src/hobject.c3:31:10</p></div>
+<div class="api-item" id="PropFlags"><pre><code>bitstruct PropFlags : char {
+  bool writable : 0..0;
+  bool enumerable : 1..1;
+  bool configurable : 2..2;
+  bool is_accessor : 3..3;
+  bool immut_nonstrict : 4..4;
+  bool is_private_method : 5..5;
+}</code></pre><p class="api-src">src/hobject.c3:408:11</p></div>
+<div class="api-item" id="PropHashInfo"><pre><code>struct PropHashInfo {
+  void* table;
+  uint mask;
+  uint count;
+}</code></pre><p class="api-src">src/hobject.c3:1077:8</p></div>
+<div class="api-item" id="PropLookupKind"><pre><code>enum PropLookupKind : int {
+  PROP_ACCESSOR,
+  PROP_DATA,
+  PROP_NOT_FOUND,
+}</code></pre><p class="api-src">src/hobject.c3:3348:6</p></div>
+<div class="api-item" id="PropLookupResult"><pre><code>struct PropLookupResult {
+  <a href="#PropLookupKind">PropLookupKind</a> kind;
+  <a href="boomkat-types.html#TVal">TVal</a> data_val;
+  <a href="#HObject">HObject*</a> owner;
+  <a href="#AccessorResult">AccessorResult</a> acc;
+}</code></pre><p class="api-src">src/hobject.c3:3356:8</p></div>
+<div class="api-item" id="PropProtoResult"><pre><code>struct PropProtoResult {
+  bool found;
+  <a href="boomkat-types.html#TVal">TVal</a> value;
+  bool is_accessor;
+  <a href="#HObject">HObject*</a> owner;
+}</code></pre><p class="api-src">src/hobject.c3:4431:8</p></div>
+<div class="api-item" id="PropValue"><pre><code>typedef PropValue = <a href="boomkat-types.html#TVal">TVal</a></code></pre><p class="api-src">src/hobject.c3:571:9</p></div>
+<div class="api-item" id="PropValue.get"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal</a> PropValue.get(PropValue* self) @inline</code></p><p class="api-src">src/hobject.c3:573:19</p></div>
+<div class="api-item" id="PropValue.release_ref"><p class="api-sig"><code>fn void PropValue.release_ref(PropValue* self, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:577:19</p></div>
+<div class="api-item" id="PropValue.set_deleted"><p class="api-sig"><code>fn void PropValue.set_deleted(PropValue* self) @inline</code></p><p class="api-src">src/hobject.c3:610:19</p></div>
+<div class="api-item" id="PropValue.set_fastint"><p class="api-sig"><code>fn void PropValue.set_fastint(PropValue* self, long v) @inline</code></p><p class="api-src">src/hobject.c3:597:19</p></div>
+<div class="api-item" id="PropValue.set_number"><p class="api-sig"><code>fn void PropValue.set_number(PropValue* self, double v) @inline</code></p><p class="api-src">src/hobject.c3:603:19</p></div>
+<div class="api-item" id="PropValue.set_undefined"><p class="api-sig"><code>fn void PropValue.set_undefined(PropValue* self) @inline</code></p><p class="api-src">src/hobject.c3:591:19</p></div>
+<div class="api-item" id="PropValue.set_untraced"><p class="api-sig"><code>fn void PropValue.set_untraced(PropValue* self, <a href="boomkat-types.html#TVal">TVal</a> v) @inline</code></p><p class="api-desc">Store a value no collector traces, such as a number, boolean or string. It cannot create an old-to-young edge, so it needs no barrier.</p><p class="api-src">src/hobject.c3:587:19</p></div>
+<div class="api-item" id="Shape"><pre><code>struct Shape {
+  uint generation;
+  uint parent;
+  uint own_count;
+  uint offset;
+  <a href="#Shape">Shape*</a> parent_shape;
+  <a href="#HashEntry">HashEntry*</a> hash_table;
+  bool shared;
+  uint capacity;
+  bool dict;
+  bool pinned;
+  bool json_plan_rejected;
+  <a href="#JsonShapePlan">JsonShapePlan*</a> json_plan;
+  <a href="#OwnKeyShapePlan">OwnKeyShapePlan*</a> own_key_plan;
+}</code></pre><p class="api-src">src/hobject.c3:3417:8</p></div>
+<div class="api-item" id="Shape.props"><p class="api-sig"><code>fn <a href="#ShapeProperty">ShapeProperty*</a> Shape.props(<a href="#Shape">Shape*</a> self)</code></p><p class="api-src">src/hobject.c3:3467:25</p></div>
+<div class="api-item" id="ShapeProperty"><pre><code>struct ShapeProperty {
+  <a href="boomkat-hstring.html#StringRef">StringRef</a> key;
+  <a href="#PropFlags">PropFlags</a> flags;
+}</code></pre><p class="api-src">src/hobject.c3:661:8</p></div>
+<div class="api-item" id="VarICEntry"><pre><code>struct VarICEntry {
+  void* env;
+  void* bindings;
+  uint shape_id;
+  uint recycle_epoch;
+  uint prop_idx;
+  <a href="#PropFlags">PropFlags</a> prop_flags;
+  bool varref_store_ok;
+  char rearm_depth;
+  uint props_off;
+  void* search_head;
+  <a href="#PropValue">PropValue*</a> slot_ptr;
+  void*[4] passed_envs;
+  uint[4] passed_shapes;
+}</code></pre><p class="api-src">src/hobject.c3:4092:8</p></div>
+<div class="api-item" id="VarICEntry.slot"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> VarICEntry.slot(<a href="#VarICEntry">VarICEntry*</a> self) @inline</code></p><p class="api-src">src/hobject.c3:4142:26</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="ARRAY_EXTRA"><p class="api-sig"><code>const usz ARRAY_EXTRA = 8;</code></p><p class="api-src">src/hobject.c3:1158:11</p></div>
+<div class="api-item" id="ARRAY_INITIAL_SIZE"><p class="api-sig"><code>const uint ARRAY_INITIAL_SIZE = 16;</code></p><p class="api-src">src/hobject.c3:140:12</p></div>
+<div class="api-item" id="ARRAY_INLINE_MAX_CAPACITY"><p class="api-sig"><code>const uint ARRAY_INLINE_MAX_CAPACITY = 16;</code></p><p class="api-src">src/hobject.c3:1166:12</p></div>
+<div class="api-item" id="COLL_HASH_MIN_ENTRIES"><p class="api-sig"><code>const uint COLL_HASH_MIN_ENTRIES = 8;</code></p><p class="api-src">src/hobject.c3:151:12</p></div>
+<div class="api-item" id="COLL_SLOT_DELETED"><p class="api-sig"><code>const uint COLL_SLOT_DELETED = 4294967295;</code></p><p class="api-src">src/hobject.c3:154:12</p></div>
+<div class="api-item" id="COMPACT_INLINE_PROPS"><p class="api-sig"><code>const uint COMPACT_INLINE_PROPS = 2;</code></p><p class="api-src">src/hobject.c3:134:12</p></div>
+<div class="api-item" id="DENSE_GROW_FLOOR"><p class="api-sig"><code>const uint DENSE_GROW_FLOOR = 1024;</code></p><p class="api-src">src/hobject.c3:2028:12</p></div>
+<div class="api-item" id="DENSE_GROW_SLACK"><p class="api-sig"><code>const uint DENSE_GROW_SLACK = 65536;</code></p><p class="api-src">src/hobject.c3:2029:12</p></div>
+<div class="api-item" id="HASH_DELETED"><p class="api-sig"><code>const uint HASH_DELETED = 4294967294;</code></p><p class="api-src">src/hobject.c3:169:12</p></div>
+<div class="api-item" id="HASH_LOAD_DEN"><p class="api-sig"><code>const uint HASH_LOAD_DEN = 10;</code></p><p class="api-src">src/hobject.c3:159:12</p></div>
+<div class="api-item" id="HASH_LOAD_NUM"><p class="api-sig"><code>const uint HASH_LOAD_NUM = 7;</code></p><p class="api-src">src/hobject.c3:158:12</p></div>
+<div class="api-item" id="HASH_MIN_PROPS"><p class="api-sig"><code>const uint HASH_MIN_PROPS = 8;</code></p><p class="api-src">src/hobject.c3:148:12</p></div>
+<div class="api-item" id="HASH_UNUSED"><p class="api-sig"><code>const uint HASH_UNUSED = 4294967295;</code></p><p class="api-src">src/hobject.c3:162:12</p></div>
+<div class="api-item" id="IC_CHAIN_EPOCH"><p class="api-sig"><code>const char IC_CHAIN_EPOCH = 255;</code></p><p class="api-src">src/hobject.c3:3666:12</p></div>
+<div class="api-item" id="IC_CHAIN_POLY"><p class="api-sig"><code>const char IC_CHAIN_POLY = 254;</code></p><p class="api-src">src/hobject.c3:3668:12</p></div>
+<div class="api-item" id="IC_MAX_CHAIN"><p class="api-sig"><code>const uint IC_MAX_CHAIN = 4;</code></p><p class="api-src">src/hobject.c3:3592:12</p></div>
+<div class="api-item" id="IC_POLY_MAX"><p class="api-sig"><code>const uint IC_POLY_MAX = 5;</code></p><p class="api-src">src/hobject.c3:3623:12</p></div>
+<div class="api-item" id="IC_PROP_ABSENT"><p class="api-sig"><code>const uint IC_PROP_ABSENT = 4294967295;</code></p><p class="api-src">src/hobject.c3:3664:12</p></div>
+<div class="api-item" id="IC_PROP_MISSING"><p class="api-sig"><code>const uint IC_PROP_MISSING = 4294967294;</code></p><p class="api-src">src/hobject.c3:3717:12</p></div>
+<div class="api-item" id="INLINE_EXTRA"><p class="api-sig"><code>const usz INLINE_EXTRA = 32;</code></p><p class="api-src">src/hobject.c3:1157:11</p></div>
+<div class="api-item" id="INLINE_PROPS"><p class="api-sig"><code>const uint INLINE_PROPS = 4;</code></p><p class="api-src">src/hobject.c3:133:12</p></div>
+<div class="api-item" id="MAX_ARRAY_INDEX_END"><p class="api-sig"><code>const ulong MAX_ARRAY_INDEX_END = 4294967295;</code></p><p class="api-src">src/hobject.c3:2080:13</p></div>
+<div class="api-item" id="MAX_PROTO_DEPTH"><p class="api-sig"><code>const uint MAX_PROTO_DEPTH = 256;</code></p><p class="api-src">src/hobject.c3:3345:12</p></div>
+<div class="api-item" id="MEGA_MAX_DEPTH"><p class="api-sig"><code>const uint MEGA_MAX_DEPTH = 4;</code></p><p class="api-src">src/hobject.c3:3992:12</p></div>
+<div class="api-item" id="MODULE_BINDING_ENV_SLOT"><p class="api-sig"><code>const char[] MODULE_BINDING_ENV_SLOT = moduleBindingEnv;</code></p><p class="api-src">src/hobject.c3:4178:14</p></div>
+<div class="api-item" id="MODULE_BINDING_KEY_SLOT"><p class="api-sig"><code>const char[] MODULE_BINDING_KEY_SLOT = moduleBindingKey;</code></p><p class="api-src">src/hobject.c3:4179:14</p></div>
+<div class="api-item" id="module_getter_index"><p class="api-sig"><code>int module_getter_index = -1;</code></p><p class="api-src">src/hobject.c3:4177:12</p></div>
+<div class="api-item" id="OBJ_SIZE_ARGS"><p class="api-sig"><code>const usz OBJ_SIZE_ARGS = 104;</code></p><p class="api-src">src/hobject.c3:1169:11</p></div>
+<div class="api-item" id="OBJ_SIZE_ARRAY"><p class="api-sig"><code>const usz OBJ_SIZE_ARRAY = 64;</code></p><p class="api-src">src/hobject.c3:1162:11</p></div>
+<div class="api-item" id="OBJ_SIZE_ARRAYBUFFER"><p class="api-sig"><code>const usz OBJ_SIZE_ARRAYBUFFER = 120;</code></p><p class="api-src">src/hobject.c3:1175:11</p></div>
+<div class="api-item" id="OBJ_SIZE_BIG"><p class="api-sig"><code>const usz OBJ_SIZE_BIG = 192;</code></p><p class="api-src">src/hobject.c3:1200:11</p></div>
+<div class="api-item" id="OBJ_SIZE_COLL"><p class="api-sig"><code>const usz OBJ_SIZE_COLL = 96;</code></p><p class="api-src">src/hobject.c3:1181:11</p></div>
+<div class="api-item" id="OBJ_SIZE_COMPACT"><p class="api-sig"><code>const usz OBJ_SIZE_COMPACT = 72;</code></p><p class="api-src">src/hobject.c3:1160:11</p></div>
+<div class="api-item" id="OBJ_SIZE_ERROR"><p class="api-sig"><code>const usz OBJ_SIZE_ERROR = 96;</code></p><p class="api-src">src/hobject.c3:1172:11</p></div>
+<div class="api-item" id="OBJ_SIZE_FUNCTION"><p class="api-sig"><code>const usz OBJ_SIZE_FUNCTION = 176;</code></p><p class="api-src">src/hobject.c3:1190:11</p></div>
+<div class="api-item" id="OBJ_SIZE_GENERATOR"><p class="api-sig"><code>const usz OBJ_SIZE_GENERATOR = 120;</code></p><p class="api-src">src/hobject.c3:1174:11</p></div>
+<div class="api-item" id="OBJ_SIZE_GS"><p class="api-sig"><code>const usz OBJ_SIZE_GS = 72;</code></p><p class="api-src">src/hobject.c3:1170:11</p></div>
+<div class="api-item" id="OBJ_SIZE_HOST"><p class="api-sig"><code>const usz OBJ_SIZE_HOST = 104;</code></p><p class="api-src">src/hobject.c3:1177:11</p></div>
+<div class="api-item" id="OBJ_SIZE_ITER"><p class="api-sig"><code>const usz OBJ_SIZE_ITER = 104;</code></p><p class="api-src">src/hobject.c3:1179:11</p></div>
+<div class="api-item" id="OBJ_SIZE_ITER_HELPER"><p class="api-sig"><code>const usz OBJ_SIZE_ITER_HELPER = 176;</code></p><p class="api-src">src/hobject.c3:1195:11</p></div>
+<div class="api-item" id="OBJ_SIZE_PLAIN"><p class="api-sig"><code>const usz OBJ_SIZE_PLAIN = 88;</code></p><p class="api-src">src/hobject.c3:1159:11</p></div>
+<div class="api-item" id="OBJ_SIZE_PRIM"><p class="api-sig"><code>const usz OBJ_SIZE_PRIM = 96;</code></p><p class="api-src">src/hobject.c3:1173:11</p></div>
+<div class="api-item" id="OBJ_SIZE_PROMISE"><p class="api-sig"><code>const usz OBJ_SIZE_PROMISE = 128;</code></p><p class="api-src">src/hobject.c3:1184:11</p></div>
+<div class="api-item" id="OBJ_SIZE_REGEXP"><p class="api-sig"><code>const usz OBJ_SIZE_REGEXP = 112;</code></p><p class="api-src">src/hobject.c3:1182:11</p></div>
+<div class="api-item" id="OBJ_SIZE_REGEXP_ITER"><p class="api-sig"><code>const usz OBJ_SIZE_REGEXP_ITER = 112;</code></p><p class="api-src">src/hobject.c3:1183:11</p></div>
+<div class="api-item" id="OBJ_SIZE_SMALL"><p class="api-sig"><code>const usz OBJ_SIZE_SMALL = 136;</code></p><p class="api-src">src/hobject.c3:1199:11</p></div>
+<div class="api-item" id="OBJ_SIZE_STR_ITER"><p class="api-sig"><code>const usz OBJ_SIZE_STR_ITER = 104;</code></p><p class="api-src">src/hobject.c3:1180:11</p></div>
+<div class="api-item" id="OBJ_SIZE_TEMPORAL"><p class="api-sig"><code>const usz OBJ_SIZE_TEMPORAL = 192;</code></p><p class="api-src">src/hobject.c3:1196:11</p></div>
+<div class="api-item" id="OBJ_SIZE_VIEW"><p class="api-sig"><code>const usz OBJ_SIZE_VIEW = 120;</code></p><p class="api-src">src/hobject.c3:1176:11</p></div>
+<div class="api-item" id="OBJ_SIZE_WRAP_ITER"><p class="api-sig"><code>const usz OBJ_SIZE_WRAP_ITER = 104;</code></p><p class="api-src">src/hobject.c3:1178:11</p></div>
+<div class="api-item" id="opprof_dict_class"><p class="api-sig"><code>ulong[64] opprof_dict_class;</code></p><p class="api-src">src/hobject.c3:384:18</p></div>
+<div class="api-item" id="opprof_epoch"><p class="api-sig"><code>ulong[3] opprof_epoch;</code></p><p class="api-src">src/hobject.c3:381:17</p></div>
+<div class="api-item" id="opprof_private_class"><p class="api-sig"><code>ulong[64] opprof_private_class;</code></p><p class="api-src">src/hobject.c3:383:18</p></div>
+<div class="api-item" id="opprof_shape_site"><p class="api-sig"><code>ulong[8] opprof_shape_site;</code></p><p class="api-src">src/hobject.c3:382:17</p></div>
+<div class="api-item" id="PRIVATE_SHAPE_PARENT"><p class="api-sig"><code>const uint PRIVATE_SHAPE_PARENT = 4294967295;</code></p><p class="api-src">src/hobject.c3:166:12</p></div>
+<div class="api-item" id="PROMISE_FULFILLED"><p class="api-sig"><code>const uint PROMISE_FULFILLED = 1;</code></p><p class="api-src">src/hobject.c3:771:12</p></div>
+<div class="api-item" id="PROMISE_PENDING"><p class="api-sig"><code>const uint PROMISE_PENDING = 0;</code></p><p class="api-src">src/hobject.c3:770:12</p></div>
+<div class="api-item" id="PROMISE_REJECTED"><p class="api-sig"><code>const uint PROMISE_REJECTED = 2;</code></p><p class="api-src">src/hobject.c3:772:12</p></div>
+<div class="api-item" id="PROP_FLAGS_ACCESSOR"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_ACCESSOR = { .writable = false, .enumerable = true, .configurable = true, .is_accessor = true };</code></p><p class="api-src">src/hobject.c3:481:17</p></div>
+<div class="api-item" id="PROP_FLAGS_CLASS_ACCESSOR"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_CLASS_ACCESSOR = { .writable = false, .enumerable = false, .configurable = true, .is_accessor = true };</code></p><p class="api-src">src/hobject.c3:490:17</p></div>
+<div class="api-item" id="PROP_FLAGS_CLASS_METHOD"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_CLASS_METHOD = { .writable = true, .enumerable = false, .configurable = true, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:499:17</p></div>
+<div class="api-item" id="PROP_FLAGS_EC"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_EC = { .writable = false, .enumerable = true, .configurable = true, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:450:17</p></div>
+<div class="api-item" id="PROP_FLAGS_NEC"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_NEC = { .writable = true, .enumerable = true, .configurable = false, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:534:17</p></div>
+<div class="api-item" id="PROP_FLAGS_NNC"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_NNC = { .writable = false, .enumerable = false, .configurable = false, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:526:17</p></div>
+<div class="api-item" id="PROP_FLAGS_NWC"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_NWC = { .writable = false, .enumerable = false, .configurable = true, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:518:17</p></div>
+<div class="api-item" id="PROP_FLAGS_PRIVATE_ACCESSOR"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_PRIVATE_ACCESSOR = { .writable = false, .enumerable = false, .configurable = false, .is_accessor = true };</code></p><p class="api-src">src/hobject.c3:509:17</p></div>
+<div class="api-item" id="PROP_FLAGS_WC"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_WC = { .writable = true, .enumerable = false, .configurable = true, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:441:17</p></div>
+<div class="api-item" id="PROP_FLAGS_WE"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_WE = { .writable = true, .enumerable = true, .configurable = false, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:462:17</p></div>
+<div class="api-item" id="PROP_FLAGS_WEC"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_WEC = { .writable = true, .enumerable = true, .configurable = true, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:432:17</p></div>
+<div class="api-item" id="PROP_FLAGS_WENC"><p class="api-sig"><code>const <a href="#PropFlags">PropFlags</a> PROP_FLAGS_WENC = { .writable = true, .enumerable = false, .configurable = false, .is_accessor = false };</code></p><p class="api-src">src/hobject.c3:472:17</p></div>
+<div class="api-item" id="PROPS_GROW_DEN"><p class="api-sig"><code>const uint PROPS_GROW_DEN = 2;</code></p><p class="api-src">src/hobject.c3:144:12</p></div>
+<div class="api-item" id="PROPS_GROW_NUM"><p class="api-sig"><code>const uint PROPS_GROW_NUM = 3;</code></p><p class="api-src">src/hobject.c3:143:12</p></div>
+<div class="api-item" id="PROPS_INITIAL_CAPACITY"><p class="api-sig"><code>const uint PROPS_INITIAL_CAPACITY = 8;</code></p><p class="api-src">src/hobject.c3:138:12</p></div>
+<div class="api-item" id="RETRANSITION_MAX_PROPS"><p class="api-sig"><code>const uint RETRANSITION_MAX_PROPS = 16;</code></p><p class="api-src">src/hobject.c3:1804:12</p></div>
+<div class="api-item" id="SHAPED_INLINE_MAX_PROPS"><p class="api-sig"><code>const uint SHAPED_INLINE_MAX_PROPS = 8;</code></p><p class="api-src">src/hobject.c3:135:12</p></div>
+<div class="api-item" id="SHAPED_INLINE_POOL_COUNT"><p class="api-sig"><code>const uint SHAPED_INLINE_POOL_COUNT = 4;</code></p><p class="api-src">src/hobject.c3:136:12</p></div>
+<div class="api-item" id="VAR_IC_NO_REARM"><p class="api-sig"><code>const char VAR_IC_NO_REARM = 255;</code></p><p class="api-src">src/hobject.c3:4137:12</p></div>
+<div class="api-item" id="VAR_IC_REARM_MAX"><p class="api-sig"><code>const uint VAR_IC_REARM_MAX = 4;</code></p><p class="api-src">src/hobject.c3:4138:12</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="alloc_size_for_class"><p class="api-sig"><code>fn usz alloc_size_for_class(<a href="#ObjClass">ObjClass</a> cls) @inline</code></p><p class="api-src">src/hobject.c3:1224:8</p></div>
+<div class="api-item" id="assert_union_max"><p class="api-sig"><code>fn void assert_union_max()</code></p><p class="api-src">src/hobject.c3:1065:9</p></div>
+<div class="api-item" id="dense_index_ok"><p class="api-sig"><code>fn bool dense_index_ok(uint cur_size, uint idx)</code></p><p class="api-src">src/hobject.c3:2155:9</p></div>
+<div class="api-item" id="env_pool_align_epoch"><p class="api-sig"><code>fn void env_pool_align_epoch(<a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:68:9</p></div>
+<div class="api-item" id="env_pool_contains"><p class="api-sig"><code>fn bool env_pool_contains(<a href="boomkat-heap.html#Heap">Heap*</a> h, void* env_ptr)</code></p><p class="api-src">src/hobject.c3:58:9</p></div>
+<div class="api-item" id="env_pool_mark_slice"><p class="api-sig"><code>fn bool env_pool_mark_slice(<a href="boomkat-heap.html#Heap">Heap*</a> h, uint budget)</code></p><p class="api-src">src/hobject.c3:83:9</p></div>
+<div class="api-item" id="env_pool_seed_or_clear_pins"><p class="api-sig"><code>fn void env_pool_seed_or_clear_pins(<a href="boomkat-heap.html#Heap">Heap*</a> h, bool clear_pins)</code></p><p class="api-src">src/hobject.c3:64:9</p></div>
+<div class="api-item" id="env_pool_sweep"><p class="api-sig"><code>fn void env_pool_sweep(<a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:75:9</p></div>
+<div class="api-item" id="env_pool_sweep_slice"><p class="api-sig"><code>fn bool env_pool_sweep_slice(<a href="boomkat-heap.html#Heap">Heap*</a> h, uint budget)</code></p><p class="api-src">src/hobject.c3:79:9</p></div>
+<div class="api-item" id="env_pool_teardown"><p class="api-sig"><code>fn void env_pool_teardown(<a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:52:9</p></div>
+<div class="api-item" id="env_record_bindings"><p class="api-sig"><code>fn <a href="#HObject">HObject*</a> env_record_bindings(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:36:13</p></div>
+<div class="api-item" id="env_record_clear_temproot"><p class="api-sig"><code>fn void env_record_clear_temproot(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:106:9</p></div>
+<div class="api-item" id="env_record_get_epoch"><p class="api-sig"><code>fn bool env_record_get_epoch(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:94:9</p></div>
+<div class="api-item" id="env_record_gray_next"><p class="api-sig"><code>fn void* env_record_gray_next(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:110:10</p></div>
+<div class="api-item" id="env_record_gray_queued"><p class="api-sig"><code>fn bool env_record_gray_queued(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:118:9</p></div>
+<div class="api-item" id="env_record_is_allocated"><p class="api-sig"><code>fn bool env_record_is_allocated(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:90:9</p></div>
+<div class="api-item" id="env_record_is_temproot"><p class="api-sig"><code>fn bool env_record_is_temproot(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:102:9</p></div>
+<div class="api-item" id="env_record_parent"><p class="api-sig"><code>fn void* env_record_parent(void* env_ptr)</code></p><p class="api-src">src/hobject.c3:44:10</p></div>
+<div class="api-item" id="env_record_set_epoch"><p class="api-sig"><code>fn void env_record_set_epoch(void* env_ptr, bool epoch)</code></p><p class="api-src">src/hobject.c3:98:9</p></div>
+<div class="api-item" id="env_record_set_gray_next"><p class="api-sig"><code>fn void env_record_set_gray_next(void* env_ptr, void* next)</code></p><p class="api-src">src/hobject.c3:114:9</p></div>
+<div class="api-item" id="env_record_set_gray_queued"><p class="api-sig"><code>fn void env_record_set_gray_queued(void* env_ptr, bool queued)</code></p><p class="api-src">src/hobject.c3:122:9</p></div>
+<div class="api-item" id="fill_undefined"><p class="api-sig"><code>fn void fill_undefined(<a href="#PropValue">PropValue*</a> slots, uint count) @inline</code></p><p class="api-src">src/hobject.c3:2827:9</p></div>
+<div class="api-item" id="force_deferred_ns_on_chain"><p class="api-sig"><code>fn bool force_deferred_ns_on_chain(<a href="#HObject">HObject*</a> cur, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:4263:9</p></div>
+<div class="api-item" id="free_block"><p class="api-sig"><code>fn void free_block(<a href="boomkat-heap.html#Heap">Heap*</a> hp, void* p)</code></p><p class="api-src">src/hobject.c3:2937:9</p></div>
+<div class="api-item" id="hash_key"><p class="api-sig"><code>fn uint hash_key(void* key) @inline</code></p><p class="api-src">src/hobject.c3:1615:9</p></div>
+<div class="api-item" id="hash_table_insert"><p class="api-sig"><code>fn void hash_table_insert(<a href="#HashEntry">HashEntry*</a> entries, uint mask, void* key, uint index) @inline</code></p><p class="api-src">src/hobject.c3:1639:9</p></div>
+<div class="api-item" id="hash_table_probe"><p class="api-sig"><code>fn int hash_table_probe(<a href="#HashEntry">HashEntry*</a> entries, uint mask, void* key) @inline</code></p><p class="api-src">src/hobject.c3:1910:8</p></div>
+<div class="api-item" id="hobject_access_getter"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal</a> hobject_access_getter(<a href="boomkat-types.html#TVal">TVal</a> slot)</code></p><p class="api-src">src/hobject.c3:632:9</p></div>
+<div class="api-item" id="hobject_access_setter"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal</a> hobject_access_setter(<a href="boomkat-types.html#TVal">TVal</a> slot)</code></p><p class="api-src">src/hobject.c3:638:9</p></div>
+<div class="api-item" id="hobject_alloc"><p class="api-sig"><code>fn <a href="#HObject">HObject*?</a> hobject_alloc(void* heap_ptr, <a href="#ObjClass">ObjClass</a> cls)</code></p><p class="api-src">src/hobject.c3:2867:14</p></div>
+<div class="api-item" id="hobject_create_accessors"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal</a> hobject_create_accessors(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-types.html#TVal">TVal</a> getter, <a href="boomkat-types.html#TVal">TVal</a> setter)</code></p><p class="api-src">src/hobject.c3:621:9</p></div>
+<div class="api-item" id="hobject_free"><p class="api-sig"><code>fn void hobject_free(<a href="#HObject">HObject*</a> obj, void* heap_ptr, bool free_header)</code></p><p class="api-src">src/hobject.c3:3224:9</p></div>
+<div class="api-item" id="hobject_free_header"><p class="api-sig"><code>fn void hobject_free_header(<a href="#HObject">HObject*</a> obj, void* heap_ptr)</code></p><p class="api-src">src/hobject.c3:3233:9</p></div>
+<div class="api-item" id="hobject_free_impl"><p class="api-sig"><code>fn void hobject_free_impl(<a href="#HObject">HObject*</a> obj, void* heap_ptr, bool free_header, bool slots_released)</code></p><p class="api-src">src/hobject.c3:2951:9</p></div>
+<div class="api-item" id="hobject_free_step"><p class="api-sig"><code>fn bool hobject_free_step(<a href="#HObject">HObject*</a> obj, void* heap_ptr, usz* cursor, uint budget)</code></p><p class="api-src">src/hobject.c3:3135:9</p></div>
+<div class="api-item" id="hobject_release_inline"><p class="api-sig"><code>fn bool hobject_release_inline(<a href="#HObject">HObject*</a> obj, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:3172:9</p></div>
+<div class="api-item" id="hobject_set_access_getter"><p class="api-sig"><code>fn void hobject_set_access_getter(<a href="boomkat-types.html#TVal">TVal</a> slot, <a href="boomkat-types.html#TVal">TVal</a> new_getter, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:644:9</p></div>
+<div class="api-item" id="hobject_set_access_setter"><p class="api-sig"><code>fn void hobject_set_access_setter(<a href="boomkat-types.html#TVal">TVal</a> slot, <a href="boomkat-types.html#TVal">TVal</a> new_setter, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:650:9</p></div>
+<div class="api-item" id="ic_cached_proto"><p class="api-sig"><code>fn <a href="#HObject">HObject*</a> ic_cached_proto(<a href="#ICEntry">ICEntry*</a> ic)</code></p><p class="api-src">src/hobject.c3:3710:13</p></div>
+<div class="api-item" id="ic_fill_absent_put"><p class="api-sig"><code>fn bool ic_fill_absent_put(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> receiver, void* key, uint receiver_shape_id, uint next_shape_id, uint recycle_epoch, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3853:9</p></div>
+<div class="api-item" id="ic_fill_declare"><p class="api-sig"><code>fn void ic_fill_declare(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> bindings, void* key, uint from_shape, uint to_shape, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3835:9</p></div>
+<div class="api-item" id="ic_fill_missing_read"><p class="api-sig"><code>fn bool ic_fill_missing_read(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> receiver, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3777:9</p></div>
+<div class="api-item" id="ic_matches_absent_chain"><p class="api-sig"><code>fn bool ic_matches_absent_chain(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> prototype) @inline</code></p><p class="api-src">src/hobject.c3:3747:9</p></div>
+<div class="api-item" id="ic_matches_absent_put"><p class="api-sig"><code>fn bool ic_matches_absent_put(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> receiver, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:3733:9</p></div>
+<div class="api-item" id="ic_matches_missing_read"><p class="api-sig"><code>fn bool ic_matches_missing_read(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> receiver, void* key, <a href="boomkat-heap.html#Heap">Heap*</a> h) @inline</code></p><p class="api-src">src/hobject.c3:3767:9</p></div>
+<div class="api-item" id="ic_poly_add"><p class="api-sig"><code>fn bool ic_poly_add(<a href="#ICEntry">ICEntry*</a> ic, uint shape_id, uint prop_idx, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3686:9</p></div>
+<div class="api-item" id="ic_poly_slot"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> ic_poly_slot(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> hobj) @inline</code></p><p class="api-src">src/hobject.c3:3673:15</p></div>
+<div class="api-item" id="ic_reserve_chain"><p class="api-sig"><code>fn bool ic_reserve_chain(<a href="#ICEntry">ICEntry*</a> ic, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3704:9</p></div>
+<div class="api-item" id="ic_resolve_owner"><p class="api-sig"><code>fn <a href="#HObject">HObject*</a> ic_resolve_owner(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> hobj) @inline</code></p><p class="api-src">src/hobject.c3:3920:13</p></div>
+<div class="api-item" id="ic_resolve_slot"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> ic_resolve_slot(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> hobj) @inline</code></p><p class="api-src">src/hobject.c3:3939:15</p></div>
+<div class="api-item" id="ic_resolve_value"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> ic_resolve_value(<a href="#ICEntry">ICEntry*</a> ic, <a href="#HObject">HObject*</a> hobj) @inline</code></p><p class="api-src">src/hobject.c3:3950:15</p></div>
+<div class="api-item" id="inline_words_for_class"><p class="api-sig"><code>fn uint inline_words_for_class(<a href="#ObjClass">ObjClass</a> cls) @inline</code></p><p class="api-src">src/hobject.c3:1438:9</p></div>
+<div class="api-item" id="json_shape_plan_release"><p class="api-sig"><code>fn void json_shape_plan_release(<a href="#JsonShapePlan">JsonShapePlan*</a> plan, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3386:9</p></div>
+<div class="api-item" id="mega_cache_lookup"><p class="api-sig"><code>fn <a href="#PropValue">PropValue*</a> mega_cache_lookup(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#HObject">HObject*</a> hobj, void* key, <a href="#MegamorphicEntry">MegamorphicEntry**</a> entry) @inline</code></p><p class="api-src">src/hobject.c3:4006:15</p></div>
+<div class="api-item" id="mega_cache_store"><p class="api-sig"><code>fn void mega_cache_store(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#HObject">HObject*</a> hobj, void* key, <a href="#HObject">HObject*</a> owner, int prop_idx, bool is_accessor) @inline</code></p><p class="api-src">src/hobject.c3:4036:9</p></div>
+<div class="api-item" id="mega_hash"><p class="api-sig"><code>fn uint mega_hash(uint shape_id, void* key) @inline</code></p><p class="api-src">src/hobject.c3:3994:9</p></div>
+<div class="api-item" id="mega_hash_proto"><p class="api-sig"><code>fn uint mega_hash_proto(uint shape_id, void* key, void* proto)</code></p><p class="api-src">src/hobject.c3:3999:9</p></div>
+<div class="api-item" id="mega_observe_chain"><p class="api-sig"><code>fn bool mega_observe_chain(<a href="#HObject">HObject*</a> hobj, void* key, <a href="#HObject">HObject*</a> owner) @noinline</code></p><p class="api-src">src/hobject.c3:4064:9</p></div>
+<div class="api-item" id="own_key_shape_plan_release"><p class="api-sig"><code>fn void own_key_shape_plan_release(<a href="#OwnKeyShapePlan">OwnKeyShapePlan*</a> plan, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3403:9</p></div>
+<div class="api-item" id="owns_nothing"><p class="api-sig"><code>fn bool owns_nothing(<a href="#HObject">HObject*</a> obj, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3196:9</p></div>
+<div class="api-item" id="plain_object_pool"><p class="api-sig"><code>fn <a href="boomkat-pagepool.html#ObjectPool">ObjectPool*</a> plain_object_pool(<a href="boomkat-heap.html#Heap">Heap*</a> h, bool compact, uint shaped) @inline</code></p><p class="api-src">src/hobject.c3:2850:26</p></div>
+<div class="api-item" id="plain_property_object"><p class="api-sig"><code>fn bool plain_property_object(<a href="#HObject">HObject*</a> obj) @inline</code></p><p class="api-src">src/hobject.c3:3719:9</p></div>
+<div class="api-item" id="pool_for_class"><p class="api-sig"><code>fn <a href="boomkat-pagepool.html#ObjectPool">ObjectPool*</a> pool_for_class(void* heap_ptr, <a href="#ObjClass">ObjClass</a> cls) @inline</code></p><p class="api-src">src/hobject.c3:1351:26</p></div>
+<div class="api-item" id="prop_hash_mask_for"><p class="api-sig"><code>fn uint prop_hash_mask_for(uint prop_count) @inline</code></p><p class="api-src">src/hobject.c3:1630:9</p></div>
+<div class="api-item" id="proto_chain_index_free"><p class="api-sig"><code>fn bool proto_chain_index_free(<a href="#HObject">HObject*</a> proto)</code></p><p class="api-src">src/hobject.c3:2059:9</p></div>
+<div class="api-item" id="release_slots"><p class="api-sig"><code>fn void release_slots(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#PropValue">PropValue*</a> slots, usz count) @inline</code></p><p class="api-src">src/hobject.c3:3217:9</p></div>
+<div class="api-item" id="shape_alloc_size"><p class="api-sig"><code>fn usz shape_alloc_size(uint own_count)</code></p><p class="api-src">src/hobject.c3:3471:8</p></div>
+<div class="api-item" id="shape_build_hash"><p class="api-sig"><code>fn void shape_build_hash(<a href="#Shape">Shape*</a> leaf, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3555:9</p></div>
+<div class="api-item" id="shape_create"><p class="api-sig"><code>fn <a href="#Shape">Shape*</a> shape_create(uint own_count, uint offset, uint parent_id, <a href="#Shape">Shape*</a> parent_shape, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3480:11</p></div>
+<div class="api-item" id="shape_dict_push"><p class="api-sig"><code>fn <a href="#Shape">Shape*</a> shape_dict_push(<a href="#Shape">Shape*</a> sh, void* key, <a href="#PropFlags">PropFlags</a> flags, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3532:11</p></div>
+<div class="api-item" id="shape_extend"><p class="api-sig"><code>fn <a href="#Shape">Shape*</a> shape_extend(<a href="#Shape">Shape*</a> parent, uint parent_id, void* new_key, <a href="#PropFlags">PropFlags</a> flags, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3499:11</p></div>
+<div class="api-item" id="shape_flatten"><p class="api-sig"><code>fn <a href="#Shape">Shape*</a> shape_flatten(<a href="#Shape">Shape*</a> src, uint capacity, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3512:11</p></div>
+<div class="api-item" id="shape_free"><p class="api-sig"><code>fn void shape_free(<a href="#Shape">Shape*</a> sh, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:3576:9</p></div>
+<div class="api-item" id="uses_default_has_instance"><p class="api-sig"><code>fn bool uses_default_has_instance(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#HObject">HObject*</a> rfunc)</code></p><p class="api-src">src/hobject.c3:4083:9</p></div>
+<div class="api-item" id="var_ic_alias_import"><p class="api-sig"><code>fn void var_ic_alias_import(<a href="#VarICEntry">VarICEntry*</a> vic, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:4187:9</p></div>
+<div class="api-item" id="var_ic_clear"><p class="api-sig"><code>fn void var_ic_clear(<a href="#VarICEntry">VarICEntry*</a> vic)</code></p><p class="api-src">src/hobject.c3:4225:9</p></div>
+<div class="api-item" id="var_ic_fill"><p class="api-sig"><code>fn void var_ic_fill(<a href="#VarICEntry">VarICEntry*</a> vic, void* env, void* bindings, uint shape_id, uint prop_idx, void* search_head, bool store_ok, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/hobject.c3:4152:9</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="inline_array_alloc_size"><p class="api-sig"><code>macro usz inline_array_alloc_size(uint capacity)</code></p><p class="api-src">src/hobject.c3:1168:11</p></div>
+<div class="api-item" id="inline_object_alloc_size"><p class="api-sig"><code>macro usz inline_object_alloc_size(uint capacity)</code></p><p class="api-src">src/hobject.c3:1161:11</p></div>
+<div class="api-item" id="obj_size_for"><p class="api-sig"><code>macro usz obj_size_for($Payload)</code></p><p class="api-src">src/hobject.c3:1155:11</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

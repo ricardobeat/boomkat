@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::embed::abi · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html" aria-current="page">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::embed::abi</code></h1>
+      <p class="lede">0 types, 0 functions and macros, 0 methods, 27 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="BK_ERR_ENCODING"><p class="api-sig"><code>const int BK_ERR_ENCODING = -9;</code></p><p class="api-src">src/embed/abi.c3:23:11</p></div>
+<div class="api-item" id="BK_ERR_FULL"><p class="api-sig"><code>const int BK_ERR_FULL = -7;</code></p><p class="api-src">src/embed/abi.c3:21:11</p></div>
+<div class="api-item" id="BK_ERR_INTERNAL"><p class="api-sig"><code>const int BK_ERR_INTERNAL = -4;</code></p><p class="api-src">src/embed/abi.c3:18:11</p></div>
+<div class="api-item" id="BK_ERR_INTERRUPT"><p class="api-sig"><code>const int BK_ERR_INTERRUPT = -8;</code></p><p class="api-src">src/embed/abi.c3:22:11</p></div>
+<div class="api-item" id="BK_ERR_INVALID"><p class="api-sig"><code>const int BK_ERR_INVALID = -5;</code></p><p class="api-src">src/embed/abi.c3:19:11</p></div>
+<div class="api-item" id="BK_ERR_NOMEM"><p class="api-sig"><code>const int BK_ERR_NOMEM = -1;</code></p><p class="api-src">src/embed/abi.c3:15:11</p></div>
+<div class="api-item" id="BK_ERR_SYNTAX"><p class="api-sig"><code>const int BK_ERR_SYNTAX = -2;</code></p><p class="api-src">src/embed/abi.c3:16:11</p></div>
+<div class="api-item" id="BK_ERR_THROW"><p class="api-sig"><code>const int BK_ERR_THROW = -3;</code></p><p class="api-src">src/embed/abi.c3:17:11</p></div>
+<div class="api-item" id="BK_ERR_TYPE"><p class="api-sig"><code>const int BK_ERR_TYPE = -6;</code></p><p class="api-src">src/embed/abi.c3:20:11</p></div>
+<div class="api-item" id="BK_ERR_UNSUPPORTED"><p class="api-sig"><code>const int BK_ERR_UNSUPPORTED = -10;</code></p><p class="api-src">src/embed/abi.c3:24:11</p></div>
+<div class="api-item" id="BK_ERROR"><p class="api-sig"><code>const int BK_ERROR = 0;</code></p><p class="api-src">src/embed/abi.c3:42:11</p></div>
+<div class="api-item" id="BK_ERROR_RANGE"><p class="api-sig"><code>const int BK_ERROR_RANGE = 2;</code></p><p class="api-src">src/embed/abi.c3:44:11</p></div>
+<div class="api-item" id="BK_ERROR_REFERENCE"><p class="api-sig"><code>const int BK_ERROR_REFERENCE = 3;</code></p><p class="api-src">src/embed/abi.c3:45:11</p></div>
+<div class="api-item" id="BK_ERROR_SYNTAX"><p class="api-sig"><code>const int BK_ERROR_SYNTAX = 4;</code></p><p class="api-src">src/embed/abi.c3:46:11</p></div>
+<div class="api-item" id="BK_ERROR_TYPE"><p class="api-sig"><code>const int BK_ERROR_TYPE = 1;</code></p><p class="api-src">src/embed/abi.c3:43:11</p></div>
+<div class="api-item" id="BK_OK"><p class="api-sig"><code>const int BK_OK = 0;</code></p><p class="api-src">src/embed/abi.c3:14:11</p></div>
+<div class="api-item" id="BK_TYPE_BIGINT"><p class="api-sig"><code>const int BK_TYPE_BIGINT = 8;</code></p><p class="api-src">src/embed/abi.c3:35:11</p></div>
+<div class="api-item" id="BK_TYPE_BOOLEAN"><p class="api-sig"><code>const int BK_TYPE_BOOLEAN = 2;</code></p><p class="api-src">src/embed/abi.c3:29:11</p></div>
+<div class="api-item" id="BK_TYPE_FUNCTION"><p class="api-sig"><code>const int BK_TYPE_FUNCTION = 6;</code></p><p class="api-src">src/embed/abi.c3:33:11</p></div>
+<div class="api-item" id="BK_TYPE_NULL"><p class="api-sig"><code>const int BK_TYPE_NULL = 1;</code></p><p class="api-src">src/embed/abi.c3:28:11</p></div>
+<div class="api-item" id="BK_TYPE_NUMBER"><p class="api-sig"><code>const int BK_TYPE_NUMBER = 3;</code></p><p class="api-src">src/embed/abi.c3:30:11</p></div>
+<div class="api-item" id="BK_TYPE_OBJECT"><p class="api-sig"><code>const int BK_TYPE_OBJECT = 5;</code></p><p class="api-src">src/embed/abi.c3:32:11</p></div>
+<div class="api-item" id="BK_TYPE_STRING"><p class="api-sig"><code>const int BK_TYPE_STRING = 4;</code></p><p class="api-src">src/embed/abi.c3:31:11</p></div>
+<div class="api-item" id="BK_TYPE_SYMBOL"><p class="api-sig"><code>const int BK_TYPE_SYMBOL = 7;</code></p><p class="api-src">src/embed/abi.c3:34:11</p></div>
+<div class="api-item" id="BK_TYPE_UNDEFINED"><p class="api-sig"><code>const int BK_TYPE_UNDEFINED = 0;</code></p><p class="api-src">src/embed/abi.c3:27:11</p></div>
+<div class="api-item" id="BK_UTF8_REPLACE"><p class="api-sig"><code>const int BK_UTF8_REPLACE = 0;</code></p><p class="api-src">src/embed/abi.c3:38:11</p></div>
+<div class="api-item" id="BK_UTF8_STRICT"><p class="api-sig"><code>const int BK_UTF8_STRICT = 1;</code></p><p class="api-src">src/embed/abi.c3:39:11</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -317,6 +317,21 @@ thead th {
   max-width: 68ch;
 }
 
+.api-item pre {
+  margin: 0 0 4px;
+}
+
+.api-src {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.ref-sidebar a[aria-current="page"] {
+  color: var(--accent);
+  background: var(--dither-soft);
+}
+
 .note {
   margin: 16px 0;
   padding: 10px 14px;

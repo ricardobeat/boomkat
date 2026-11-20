@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::image · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html" aria-current="page">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::image</code></h1>
+      <p class="lede">6 types, 3 functions and macros, 18 methods, 8 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="IMAGE_NOMEM"><pre><code>faultdef IMAGE_NOMEM</code></pre><p class="api-src">src/bytecode_image.c3:12:25</p></div>
+<div class="api-item" id="INVALID_IMAGE"><pre><code>faultdef INVALID_IMAGE</code></pre><p class="api-src">src/bytecode_image.c3:12:10</p></div>
+<div class="api-item" id="ModuleDecl"><pre><code>struct ModuleDecl {
+  char[] name;
+  <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> template;
+}</code></pre><p class="api-src">src/bytecode_image.c3:42:8</p></div>
+<div class="api-item" id="Reader"><pre><code>struct Reader {
+  char[] bytes;
+  usz offset;
+  <a href="boomkat-heap.html#Heap">Heap*</a> heap;
+  <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction**</a> functions;
+  uint function_count;
+}</code></pre><p class="api-src">src/bytecode_image.c3:211:8</p></div>
+<div class="api-item" id="Reader.array"><p class="api-sig"><code>fn void*? Reader.array(<a href="#Reader">Reader*</a> self, uint count, usz element_size)</code></p><p class="api-src">src/bytecode_image.c3:266:18</p></div>
+<div class="api-item" id="Reader.count"><p class="api-sig"><code>fn uint? Reader.count(<a href="#Reader">Reader*</a> self, uint min_bytes)</code></p><p class="api-src">src/bytecode_image.c3:274:17</p></div>
+<div class="api-item" id="Reader.function_ref"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> Reader.function_ref(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:279:30</p></div>
+<div class="api-item" id="Reader.hstring"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*?</a> Reader.hstring(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:236:21</p></div>
+<div class="api-item" id="Reader.literal_shape"><p class="api-sig"><code>fn uint? Reader.literal_shape(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:299:17</p></div>
+<div class="api-item" id="Reader.owned_text"><p class="api-sig"><code>fn char*? Reader.owned_text(<a href="#Reader">Reader*</a> self, uint* len)</code></p><p class="api-src">src/bytecode_image.c3:258:18</p></div>
+<div class="api-item" id="Reader.short_word"><p class="api-sig"><code>fn ushort? Reader.short_word(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:291:19</p></div>
+<div class="api-item" id="Reader.string_ref"><p class="api-sig"><code>fn void*? Reader.string_ref(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:285:18</p></div>
+<div class="api-item" id="Reader.text"><p class="api-sig"><code>fn char[]? Reader.text(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:229:19</p></div>
+<div class="api-item" id="Reader.wide"><p class="api-sig"><code>fn ulong? Reader.wide(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:224:18</p></div>
+<div class="api-item" id="Reader.word"><p class="api-sig"><code>fn uint? Reader.word(<a href="#Reader">Reader*</a> self)</code></p><p class="api-src">src/bytecode_image.c3:218:17</p></div>
+<div class="api-item" id="UNSUPPORTED_CONSTANT"><pre><code>faultdef UNSUPPORTED_CONSTANT</code></pre><p class="api-src">src/bytecode_image.c3:12:38</p></div>
+<div class="api-item" id="Writer"><pre><code>struct Writer {
+  Vec{char} bytes;
+  Vec{CompiledFunction*} functions;
+}</code></pre><p class="api-src">src/bytecode_image.c3:47:8</p></div>
+<div class="api-item" id="Writer.function_id"><p class="api-sig"><code>fn uint Writer.function_id(<a href="#Writer">Writer*</a> self, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> f)</code></p><p class="api-src">src/bytecode_image.c3:78:16</p></div>
+<div class="api-item" id="Writer.hstring"><p class="api-sig"><code>fn void Writer.hstring(<a href="#Writer">Writer*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> s)</code></p><p class="api-src">src/bytecode_image.c3:65:16</p></div>
+<div class="api-item" id="Writer.literal_shape"><p class="api-sig"><code>fn void? Writer.literal_shape(<a href="#Writer">Writer*</a> self, <a href="boomkat-heap.html#Heap">Heap*</a> heap, uint id)</code></p><p class="api-src">src/bytecode_image.c3:91:17</p></div>
+<div class="api-item" id="Writer.string_ref"><p class="api-sig"><code>fn void Writer.string_ref(<a href="#Writer">Writer*</a> self, void* raw)</code></p><p class="api-src">src/bytecode_image.c3:84:16</p></div>
+<div class="api-item" id="Writer.text"><p class="api-sig"><code>fn void Writer.text(<a href="#Writer">Writer*</a> self, char[] value)</code></p><p class="api-src">src/bytecode_image.c3:59:16</p></div>
+<div class="api-item" id="Writer.wide"><p class="api-sig"><code>fn void Writer.wide(<a href="#Writer">Writer*</a> self, ulong value)</code></p><p class="api-src">src/bytecode_image.c3:55:16</p></div>
+<div class="api-item" id="Writer.word"><p class="api-sig"><code>fn void Writer.word(<a href="#Writer">Writer*</a> self, uint value)</code></p><p class="api-src">src/bytecode_image.c3:52:16</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="CAPABILITIES"><p class="api-sig"><code>const uint CAPABILITIES = 1023;</code></p><p class="api-src">src/bytecode_image.c3:34:12</p></div>
+<div class="api-item" id="MAX_FUNCTIONS"><p class="api-sig"><code>const uint MAX_FUNCTIONS = 65536;</code></p><p class="api-src">src/bytecode_image.c3:17:12</p></div>
+<div class="api-item" id="MAX_IMAGE_BYTES"><p class="api-sig"><code>const uint MAX_IMAGE_BYTES = 67108864;</code></p><p class="api-src">src/bytecode_image.c3:18:12</p></div>
+<div class="api-item" id="NONE"><p class="api-sig"><code>const uint NONE = 4294967295;</code></p><p class="api-src">src/bytecode_image.c3:16:12</p></div>
+<div class="api-item" id="OPCODE_SIGNATURE"><p class="api-sig"><code>const uint OPCODE_SIGNATURE = 440408027;</code></p><p class="api-src">src/bytecode_image.c3:33:12</p></div>
+<div class="api-item" id="TRANSIENT_CALL_FLAGS_MASK"><p class="api-sig"><code>const uint TRANSIENT_CALL_FLAGS_MASK = 64526;</code></p><p class="api-src">src/bytecode_image.c3:20:12</p></div>
+<div class="api-item" id="VERSION"><p class="api-sig"><code>const uint VERSION = 8;</code></p><p class="api-src">src/bytecode_image.c3:14:12</p></div>
+<div class="api-item" id="WIDE_STRING"><p class="api-sig"><code>const uint WIDE_STRING = 2147483648;</code></p><p class="api-src">src/bytecode_image.c3:15:12</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="decode"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> decode(<a href="boomkat-heap.html#Heap">Heap*</a> heap, char[] bytes, Vec{ModuleDecl}* declarations)</code></p><p class="api-src">src/bytecode_image.c3:322:23</p></div>
+<div class="api-item" id="encode"><p class="api-sig"><code>fn char[]? encode(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> root, <a href="#ModuleDecl">ModuleDecl[]</a> declarations)</code></p><p class="api-src">src/bytecode_image.c3:119:12</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="opcode_signature"><p class="api-sig"><code>macro uint opcode_signature() @const</code></p><p class="api-src">src/bytecode_image.c3:23:12</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::pagepool · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html" aria-current="page">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::pagepool</code></h1>
+      <p class="lede">7 types, 6 functions and macros, 28 methods, 6 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="Bitmap"><pre><code>alias Bitmap = ulong[32]</code></pre><p class="api-src">src/pagepool.c3:213:7</p></div>
+<div class="api-item" id="ObjectPool"><pre><code>struct ObjectPool {
+  void* bump;
+  void* limit;
+  sz block_size;
+  <a href="#ObjPage">ObjPage*</a> cur;
+  <a href="#ObjPage">ObjPage*</a> pages;
+  <a href="#PageList">PageList</a> avail;
+  <a href="#PageList">PageList</a> young;
+  <a href="#PageList">PageList</a> full;
+  <a href="#PageList">PageList</a> queued;
+  <a href="#ObjPage">ObjPage*</a> empty;
+  uint empty_count;
+  uint page_count;
+  uint taken;
+  uint capacity;
+  sz end;
+  <a href="#Bitmap">Bitmap</a> starts;
+}</code></pre><p class="api-src">src/pagepool.c3:270:8</p></div>
+<div class="api-item" id="ObjectPool.add_page"><p class="api-sig"><code>fn <a href="#ObjPage">ObjPage*</a> ObjectPool.add_page(<a href="#ObjectPool">ObjectPool*</a> self)</code></p><p class="api-src">src/pagepool.c3:408:24</p></div>
+<div class="api-item" id="ObjectPool.alloc"><p class="api-sig"><code>fn void* ObjectPool.alloc(<a href="#ObjectPool">ObjectPool*</a> self, uint epoch) @inline</code></p><p class="api-desc">Allocate one block. `epoch` is the heap&#x27;s major epoch: a page taken for allocation drops the marks of an older major.</p><p class="api-src">src/pagepool.c3:357:21</p></div>
+<div class="api-item" id="ObjectPool.alloc_slow"><p class="api-sig"><code>fn void* ObjectPool.alloc_slow(<a href="#ObjectPool">ObjectPool*</a> self, uint epoch) @noinline</code></p><p class="api-src">src/pagepool.c3:365:21</p></div>
+<div class="api-item" id="ObjectPool.allocated_word"><p class="api-sig"><code>fn ulong ObjectPool.allocated_word(<a href="#ObjectPool">ObjectPool*</a> self, <a href="#ObjPage">ObjPage*</a> p, usz w) @inline</code></p><p class="api-src">src/pagepool.c3:345:21</p></div>
+<div class="api-item" id="ObjectPool.begin_sweep"><p class="api-sig"><code>fn void ObjectPool.begin_sweep(<a href="#ObjectPool">ObjectPool*</a> self, bool major)</code></p><p class="api-src">src/pagepool.c3:465:20</p></div>
+<div class="api-item" id="ObjectPool.block_at"><p class="api-sig"><code>fn void* ObjectPool.block_at(<a href="#ObjectPool">ObjectPool*</a> self, <a href="#ObjPage">ObjPage*</a> p, usz g) @inline</code></p><p class="api-src">src/pagepool.c3:338:21</p></div>
+<div class="api-item" id="ObjectPool.finish_page"><p class="api-sig"><code>fn void ObjectPool.finish_page(<a href="#ObjectPool">ObjectPool*</a> self, <a href="#ObjPage">ObjPage*</a> p)</code></p><p class="api-src">src/pagepool.c3:506:20</p></div>
+<div class="api-item" id="ObjectPool.free"><p class="api-sig"><code>fn void ObjectPool.free(<a href="#ObjectPool">ObjectPool*</a> self)</code></p><p class="api-src">src/pagepool.c3:305:20</p></div>
+<div class="api-item" id="ObjectPool.init"><p class="api-sig"><code>fn void ObjectPool.init(<a href="#ObjectPool">ObjectPool*</a> self, sz block_size)</code></p><p class="api-src">src/pagepool.c3:291:20</p></div>
+<div class="api-item" id="ObjectPool.next_run"><p class="api-sig"><code>fn bool ObjectPool.next_run(<a href="#ObjectPool">ObjectPool*</a> self, <a href="#ObjPage">ObjPage*</a> p, void* from)</code></p><p class="api-src">src/pagepool.c3:388:20</p></div>
+<div class="api-item" id="ObjectPool.retire"><p class="api-sig"><code>fn void ObjectPool.retire(<a href="#ObjectPool">ObjectPool*</a> self, <a href="#ObjPage">ObjPage*</a> p)</code></p><p class="api-src">src/pagepool.c3:432:20</p></div>
+<div class="api-item" id="ObjectPool.sweep_page"><p class="api-sig"><code>fn <a href="#SweepCounts">SweepCounts</a> ObjectPool.sweep_page(<a href="#ObjectPool">ObjectPool*</a> self, <a href="#ObjPage">ObjPage*</a> p, bool major, uint epoch, ulong* dead)</code></p><p class="api-src">src/pagepool.c3:481:27</p></div>
+<div class="api-item" id="ObjectPool.sync"><p class="api-sig"><code>fn void ObjectPool.sync(<a href="#ObjectPool">ObjectPool*</a> self) @inline</code></p><p class="api-src">src/pagepool.c3:459:20</p></div>
+<div class="api-item" id="ObjectPool.trim"><p class="api-sig"><code>fn void ObjectPool.trim(<a href="#ObjectPool">ObjectPool*</a> self)</code></p><p class="api-src">src/pagepool.c3:447:20</p></div>
+<div class="api-item" id="ObjPage"><pre><code>struct ObjPage {
+  <a href="#ObjPage">ObjPage*</a> prev;
+  <a href="#ObjPage">ObjPage*</a> next;
+  <a href="#ObjPage">ObjPage*</a> link;
+  void* top;
+  uint live_count;
+  uint mark_epoch;
+  <a href="#Bitmap">Bitmap</a> live;
+  <a href="#Bitmap">Bitmap</a> mark;
+  <a href="#Bitmap">Bitmap</a> teardown;
+}</code></pre><p class="api-src">src/pagepool.c3:215:8</p></div>
+<div class="api-item" id="PageList"><pre><code>struct PageList {
+  <a href="#ObjPage">ObjPage*</a> head;
+  <a href="#ObjPage">ObjPage*</a> tail;
+}</code></pre><p class="api-src">src/pagepool.c3:229:8</p></div>
+<div class="api-item" id="PageList.pop"><p class="api-sig"><code>fn <a href="#ObjPage">ObjPage*</a> PageList.pop(<a href="#PageList">PageList*</a> self) @inline</code></p><p class="api-src">src/pagepool.c3:244:22</p></div>
+<div class="api-item" id="PageList.push"><p class="api-sig"><code>fn void PageList.push(<a href="#PageList">PageList*</a> self, <a href="#ObjPage">ObjPage*</a> p) @inline</code></p><p class="api-src">src/pagepool.c3:234:18</p></div>
+<div class="api-item" id="PageList.take"><p class="api-sig"><code>fn void PageList.take(<a href="#PageList">PageList*</a> self, <a href="#PageList">PageList*</a> other)</code></p><p class="api-src">src/pagepool.c3:253:18</p></div>
+<div class="api-item" id="PagePool"><pre><code>struct PagePool {
+  <a href="#PoolPage">PoolPage*</a> pages;
+  <a href="#PoolPage">PoolPage*</a> avail_head;
+  <a href="#PoolPage">PoolPage*</a> avail_tail;
+  <a href="#PoolPage">PoolPage*</a> empty;
+  sz block_size;
+  uint capacity;
+  uint empty_count;
+  uint page_count;
+  uint taken;
+}</code></pre><p class="api-src">src/pagepool.c3:43:8</p></div>
+<div class="api-item" id="PagePool.add_page"><p class="api-sig"><code>fn <a href="#PoolPage">PoolPage*</a> PagePool.add_page(<a href="#PagePool">PagePool*</a> self)</code></p><p class="api-src">src/pagepool.c3:116:23</p></div>
+<div class="api-item" id="PagePool.alloc"><p class="api-sig"><code>fn void* PagePool.alloc(<a href="#PagePool">PagePool*</a> self)</code></p><p class="api-src">src/pagepool.c3:81:19</p></div>
+<div class="api-item" id="PagePool.alloc_cleared"><p class="api-sig"><code>macro void* PagePool.alloc_cleared(<a href="#PagePool">PagePool*</a> self, sz clear_bytes)</code></p><p class="api-src">src/pagepool.c3:90:22</p></div>
+<div class="api-item" id="PagePool.alloc_uninit"><p class="api-sig"><code>fn void* PagePool.alloc_uninit(<a href="#PagePool">PagePool*</a> self) @inline</code></p><p class="api-src">src/pagepool.c3:86:19</p></div>
+<div class="api-item" id="PagePool.avail_append"><p class="api-sig"><code>fn void PagePool.avail_append(<a href="#PagePool">PagePool*</a> self, <a href="#PoolPage">PoolPage*</a> p)</code></p><p class="api-src">src/pagepool.c3:166:18</p></div>
+<div class="api-item" id="PagePool.avail_unlink"><p class="api-sig"><code>fn void PagePool.avail_unlink(<a href="#PagePool">PagePool*</a> self, <a href="#PoolPage">PoolPage*</a> p)</code></p><p class="api-src">src/pagepool.c3:178:18</p></div>
+<div class="api-item" id="PagePool.dealloc"><p class="api-sig"><code>fn void PagePool.dealloc(<a href="#PagePool">PagePool*</a> self, void* block)</code></p><p class="api-src">src/pagepool.c3:108:18</p></div>
+<div class="api-item" id="PagePool.free"><p class="api-sig"><code>fn void PagePool.free(<a href="#PagePool">PagePool*</a> self)</code></p><p class="api-src">src/pagepool.c3:64:18</p></div>
+<div class="api-item" id="PagePool.init"><p class="api-sig"><code>fn void PagePool.init(<a href="#PagePool">PagePool*</a> self, sz block_size)</code></p><p class="api-src">src/pagepool.c3:55:18</p></div>
+<div class="api-item" id="PagePool.retire_page"><p class="api-sig"><code>fn void PagePool.retire_page(<a href="#PagePool">PagePool*</a> self, <a href="#PoolPage">PoolPage*</a> p)</code></p><p class="api-src">src/pagepool.c3:138:18</p></div>
+<div class="api-item" id="PagePool.trim"><p class="api-sig"><code>fn void PagePool.trim(<a href="#PagePool">PagePool*</a> self)</code></p><p class="api-src">src/pagepool.c3:155:18</p></div>
+<div class="api-item" id="PoolPage"><pre><code>struct PoolPage {
+  <a href="#PoolPage">PoolPage*</a> prev;
+  <a href="#PoolPage">PoolPage*</a> next;
+  <a href="#PoolPage">PoolPage*</a> avail_prev;
+  <a href="#PoolPage">PoolPage*</a> avail_next;
+  void* freelist;
+  void* bump;
+  uint used;
+  bool in_avail;
+  bool zeroed;
+}</code></pre><p class="api-src">src/pagepool.c3:29:8</p></div>
+<div class="api-item" id="SweepCounts"><pre><code>struct SweepCounts {
+  uint dead_old;
+  uint dead_young;
+  uint kept_young;
+}</code></pre><p class="api-src">src/pagepool.c3:264:8</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="BITMAP_WORDS"><p class="api-sig"><code>const uint BITMAP_WORDS = 32;</code></p><p class="api-src">src/pagepool.c3:211:12</p></div>
+<div class="api-item" id="EMPTY_RESERVE"><p class="api-sig"><code>const uint EMPTY_RESERVE = 4;</code></p><p class="api-src">src/pagepool.c3:27:12</p></div>
+<div class="api-item" id="GRANULE_SHIFT"><p class="api-sig"><code>const uint GRANULE_SHIFT = 5;</code></p><p class="api-src">src/pagepool.c3:210:12</p></div>
+<div class="api-item" id="OBJ_PAGE_HEADER"><p class="api-sig"><code>const sz OBJ_PAGE_HEADER = 832;</code></p><p class="api-src">src/pagepool.c3:227:10</p></div>
+<div class="api-item" id="PAGE_HEADER"><p class="api-sig"><code>const sz PAGE_HEADER = 64;</code></p><p class="api-src">src/pagepool.c3:41:10</p></div>
+<div class="api-item" id="PAGE_SIZE"><p class="api-sig"><code>const sz PAGE_SIZE = 65536;</code></p><p class="api-src">src/pagepool.c3:21:10</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="bitmap_offset"><p class="api-sig"><code>fn usz bitmap_offset(bool live)</code></p><p class="api-src">src/pagepool.c3:329:8</p></div>
+<div class="api-item" id="granule_of"><p class="api-sig"><code>fn usz granule_of(void* block) @inline</code></p><p class="api-src">src/pagepool.c3:324:8</p></div>
+<div class="api-item" id="page_of"><p class="api-sig"><code>fn <a href="#ObjPage">ObjPage*</a> page_of(void* block) @inline</code></p><p class="api-src">src/pagepool.c3:320:13</p></div>
+<div class="api-item" id="release_page"><p class="api-sig"><code>fn void release_page(void* p)</code></p><p class="api-src">src/pagepool.c3:193:9 · private</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="bit_set"><p class="api-sig"><code>macro void bit_set(ulong* map, usz g)</code></p><p class="api-src">src/pagepool.c3:335:12</p></div>
+<div class="api-item" id="bit_test"><p class="api-sig"><code>macro bool bit_test(ulong* map, usz g)</code></p><p class="api-src">src/pagepool.c3:334:12</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

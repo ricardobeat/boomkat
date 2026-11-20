@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::env · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html" aria-current="page">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::env</code></h1>
+      <p class="lede">3 types, 35 functions and macros, 1 methods, 1 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="EnvFlags"><pre><code>bitstruct EnvFlags : char {
+  bool is_declarative : 0..0;
+  bool is_function_scope : 1..1;
+  bool is_with : 2..2;
+  bool is_catch : 3..3;
+  bool allocated : 4..4;
+  bool mark_epoch : 5..5;
+  bool temproot : 6..6;
+  bool is_module : 7..7;
+}</code></pre><p class="api-src">src/env.c3:25:11</p></div>
+<div class="api-item" id="EnvPoolBlock"><pre><code>struct EnvPoolBlock {
+  <a href="#EnvPoolBlock">EnvPoolBlock*</a> next;
+  <a href="#EnvRecord">EnvRecord[64]</a> cells;
+}</code></pre><p class="api-src">src/env.c3:58:8</p></div>
+<div class="api-item" id="EnvRecord"><pre><code>struct EnvRecord {
+  <a href="#EnvRecord">EnvRecord*</a> parent;
+  <a href="boomkat-hobject.html#HObject">HObject*</a> bindings;
+  void* gc_gray_next;
+  bool gc_gray_queued;
+  bool verify_epoch;
+  <a href="#EnvFlags">EnvFlags</a> flags;
+  <a href="boomkat-heap.html#Heap">Heap*</a> heap;
+}</code></pre><p class="api-src">src/env.c3:41:8</p></div>
+<div class="api-item" id="EnvRecord.is_with"><p class="api-sig"><code>macro bool EnvRecord.is_with(<a href="#EnvRecord">EnvRecord</a> self)</code></p><p class="api-src">src/env.c3:859:22</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="ENV_POOL_BLOCK_SIZE"><p class="api-sig"><code>const uint ENV_POOL_BLOCK_SIZE = 64;</code></p><p class="api-src">src/env.c3:18:12</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="env_can_declare_global_func"><p class="api-sig"><code>fn bool env_can_declare_global_func(<a href="#EnvRecord">EnvRecord*</a> env, void* key) @inline</code></p><p class="api-src">src/env.c3:643:9</p></div>
+<div class="api-item" id="env_create"><p class="api-sig"><code>fn <a href="#EnvRecord">EnvRecord*?</a> env_create(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="#EnvRecord">EnvRecord*</a> parent, <a href="boomkat-hobject.html#HObject">HObject*</a> object = null)</code></p><p class="api-src">src/env.c3:357:16</p></div>
+<div class="api-item" id="env_create_declarative"><p class="api-sig"><code>fn <a href="#EnvRecord">EnvRecord*?</a> env_create_declarative(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="#EnvRecord">EnvRecord*</a> parent)</code></p><p class="api-src">src/env.c3:378:16</p></div>
+<div class="api-item" id="env_create_function_scope"><p class="api-sig"><code>fn <a href="#EnvRecord">EnvRecord*?</a> env_create_function_scope(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="#EnvRecord">EnvRecord*</a> parent, uint capacity = 0)</code></p><p class="api-src">src/env.c3:333:16</p></div>
+<div class="api-item" id="env_create_with_object"><p class="api-sig"><code>fn <a href="#EnvRecord">EnvRecord*?</a> env_create_with_object(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="#EnvRecord">EnvRecord*</a> parent, <a href="boomkat-hobject.html#HObject">HObject*</a> bindings)</code></p><p class="api-src">src/env.c3:406:16</p></div>
+<div class="api-item" id="env_declare"><p class="api-sig"><code>fn bool env_declare(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val) @inline</code></p><p class="api-src">src/env.c3:586:9</p></div>
+<div class="api-item" id="env_declare_accessor"><p class="api-sig"><code>fn bool env_declare_accessor(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> accessor_value) @inline</code></p><p class="api-src">src/env.c3:696:9</p></div>
+<div class="api-item" id="env_declare_const"><p class="api-sig"><code>fn bool env_declare_const(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val) @inline</code></p><p class="api-src">src/env.c3:597:9</p></div>
+<div class="api-item" id="env_declare_global_func"><p class="api-sig"><code>fn bool env_declare_global_func(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val, bool is_global, bool is_eval_code) @inline</code></p><p class="api-src">src/env.c3:661:9</p></div>
+<div class="api-item" id="env_declare_immutable"><p class="api-sig"><code>fn bool env_declare_immutable(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val) @inline</code></p><p class="api-src">src/env.c3:688:9</p></div>
+<div class="api-item" id="env_declare_lex"><p class="api-sig"><code>fn bool env_declare_lex(<a href="#EnvRecord">EnvRecord*</a> lex_env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val) @inline</code></p><p class="api-src">src/env.c3:736:9</p></div>
+<div class="api-item" id="env_declare_nondeletable"><p class="api-sig"><code>fn bool env_declare_nondeletable(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val) @inline</code></p><p class="api-src">src/env.c3:592:9</p></div>
+<div class="api-item" id="env_declare_nonenum"><p class="api-sig"><code>fn bool env_declare_nonenum(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val) @inline</code></p><p class="api-src">src/env.c3:680:9</p></div>
+<div class="api-item" id="env_declare_var"><p class="api-sig"><code>fn bool env_declare_var(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val, bool is_global, bool is_eval_code, bool is_bare) @inline</code></p><p class="api-src">src/env.c3:607:9</p></div>
+<div class="api-item" id="env_full_get"><p class="api-sig"><code>fn bool env_full_get(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-hobject.html#HObject">HObject*</a> obj, void* key, <a href="boomkat-types.html#TVal">TVal</a> receiver, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/env.c3:454:9</p></div>
+<div class="api-item" id="env_get"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal?</a> env_get(<a href="#EnvRecord">EnvRecord*</a> env, void* key)</code></p><p class="api-src">src/env.c3:510:10</p></div>
+<div class="api-item" id="env_get_at_depth"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal?</a> env_get_at_depth(<a href="#EnvRecord">EnvRecord*</a> env, uint depth, void* key)</code></p><p class="api-src">src/env.c3:757:10</p></div>
+<div class="api-item" id="env_has"><p class="api-sig"><code>fn bool env_has(<a href="#EnvRecord">EnvRecord*</a> env, void* key) @inline</code></p><p class="api-src">src/env.c3:535:9</p></div>
+<div class="api-item" id="env_has_lex"><p class="api-sig"><code>fn bool env_has_lex(<a href="#EnvRecord">EnvRecord*</a> lex_env, void* key) @inline</code></p><p class="api-src">src/env.c3:740:9</p></div>
+<div class="api-item" id="env_is_lex_writable"><p class="api-sig"><code>fn bool env_is_lex_writable(<a href="#EnvRecord">EnvRecord*</a> lex_env, void* key)</code></p><p class="api-src">src/env.c3:771:9</p></div>
+<div class="api-item" id="env_pool_align_epoch"><p class="api-sig"><code>fn void env_pool_align_epoch(<a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/env.c3:182:9</p></div>
+<div class="api-item" id="env_pool_alloc"><p class="api-sig"><code>fn <a href="#EnvRecord">EnvRecord*?</a> env_pool_alloc(<a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/env.c3:65:16</p></div>
+<div class="api-item" id="env_pool_contains"><p class="api-sig"><code>fn bool env_pool_contains(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#EnvRecord">EnvRecord*</a> env)</code></p><p class="api-src">src/env.c3:146:9</p></div>
+<div class="api-item" id="env_pool_free"><p class="api-sig"><code>fn void env_pool_free(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#EnvRecord">EnvRecord*</a> env)</code></p><p class="api-src">src/env.c3:109:9</p></div>
+<div class="api-item" id="env_pool_mark_step"><p class="api-sig"><code>fn bool env_pool_mark_step(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-heap.html#EnvSweepCursor">EnvSweepCursor*</a> cursor, uint budget)</code></p><p class="api-src">src/env.c3:243:9</p></div>
+<div class="api-item" id="env_pool_seed_or_clear_pins"><p class="api-sig"><code>fn void env_pool_seed_or_clear_pins(<a href="boomkat-heap.html#Heap">Heap*</a> h, bool clear_pins)</code></p><p class="api-src">src/env.c3:164:9</p></div>
+<div class="api-item" id="env_pool_sweep"><p class="api-sig"><code>fn void env_pool_sweep(<a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/env.c3:198:9</p></div>
+<div class="api-item" id="env_pool_sweep_step"><p class="api-sig"><code>fn bool env_pool_sweep_step(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="boomkat-heap.html#EnvSweepCursor">EnvSweepCursor*</a> cursor, uint budget)</code></p><p class="api-src">src/env.c3:268:9</p></div>
+<div class="api-item" id="env_pool_teardown"><p class="api-sig"><code>fn void env_pool_teardown(<a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/env.c3:127:9</p></div>
+<div class="api-item" id="env_put"><p class="api-sig"><code>fn bool env_put(<a href="#EnvRecord">EnvRecord*</a> env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val)</code></p><p class="api-src">src/env.c3:563:9</p></div>
+<div class="api-item" id="env_try_put_lex"><p class="api-sig"><code>fn int env_try_put_lex(<a href="#EnvRecord">EnvRecord*</a> lex_env, void* key, <a href="boomkat-types.html#TVal">TVal</a> val, bool check_tdz)</code></p><p class="api-src">src/env.c3:804:8</p></div>
+<div class="api-item" id="env_tval_to_boolean"><p class="api-sig"><code>fn bool env_tval_to_boolean(<a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/env.c3:435:9</p></div>
+<div class="api-item" id="is_tdz_sentinel"><p class="api-sig"><code>fn bool is_tdz_sentinel(<a href="boomkat-types.html#TVal">TVal*</a> tv) @inline</code></p><p class="api-src">src/env.c3:718:9</p></div>
+<div class="api-item" id="tdz_sentinel"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal</a> tdz_sentinel()</code></p><p class="api-src">src/env.c3:706:9</p></div>
+<div class="api-item" id="with_unscopables_blocks"><p class="api-sig"><code>fn bool with_unscopables_blocks(<a href="boomkat-heap.html#Heap">Heap*</a> h, <a href="#EnvRecord">EnvRecord*</a> with_env, void* name)</code></p><p class="api-src">src/env.c3:491:9</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

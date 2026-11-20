@@ -501,6 +501,10 @@ bench-memory-compare:
 
 # ── Website ──────────────────────────────────────────────────────────────────
 
+# Regenerate the static C3 internal API reference in docs/site/reference/c3-api/
+docs-c3-api:
+    python3 scripts/gen_c3_api_docs.py
+
 # Publish web/ and docs/site/ to https://tomasi.studio/boomkat/ (goes live immediately)
 publish-site:
     rm -rf .site && mkdir -p .site/boomkat

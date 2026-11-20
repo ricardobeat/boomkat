@@ -1,0 +1,1183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::compiler · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html" aria-current="page">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::compiler</code></h1>
+      <p class="lede">64 types, 137 functions and macros, 337 methods, 61 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="BindingInfo"><pre><code>struct BindingInfo {
+  uint name_idx;
+  ushort reg;
+  <a href="#ScopeKind">ScopeKind</a> kind;
+  bool is_captured;
+  bool is_param;
+  bool is_catch_param;
+}</code></pre><p class="api-src">src/compiler/context.c3:134:8</p></div>
+<div class="api-item" id="CellCandidate"><pre><code>struct CellCandidate {
+  void* key;
+  bool selected;
+}</code></pre><p class="api-src">src/compiler/cells.c3:10:8</p></div>
+<div class="api-item" id="ClassMethod"><pre><code>struct ClassMethod {
+  char[] name;
+  uint inner_idx;
+  bool is_static;
+  bool is_getter;
+  bool is_setter;
+  bool name_is_number;
+  double name_num_value;
+  bool name_is_bigint;
+  char[] name_bigint_src;
+  uint computed_key_inner_idx;
+  uint computed_key_reg;
+  bool is_private;
+  char[] priv_slot_name;
+  uint priv_entry;
+}</code></pre><p class="api-src">src/compiler/context.c3:2175:8</p></div>
+<div class="api-item" id="CmpBranchRule"><pre><code>struct CmpBranchRule {
+  <a href="boomkat-bytecode.html#Opcode">Opcode</a> cmp_op;
+  <a href="boomkat-bytecode.html#Opcode">Opcode</a> fused_if_false;
+  <a href="boomkat-bytecode.html#Opcode">Opcode</a> fused_if_true;
+}</code></pre><p class="api-src">src/compiler/fusion.c3:808:8</p></div>
+<div class="api-item" id="CODE_OVERFLOW"><pre><code>faultdef CODE_OVERFLOW</code></pre><p class="api-src">src/compiler/context.c3:24:10</p></div>
+<div class="api-item" id="CompExportEntry"><pre><code>struct CompExportEntry {
+  char[] local_name;
+  char[] export_name;
+  bool is_indirect;
+  uint req_module_idx;
+  bool is_lexical;
+  bool declares_binding;
+}</code></pre><p class="api-src">src/compiler/statements.c3:31:8</p></div>
+<div class="api-item" id="CompFuncDeclEntry"><pre><code>struct CompFuncDeclEntry {
+  char[] name;
+  uint inner_func_idx;
+}</code></pre><p class="api-src">src/compiler/statements.c3:133:8</p></div>
+<div class="api-item" id="COMPILE_ERROR"><pre><code>faultdef COMPILE_ERROR</code></pre><p class="api-src">src/compiler/context.c3:21:10</p></div>
+<div class="api-item" id="CompilerContext"><pre><code>struct CompilerContext {
+  uint eager_function;
+  uint projection_node;
+  uint projection_member;
+  uint projection_key;
+  uint projection_source;
+  ushort projection_source_reg;
+  <a href="boomkat-ast.html#ScalarClass">ScalarClass*</a> scalar_fields;
+  ushort scalar_first_arg;
+  <a href="boomkat-lexer.html#Lexer">Lexer*</a> lexer;
+  void* heap;
+  uptr stack_floor;
+  <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> current_func;
+  ushort next_reg;
+  ushort max_reg;
+  <a href="boomkat-types.html#TVal">TVal*</a> constants;
+  uint const_count;
+  uint const_cap;
+  <a href="#ConstHashEntry">ConstHashEntry*</a> const_hash;
+  uint const_hash_count;
+  uint const_hash_cap;
+  uint const_hash_fill;
+  <a href="boomkat-bytecode.html#Instruction">Instruction*</a> code;
+  uint code_count;
+  uint code_cap;
+  <a href="boomkat-bytecode.html#SourcePosition">SourcePosition*</a> source_positions;
+  <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction**</a> inner_funcs;
+  uint inner_func_count;
+  uint inner_func_cap;
+  <a href="#ScopeEntry">ScopeEntry*</a> scope_stack;
+  uint scope_cap;
+  uint scope_depth;
+  uint* name_top;
+  uint name_top_cap;
+  uint top_mark;
+  Vec{BindingInfo} bindings;
+  ushort cell_frame_reg;
+  bool cell_frame_reserved;
+  bool scan_arguments_mentioned;
+  bool scan_arguments_declared;
+  bool scan_has_with;
+  bool scan_arguments_apply_only;
+  bool scan_params_captured;
+  bool scan_params_written;
+  bool arguments_in_reg;
+  ushort arguments_reg;
+  bool forward_args;
+  bool forward_violation;
+  Vec{LoopInfo} loop_stack;
+  Vec{DisposeScope} dispose_scopes;
+  uint try_depth;
+  Vec{LabelInfo} labels;
+  Vec{PatchEntry} patches;
+  bool scope_overflow;
+  bool last_was_getvar;
+  bool last_was_getglobal;
+  bool last_was_local_var;
+  ushort last_local_var_reg;
+  bool inside_parens;
+  ushort cond_dest;
+  bool defer_brand_check;
+  ushort deferred_brand_reg;
+  uint deferred_brand_name_c;
+  ushort deferred_brand_obj_reg;
+  ushort deferred_brand_reg_hint;
+  ushort call_prop_obj_reg;
+  uint method_callee;
+  ushort spread_eval_base;
+  ushort reg_cap;
+  bool is_global;
+  uint func_ast_scope;
+  bool eval_mode;
+  ushort eval_acc_reg;
+  bool in_eval_code;
+  bool eval_direct_in_function;
+  Vec{ParamDefault} defaults;
+  Vec{DestructParamDefault} destruct_defaults;
+  bool ast_param_scope;
+  bool has_destructured_param;
+  bool has_rest;
+  ushort rest_formal_count;
+  ushort num_args;
+  ushort formal_count;
+  bool is_constructable;
+  bool in_class_body;
+  bool super_is_home_object;
+  bool has_super_binding;
+  bool in_derived_ctor;
+  bool super_is_static_method;
+  bool super_home_is_object_literal;
+  uint super_name_idx;
+  uint static_super_name_idx;
+  uint home_object_name_idx;
+  uint super_class_counter;
+  <a href="#PrivateNameTable">PrivateNameTable*</a> private_name_table;
+  bool owns_private_names;
+  bool forbid_arguments;
+  bool forbid_return;
+  bool forbid_await;
+  bool forbid_yield;
+  bool in_formal_params;
+  bool is_generator;
+  uint ast_fn_scope;
+  <a href="#FuseState">FuseState*</a> fuse;
+  uint fuse_depth;
+  bool is_user_generator;
+  int cur_lex_depth;
+  int cur_with_depth;
+  bool outer_with;
+  bool is_strict;
+  bool saw_use_strict;
+  bool uses_arguments;
+  bool has_local_bindings;
+  bool has_lexical_bindings;
+  bool reg_overflow;
+  bool has_wide;
+  ushort reserved_regs;
+  bool has_closures;
+  bool has_captured_local;
+  bool is_named_func_expr;
+  char[] named_func_expr_name;
+  <a href="boomkat-ast.html#AtomTable">AtomTable</a> captured_names;
+  bool capture_all;
+  bool captures_exact;
+  char[]* hoisted_fn_names;
+  uint hoisted_fn_cap;
+  uint hoisted_fn_count;
+  HashSet{String} hoisted_fn_set;
+  uint* eval_var_coll_idxs;
+  uint eval_var_coll_cap;
+  uint eval_var_coll_count;
+  char[]* hoisted_defer_names;
+  ushort* hoisted_defer_regs;
+  uint* hoisted_defer_inner_idxs;
+  uint* hoisted_defer_name_idxs;
+  uint hoisted_defer_cap;
+  uint hoisted_defer_count;
+  bool hoisted_defer_emitted;
+  char[]* b33_hoisted_names;
+  ushort* b33_hoisted_regs;
+  uint* b33_hoisted_pcs;
+  uint b33_hoisted_cap;
+  uint b33_hoisted_count;
+  HashSet{uint} declared_global_name_idxs;
+  Vec{uint} slot_global_name_idxs;
+  bool has_direct_eval;
+  bool has_with_stmt;
+  Vec{uint} direct_eval_offsets;
+  Vec{FarOffset} far_offsets;
+  Vec{uint} tail_nodes;
+  Vec{uint} tail_call_pcs;
+  bool is_arrow;
+  bool is_async;
+  bool no_new_target;
+  bool is_module;
+  bool saw_top_level_await;
+  void* current_module;
+  bool module_goal;
+  char[] inferred_name;
+  bool has_inferred_name;
+  bool disable_optimize;
+}</code></pre><p class="api-src">src/compiler/context.c3:301:8</p></div>
+<div class="api-item" id="CompilerContext.add_bigint_constant"><p class="api-sig"><code>fn uint? CompilerContext.add_bigint_constant(<a href="#CompilerContext">CompilerContext*</a> self, char[] digits)</code></p><p class="api-src">src/compiler/constants.c3:171:26</p></div>
+<div class="api-item" id="CompilerContext.add_bind"><p class="api-sig"><code>fn ushort? CompilerContext.add_bind(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBinds">DestructBinds*</a> binds, <a href="#DestructBind">DestructBind</a> b)</code></p><p class="api-src">src/compiler/functions.c3:148:28</p></div>
+<div class="api-item" id="CompilerContext.add_break_patch"><p class="api-sig"><code>fn void CompilerContext.add_break_patch(<a href="#CompilerContext">CompilerContext*</a> self, uint addr)</code></p><p class="api-src">src/compiler/patches.c3:93:25</p></div>
+<div class="api-item" id="CompilerContext.add_captured_name"><p class="api-sig"><code>fn void CompilerContext.add_captured_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/captures.c3:11:25</p></div>
+<div class="api-item" id="CompilerContext.add_constant"><p class="api-sig"><code>fn uint CompilerContext.add_constant(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-types.html#TVal">TVal</a> val)</code></p><p class="api-src">src/compiler/constants.c3:66:25</p></div>
+<div class="api-item" id="CompilerContext.add_hoisted_fn"><p class="api-sig"><code>fn bool CompilerContext.add_hoisted_fn(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/context.c3:1053:25</p></div>
+<div class="api-item" id="CompilerContext.add_inner_func"><p class="api-sig"><code>fn uint CompilerContext.add_inner_func(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func)</code></p><p class="api-src">src/compiler/context.c3:1211:25</p></div>
+<div class="api-item" id="CompilerContext.add_number_constant"><p class="api-sig"><code>fn uint CompilerContext.add_number_constant(<a href="#CompilerContext">CompilerContext*</a> self, double val)</code></p><p class="api-src">src/compiler/constants.c3:155:25</p></div>
+<div class="api-item" id="CompilerContext.add_patch"><p class="api-sig"><code>fn uint CompilerContext.add_patch(<a href="#CompilerContext">CompilerContext*</a> self, uint chain_head, uint addr)</code></p><p class="api-src">src/compiler/patches.c3:16:25</p></div>
+<div class="api-item" id="CompilerContext.add_string_constant"><p class="api-sig"><code>fn uint CompilerContext.add_string_constant(<a href="#CompilerContext">CompilerContext*</a> self, char[] str)</code></p><p class="api-src">src/compiler/constants.c3:113:25</p></div>
+<div class="api-item" id="CompilerContext.add_string_constant_hstr"><p class="api-sig"><code>fn uint CompilerContext.add_string_constant_hstr(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> hstr)</code></p><p class="api-src">src/compiler/constants.c3:122:25</p></div>
+<div class="api-item" id="CompilerContext.adopt_capture_slots"><p class="api-sig"><code>fn bool CompilerContext.adopt_capture_slots(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> ready, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> stub)</code></p><p class="api-src">src/compiler/capture_slots.c3:107:25</p></div>
+<div class="api-item" id="CompilerContext.adopt_private_names"><p class="api-sig"><code>fn void CompilerContext.adopt_private_names(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#CompilerContext">CompilerContext*</a> parent)</code></p><p class="api-src">src/compiler/context.c3:981:25</p></div>
+<div class="api-item" id="CompilerContext.alloc_persistent_reg"><p class="api-sig"><code>fn ushort CompilerContext.alloc_persistent_reg(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/regalloc.c3:107:27</p></div>
+<div class="api-item" id="CompilerContext.alloc_reg"><p class="api-sig"><code>fn ushort CompilerContext.alloc_reg(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/regalloc.c3:12:27</p></div>
+<div class="api-item" id="CompilerContext.alloc_regs"><p class="api-sig"><code>fn ushort CompilerContext.alloc_regs(<a href="#CompilerContext">CompilerContext*</a> self, ushort count)</code></p><p class="api-src">src/compiler/regalloc.c3:40:27</p></div>
+<div class="api-item" id="CompilerContext.apply_capture_set"><p class="api-sig"><code>fn void CompilerContext.apply_capture_set(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/captures.c3:65:25</p></div>
+<div class="api-item" id="CompilerContext.at_global_slot_scope"><p class="api-sig"><code>fn bool CompilerContext.at_global_slot_scope(<a href="#CompilerContext">CompilerContext*</a> self) @inline</code></p><p class="api-src">src/compiler/emit.c3:97:25</p></div>
+<div class="api-item" id="CompilerContext.begin_spread_args"><p class="api-sig"><code>fn ushort CompilerContext.begin_spread_args(<a href="#CompilerContext">CompilerContext*</a> self, ushort* callee_reg, ushort* first_arg, ushort arg_count)</code></p><p class="api-src">src/compiler/regalloc.c3:129:27</p></div>
+<div class="api-item" id="CompilerContext.bind_name"><p class="api-sig"><code>fn char[] CompilerContext.bind_name(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind*</a> b)</code></p><p class="api-src">src/compiler/functions.c3:165:27</p></div>
+<div class="api-item" id="CompilerContext.branch_targets_fall_off_end"><p class="api-sig"><code>fn bool CompilerContext.branch_targets_fall_off_end(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/functions.c3:1552:25</p></div>
+<div class="api-item" id="CompilerContext.can_defer_body"><p class="api-sig"><code>fn bool CompilerContext.can_defer_body(<a href="#CompilerContext">CompilerContext*</a> self, uint fnf)</code></p><p class="api-src">src/compiler/functions.c3:1244:25</p></div>
+<div class="api-item" id="CompilerContext.can_fast_flat_array"><p class="api-sig"><code>fn bool CompilerContext.can_fast_flat_array(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind[]</a> binds, bool disable_array_fast, bool has_rest)</code></p><p class="api-src">src/compiler/functions.c3:579:25</p></div>
+<div class="api-item" id="CompilerContext.capture_outer_name"><p class="api-sig"><code>fn void CompilerContext.capture_outer_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name, uint depth, bool all = false)</code></p><p class="api-src">src/compiler/scope.c3:218:25</p></div>
+<div class="api-item" id="CompilerContext.chain_has_optional"><p class="api-sig"><code>fn bool CompilerContext.chain_has_optional(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2226:25</p></div>
+<div class="api-item" id="CompilerContext.check_lexical_redeclares_param"><p class="api-sig"><code>fn void? CompilerContext.check_lexical_redeclares_param(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:133:26</p></div>
+<div class="api-item" id="CompilerContext.check_stack"><p class="api-sig"><code>fn void? CompilerContext.check_stack(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:77:26</p></div>
+<div class="api-item" id="CompilerContext.check_var_lex_conflict"><p class="api-sig"><code>fn void? CompilerContext.check_var_lex_conflict(<a href="#CompilerContext">CompilerContext*</a> self, char[] name, <a href="#ScopeKind">ScopeKind</a> kind)</code></p><p class="api-src">src/compiler/scope.c3:103:26</p></div>
+<div class="api-item" id="CompilerContext.class_binding_name"><p class="api-sig"><code>fn char[] CompilerContext.class_binding_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] prefix, uint ordinal)</code></p><p class="api-src">src/compiler/class.c3:102:27</p></div>
+<div class="api-item" id="CompilerContext.cleanup"><p class="api-sig"><code>fn void CompilerContext.cleanup(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:929:25</p></div>
+<div class="api-item" id="CompilerContext.close_finished_iter"><p class="api-sig"><code>fn void CompilerContext.close_finished_iter(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructIters">DestructIters*</a> iters, <a href="#DestructBind">DestructBind[]</a> binds, uint di)</code></p><p class="api-src">src/compiler/functions.c3:449:25</p></div>
+<div class="api-item" id="CompilerContext.collect_capture_candidates"><p class="api-sig"><code>fn void CompilerContext.collect_capture_candidates(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func)</code></p><p class="api-src">src/compiler/capture_slots.c3:11:25</p></div>
+<div class="api-item" id="CompilerContext.collect_tail_nodes"><p class="api-sig"><code>fn void CompilerContext.collect_tail_nodes(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2373:25</p></div>
+<div class="api-item" id="CompilerContext.compile_arrow_ast"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> CompilerContext.compile_arrow_ast(<a href="#CompilerContext">CompilerContext*</a> self, uint scope, char[] name)</code></p><p class="api-src">src/compiler/gen.c3:1524:39</p></div>
+<div class="api-item" id="CompilerContext.compile_default_expr"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> CompilerContext.compile_default_expr(<a href="#CompilerContext">CompilerContext*</a> self, char[] inferred_name = {}, uint ast_expr = 0)</code></p><p class="api-src">src/compiler/functions.c3:1630:39</p></div>
+<div class="api-item" id="CompilerContext.compile_inner_function"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> CompilerContext.compile_inner_function(<a href="#CompilerContext">CompilerContext*</a> self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false, bool is_method_body = false, uint ast_scope = 0, uint object_home = 0xFFFFFFFF)</code></p><p class="api-src">src/compiler/functions.c3:1962:39</p></div>
+<div class="api-item" id="CompilerContext.compile_static_block"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> CompilerContext.compile_static_block(<a href="#CompilerContext">CompilerContext*</a> self, uint ast_node = 0)</code></p><p class="api-src">src/compiler/functions.c3:1814:39</p></div>
+<div class="api-item" id="CompilerContext.current_dispose_scope"><p class="api-sig"><code>fn <a href="#DisposeScope">DisposeScope*</a> CompilerContext.current_dispose_scope(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/dispose.c3:78:34</p></div>
+<div class="api-item" id="CompilerContext.declare_binding_var"><p class="api-sig"><code>fn ushort CompilerContext.declare_binding_var(<a href="#CompilerContext">CompilerContext*</a> self, char[] name, <a href="#ScopeKind">ScopeKind</a> kind)</code></p><p class="api-src">src/compiler/scope.c3:447:27</p></div>
+<div class="api-item" id="CompilerContext.declare_class_brand"><p class="api-sig"><code>fn char[] CompilerContext.declare_class_brand(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/private_names.c3:179:27</p></div>
+<div class="api-item" id="CompilerContext.declare_class_static_brand"><p class="api-sig"><code>fn char[] CompilerContext.declare_class_static_brand(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/private_names.c3:188:27</p></div>
+<div class="api-item" id="CompilerContext.declare_or_merge_private_accessor"><p class="api-sig"><code>fn void? CompilerContext.declare_or_merge_private_accessor(<a href="#CompilerContext">CompilerContext*</a> self, char[] name, bool is_getter, bool is_setter, bool is_static_decl)</code></p><p class="api-src">src/compiler/private_names.c3:225:26</p></div>
+<div class="api-item" id="CompilerContext.declare_param_pattern"><p class="api-sig"><code>fn void CompilerContext.declare_param_pattern(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind[]</a> binds)</code></p><p class="api-src">src/compiler/functions.c3:169:25</p></div>
+<div class="api-item" id="CompilerContext.declare_priv_slot"><p class="api-sig"><code>fn void CompilerContext.declare_priv_slot(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/private_names.c3:77:25</p></div>
+<div class="api-item" id="CompilerContext.declare_private_name"><p class="api-sig"><code>fn <a href="#PrivateNameEntry">PrivateNameEntry*?</a> CompilerContext.declare_private_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/private_names.c3:146:39</p></div>
+<div class="api-item" id="CompilerContext.declare_var"><p class="api-sig"><code>fn ushort CompilerContext.declare_var(<a href="#CompilerContext">CompilerContext*</a> self, char[] name, <a href="#ScopeKind">ScopeKind</a> kind, bool is_param = false, bool is_fn_decl = false)</code></p><p class="api-src">src/compiler/scope.c3:147:27</p></div>
+<div class="api-item" id="CompilerContext.declares_hoisted_name"><p class="api-sig"><code>fn bool CompilerContext.declares_hoisted_name(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-types.html#TVal">TVal</a> name)</code></p><p class="api-src">src/compiler/capture_slots.c3:196:25</p></div>
+<div class="api-item" id="CompilerContext.declares_using"><p class="api-sig"><code>fn bool CompilerContext.declares_using(<a href="#CompilerContext">CompilerContext*</a> self, uint stmts, bool* is_async)</code></p><p class="api-src">src/compiler/dispose.c3:63:25</p></div>
+<div class="api-item" id="CompilerContext.defer_function"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> CompilerContext.defer_function(<a href="#CompilerContext">CompilerContext*</a> self, uint scope, char[] name)</code></p><p class="api-src">src/compiler/lazy.c3:14:39</p></div>
+<div class="api-item" id="CompilerContext.dispose_scope_begin"><p class="api-sig"><code>fn <a href="#DisposeScope">DisposeScope</a> CompilerContext.dispose_scope_begin(<a href="#CompilerContext">CompilerContext*</a> self, bool is_async)</code></p><p class="api-src">src/compiler/dispose.c3:41:33</p></div>
+<div class="api-item" id="CompilerContext.emit"><p class="api-sig"><code>fn uint CompilerContext.emit(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Instruction">Instruction</a> inst)</code></p><p class="api-src">src/compiler/emit.c3:17:25</p></div>
+<div class="api-item" id="CompilerContext.emit_a_bc"><p class="api-sig"><code>fn uint CompilerContext.emit_a_bc(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, uint a, uint bc)</code></p><p class="api-src">src/compiler/emit.c3:53:25</p></div>
+<div class="api-item" id="CompilerContext.emit_a_sbx"><p class="api-sig"><code>fn uint CompilerContext.emit_a_sbx(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, uint a, int sbx)</code></p><p class="api-src">src/compiler/emit.c3:62:25</p></div>
+<div class="api-item" id="CompilerContext.emit_abc"><p class="api-sig"><code>fn uint CompilerContext.emit_abc(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, uint a, uint b, uint c)</code></p><p class="api-src">src/compiler/emit.c3:43:25</p></div>
+<div class="api-item" id="CompilerContext.emit_await"><p class="api-sig"><code>fn ushort CompilerContext.emit_await(<a href="#CompilerContext">CompilerContext*</a> self, ushort operand)</code></p><p class="api-src">src/compiler/functions.c3:2103:27</p></div>
+<div class="api-item" id="CompilerContext.emit_cell_store"><p class="api-sig"><code>fn ushort CompilerContext.emit_cell_store(<a href="#CompilerContext">CompilerContext*</a> self, ushort value, uint name_idx)</code></p><p class="api-src">src/compiler/emit.c3:187:27</p></div>
+<div class="api-item" id="CompilerContext.emit_cond_jump"><p class="api-sig"><code>fn uint CompilerContext.emit_cond_jump(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, uint a)</code></p><p class="api-src">src/compiler/emit.c3:245:25</p></div>
+<div class="api-item" id="CompilerContext.emit_cond_jump_back"><p class="api-sig"><code>fn uint CompilerContext.emit_cond_jump_back(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, uint a, uint target)</code></p><p class="api-src">src/compiler/emit.c3:260:25</p></div>
+<div class="api-item" id="CompilerContext.emit_create_per_iteration_env"><p class="api-sig"><code>fn void CompilerContext.emit_create_per_iteration_env(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#PerIterBinding">PerIterBinding[]</a> bindings)</code></p><p class="api-src">src/compiler/statements.c3:389:25</p></div>
+<div class="api-item" id="CompilerContext.emit_deferred_computed_key"><p class="api-sig"><code>fn void? CompilerContext.emit_deferred_computed_key(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind*</a> bind)</code></p><p class="api-src">src/compiler/destructuring.c3:29:26</p></div>
+<div class="api-item" id="CompilerContext.emit_deferred_target"><p class="api-sig"><code>fn void? CompilerContext.emit_deferred_target(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind*</a> bind)</code></p><p class="api-src">src/compiler/destructuring.c3:6:26</p></div>
+<div class="api-item" id="CompilerContext.emit_destruct_bindings"><p class="api-sig"><code>fn void? CompilerContext.emit_destruct_bindings(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind[]</a> binds, <a href="#DestructStoreMode">DestructStoreMode</a> store_mode = PARAM_SYNC, bool is_lexical = false, bool is_const = false, bool disable_array_fast = false)</code></p><p class="api-src">src/compiler/functions.c3:633:26</p></div>
+<div class="api-item" id="CompilerContext.emit_destruct_default"><p class="api-sig"><code>fn void CompilerContext.emit_destruct_default(<a href="#CompilerContext">CompilerContext*</a> self, uint func_idx, ushort dest_reg)</code></p><p class="api-src">src/compiler/functions.c3:481:25</p></div>
+<div class="api-item" id="CompilerContext.emit_destruct_getprop"><p class="api-sig"><code>fn void CompilerContext.emit_destruct_getprop(<a href="#CompilerContext">CompilerContext*</a> self, ushort bind_reg, ushort src_reg, ushort key_reg)</code></p><p class="api-src">src/compiler/functions.c3:615:25</p></div>
+<div class="api-item" id="CompilerContext.emit_destruct_iter_next"><p class="api-sig"><code>fn void CompilerContext.emit_destruct_iter_next(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructIterState">DestructIterState*</a> state, ushort dest_reg)</code></p><p class="api-src">src/compiler/functions.c3:262:25</p></div>
+<div class="api-item" id="CompilerContext.emit_destruct_iter_rest"><p class="api-sig"><code>fn void CompilerContext.emit_destruct_iter_rest(<a href="#CompilerContext">CompilerContext*</a> self, ushort array_reg, ushort index_reg, <a href="#DestructIterState">DestructIterState*</a> state)</code></p><p class="api-src">src/compiler/functions.c3:340:25</p></div>
+<div class="api-item" id="CompilerContext.emit_destruct_iter_setup"><p class="api-sig"><code>fn void CompilerContext.emit_destruct_iter_setup(<a href="#CompilerContext">CompilerContext*</a> self, ushort src_reg, <a href="#DestructIterState">DestructIterState*</a> state)</code></p><p class="api-src">src/compiler/functions.c3:180:25</p></div>
+<div class="api-item" id="CompilerContext.emit_destructure"><p class="api-sig"><code>fn void? CompilerContext.emit_destructure(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind[]</a> binds, bool is_object, ushort src_reg, <a href="#DestructStoreMode">DestructStoreMode</a> store_mode, bool is_lexical = false, bool is_const = false)</code></p><p class="api-src">src/compiler/destructuring.c3:55:26</p></div>
+<div class="api-item" id="CompilerContext.emit_dispose_close_boundary"><p class="api-sig"><code>fn void CompilerContext.emit_dispose_close_boundary(<a href="#CompilerContext">CompilerContext*</a> self, uint try_pc, <a href="#DisposeScope">DisposeScope</a> scope, ushort close_reg, ushort iter_reg, bool is_await_loop)</code></p><p class="api-src">src/compiler/dispose.c3:187:25</p></div>
+<div class="api-item" id="CompilerContext.emit_dispose_end"><p class="api-sig"><code>fn void CompilerContext.emit_dispose_end(<a href="#CompilerContext">CompilerContext*</a> self, uint try_pc, <a href="#DisposeScope">DisposeScope</a> scope, ushort close_reg)</code></p><p class="api-src">src/compiler/dispose.c3:144:25</p></div>
+<div class="api-item" id="CompilerContext.emit_dispose_try"><p class="api-sig"><code>fn uint CompilerContext.emit_dispose_try(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/dispose.c3:135:25</p></div>
+<div class="api-item" id="CompilerContext.emit_forof"><p class="api-sig"><code>fn void? CompilerContext.emit_forof(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#ForOfHead">ForOfHead</a> head, ushort src_reg, uint saved_scope, ushort saved_reg, bool is_await, uint ast_body = 0)</code></p><p class="api-src">src/compiler/statements.c3:629:26</p></div>
+<div class="api-item" id="CompilerContext.emit_forof_loop"><p class="api-sig"><code>fn void? CompilerContext.emit_forof_loop(<a href="#CompilerContext">CompilerContext*</a> self, char[] var_name, ushort iter_reg, uint saved_scope, ushort saved_reg, bool is_lexical, bool is_const, bool is_bare, bool is_await = false, uint ast_body = 0, bool is_using = false, bool is_await_using = false)</code></p><p class="api-src">src/compiler/expressions.c3:450:26</p></div>
+<div class="api-item" id="CompilerContext.emit_head_bind"><p class="api-sig"><code>fn void? CompilerContext.emit_head_bind(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#ForOfHead">ForOfHead</a> head, ushort val_slot)</code></p><p class="api-src">src/compiler/statements.c3:900:26</p></div>
+<div class="api-item" id="CompilerContext.emit_head_inittz"><p class="api-sig"><code>fn void CompilerContext.emit_head_inittz(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#ForOfHead">ForOfHead</a> head)</code></p><p class="api-src">src/compiler/statements.c3:885:25</p></div>
+<div class="api-item" id="CompilerContext.emit_hoisted_fn_decls"><p class="api-sig"><code>fn void CompilerContext.emit_hoisted_fn_decls(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/functions.c3:1173:25</p></div>
+<div class="api-item" id="CompilerContext.emit_ident_read"><p class="api-sig"><code>fn uint? CompilerContext.emit_ident_read(<a href="#CompilerContext">CompilerContext*</a> self, uint reg, uint name_idx)</code></p><p class="api-src">src/compiler/emit.c3:201:26</p></div>
+<div class="api-item" id="CompilerContext.emit_iter_close"><p class="api-sig"><code>fn void CompilerContext.emit_iter_close(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#IterRec">IterRec</a> rec, bool throw_variant)</code></p><p class="api-src">src/compiler/statements.c3:590:25</p></div>
+<div class="api-item" id="CompilerContext.emit_iter_close_reg"><p class="api-sig"><code>fn void CompilerContext.emit_iter_close_reg(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg, bool is_await_loop, bool throw_variant)</code></p><p class="api-src">src/compiler/statements.c3:595:25</p></div>
+<div class="api-item" id="CompilerContext.emit_iter_open"><p class="api-sig"><code>fn <a href="#IterRec">IterRec?</a> CompilerContext.emit_iter_open(<a href="#CompilerContext">CompilerContext*</a> self, ushort src_reg, bool is_await)</code></p><p class="api-src">src/compiler/statements.c3:432:29</p></div>
+<div class="api-item" id="CompilerContext.emit_iter_step"><p class="api-sig"><code>fn uint? CompilerContext.emit_iter_step(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#IterRec">IterRec</a> rec, ushort val_slot, uint* out_fast_exit)</code></p><p class="api-src">src/compiler/statements.c3:503:26</p></div>
+<div class="api-item" id="CompilerContext.emit_jump"><p class="api-sig"><code>fn uint CompilerContext.emit_jump(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/emit.c3:238:25</p></div>
+<div class="api-item" id="CompilerContext.emit_load_index"><p class="api-sig"><code>fn void CompilerContext.emit_load_index(<a href="#CompilerContext">CompilerContext*</a> self, uint reg, uint value)</code></p><p class="api-src">src/compiler/constant_fold.c3:57:25</p></div>
+<div class="api-item" id="CompilerContext.emit_member_store"><p class="api-sig"><code>fn void CompilerContext.emit_member_store(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, ushort obj, ushort prop, ushort value, uint key_const)</code></p><p class="api-src">src/compiler/emit.c3:88:25</p></div>
+<div class="api-item" id="CompilerContext.emit_object_rest"><p class="api-sig"><code>fn void? CompilerContext.emit_object_rest(<a href="#CompilerContext">CompilerContext*</a> self, ushort dest_reg, ushort src_reg, <a href="#DestructBind">DestructBind[]</a> binds, uint rest_di)</code></p><p class="api-src">src/compiler/functions.c3:536:26</p></div>
+<div class="api-item" id="CompilerContext.emit_param_prologue"><p class="api-sig"><code>fn void? CompilerContext.emit_param_prologue(<a href="#CompilerContext">CompilerContext*</a> self, ushort arg_count, ushort first_default_idx, uint[] param_name_indices)</code></p><p class="api-src">src/compiler/functions.c3:1437:26</p></div>
+<div class="api-item" id="CompilerContext.emit_pattern_default"><p class="api-sig"><code>fn void? CompilerContext.emit_pattern_default(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind*</a> bind, ushort dest)</code></p><p class="api-src">src/compiler/functions.c3:465:26</p></div>
+<div class="api-item" id="CompilerContext.emit_private_access"><p class="api-sig"><code>fn ushort? CompilerContext.emit_private_access(<a href="#CompilerContext">CompilerContext*</a> self, char[] name, ushort obj_reg)</code></p><p class="api-src">src/compiler/private_names.c3:259:28</p></div>
+<div class="api-item" id="CompilerContext.emit_return_iter_closes"><p class="api-sig"><code>fn void CompilerContext.emit_return_iter_closes(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/statements.c3:991:25</p></div>
+<div class="api-item" id="CompilerContext.emit_scope_add_resource"><p class="api-sig"><code>fn void CompilerContext.emit_scope_add_resource(<a href="#CompilerContext">CompilerContext*</a> self, ushort list_reg, ushort value_reg, bool is_async)</code></p><p class="api-src">src/compiler/dispose.c3:85:25</p></div>
+<div class="api-item" id="CompilerContext.emit_scope_dispose"><p class="api-sig"><code>fn void CompilerContext.emit_scope_dispose(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DisposeScope">DisposeScope</a> scope)</code></p><p class="api-src">src/compiler/dispose.c3:103:25</p></div>
+<div class="api-item" id="CompilerContext.emit_simple"><p class="api-sig"><code>fn uint CompilerContext.emit_simple(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/emit.c3:340:25</p></div>
+<div class="api-item" id="CompilerContext.emit_super_base"><p class="api-sig"><code>fn ushort CompilerContext.emit_super_base(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/expressions.c3:227:27</p></div>
+<div class="api-item" id="CompilerContext.emit_template_call"><p class="api-sig"><code>fn ushort CompilerContext.emit_template_call(<a href="#CompilerContext">CompilerContext*</a> self, ushort callee_reg, ushort obj_reg, <a href="#TemplatePart">TemplatePart[]</a> parts, ushort[] expr_regs)</code></p><p class="api-src">src/compiler/expressions.c3:88:27</p></div>
+<div class="api-item" id="CompilerContext.emit_unwind_iter_close"><p class="api-sig"><code>fn void CompilerContext.emit_unwind_iter_close(<a href="#CompilerContext">CompilerContext*</a> self, uint li)</code></p><p class="api-src">src/compiler/statements.c3:947:25</p></div>
+<div class="api-item" id="CompilerContext.emit_var_store"><p class="api-sig"><code>fn void CompilerContext.emit_var_store(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg, uint name_idx, bool is_lexical, bool is_const, bool walk_chain = false)</code></p><p class="api-src">src/compiler/statements.c3:342:25</p></div>
+<div class="api-item" id="CompilerContext.emit_var_store_op"><p class="api-sig"><code>fn void CompilerContext.emit_var_store_op(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, ushort value_reg, uint name_idx, ushort probe_reg)</code></p><p class="api-src">src/compiler/emit.c3:228:25</p></div>
+<div class="api-item" id="CompilerContext.emit_wide"><p class="api-sig"><code>fn uint CompilerContext.emit_wide(<a href="#CompilerContext">CompilerContext*</a> self, uint ext_a, uint ext_b, uint ext_c)</code></p><p class="api-src">src/compiler/emit.c3:35:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_code_cap"><p class="api-sig"><code>fn void CompilerContext.ensure_code_cap(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:990:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_const_cap"><p class="api-sig"><code>fn void CompilerContext.ensure_const_cap(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1143:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_field_init_ctx"><p class="api-sig"><code>fn void CompilerContext.ensure_field_init_ctx(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#CompilerContext">CompilerContext*</a> target_ctx, bool is_static)</code></p><p class="api-src">src/compiler/class.c3:26:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_hoisted_defer_cap"><p class="api-sig"><code>fn void CompilerContext.ensure_hoisted_defer_cap(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1118:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_hoisted_fn_cap"><p class="api-sig"><code>fn void CompilerContext.ensure_hoisted_fn_cap(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1065:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_inner_func_cap"><p class="api-sig"><code>fn void CompilerContext.ensure_inner_func_cap(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1178:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_name_top"><p class="api-sig"><code>fn bool CompilerContext.ensure_name_top(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/context.c3:1016:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_private_name_cap"><p class="api-sig"><code>fn void CompilerContext.ensure_private_name_cap(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1196:25</p></div>
+<div class="api-item" id="CompilerContext.ensure_scope_cap"><p class="api-sig"><code>fn void CompilerContext.ensure_scope_cap(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1034:25</p></div>
+<div class="api-item" id="CompilerContext.fail"><p class="api-sig"><code>macro fault CompilerContext.fail(<a href="#CompilerContext">CompilerContext*</a> self, char[] msg)</code></p><p class="api-src">src/compiler/tokens.c3:17:29</p></div>
+<div class="api-item" id="CompilerContext.find_const_name_idx"><p class="api-sig"><code>fn uint CompilerContext.find_const_name_idx(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg)</code></p><p class="api-src">src/compiler/scope.c3:496:25</p></div>
+<div class="api-item" id="CompilerContext.find_local_reg"><p class="api-sig"><code>fn ushort? CompilerContext.find_local_reg(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:332:28</p></div>
+<div class="api-item" id="CompilerContext.find_same_scope_reg"><p class="api-sig"><code>fn ushort? CompilerContext.find_same_scope_reg(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:398:28</p></div>
+<div class="api-item" id="CompilerContext.find_string_constant"><p class="api-sig"><code>fn uint CompilerContext.find_string_constant(<a href="#CompilerContext">CompilerContext*</a> self, void* key)</code></p><p class="api-src">src/compiler/constants.c3:98:25</p></div>
+<div class="api-item" id="CompilerContext.finish"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> CompilerContext.finish(<a href="#CompilerContext">CompilerContext*</a> self, bool track = true)</code></p><p class="api-src">src/compiler/context.c3:1273:39</p></div>
+<div class="api-item" id="CompilerContext.first_entry_reaching"><p class="api-sig"><code>fn uint CompilerContext.first_entry_reaching(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg)</code></p><p class="api-src">src/compiler/scope.c3:519:25</p></div>
+<div class="api-item" id="CompilerContext.forof_head_is_captured"><p class="api-sig"><code>fn bool CompilerContext.forof_head_is_captured(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#ForOfHead">ForOfHead</a> head)</code></p><p class="api-src">src/compiler/statements.c3:866:25</p></div>
+<div class="api-item" id="CompilerContext.free_destruct_iter"><p class="api-sig"><code>fn void CompilerContext.free_destruct_iter(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructIterState">DestructIterState*</a> state)</code></p><p class="api-src">src/compiler/functions.c3:408:25</p></div>
+<div class="api-item" id="CompilerContext.free_iter_rec"><p class="api-sig"><code>fn void CompilerContext.free_iter_rec(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#IterRec">IterRec</a> rec)</code></p><p class="api-src">src/compiler/statements.c3:616:25</p></div>
+<div class="api-item" id="CompilerContext.free_reg"><p class="api-sig"><code>fn void CompilerContext.free_reg(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg)</code></p><p class="api-src">src/compiler/regalloc.c3:68:25</p></div>
+<div class="api-item" id="CompilerContext.free_regs_to"><p class="api-sig"><code>fn void CompilerContext.free_regs_to(<a href="#CompilerContext">CompilerContext*</a> self, ushort saved)</code></p><p class="api-src">src/compiler/regalloc.c3:75:25</p></div>
+<div class="api-item" id="CompilerContext.free_val"><p class="api-sig"><code>fn void CompilerContext.free_val(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#Val">Val</a> v)</code></p><p class="api-src">src/compiler/gen.c3:27:25</p></div>
+<div class="api-item" id="CompilerContext.fuse_find_generator"><p class="api-sig"><code>fn uint CompilerContext.fuse_find_generator(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/generator_fusion.c3:58:25</p></div>
+<div class="api-item" id="CompilerContext.fuse_generator_closed"><p class="api-sig"><code>fn bool CompilerContext.fuse_generator_closed(<a href="#CompilerContext">CompilerContext*</a> self, uint decl, <a href="#FuseState">FuseState*</a> st)</code></p><p class="api-src">src/compiler/generator_fusion.c3:106:25</p></div>
+<div class="api-item" id="CompilerContext.fuse_name"><p class="api-sig"><code>fn char[] CompilerContext.fuse_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] raw)</code></p><p class="api-src">src/compiler/generator_fusion.c3:42:27</p></div>
+<div class="api-item" id="CompilerContext.gen_args"><p class="api-sig"><code>fn ushort? CompilerContext.gen_args(<a href="#CompilerContext">CompilerContext*</a> self, uint args, ushort* callee, <a href="#Val">Val*</a> last, ushort* spread)</code></p><p class="api-src">src/compiler/gen.c3:2713:28</p></div>
+<div class="api-item" id="CompilerContext.gen_array"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_array(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2860:25</p></div>
+<div class="api-item" id="CompilerContext.gen_assign"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_assign(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint ctx)</code></p><p class="api-src">src/compiler/gen.c3:1697:25</p></div>
+<div class="api-item" id="CompilerContext.gen_binary"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_binary(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:1545:25</p></div>
+<div class="api-item" id="CompilerContext.gen_binary_step"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_binary_step(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="#Val">Val</a> left)</code></p><p class="api-src">src/compiler/gen.c3:1563:25</p></div>
+<div class="api-item" id="CompilerContext.gen_block"><p class="api-sig"><code>fn void? CompilerContext.gen_block(<a href="#CompilerContext">CompilerContext*</a> self, uint n, bool is_body)</code></p><p class="api-src">src/compiler/gen.c3:217:26</p></div>
+<div class="api-item" id="CompilerContext.gen_block_function"><p class="api-sig"><code>fn void? CompilerContext.gen_block_function(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint outer_depth)</code></p><p class="api-src">src/compiler/gen.c3:3744:26</p></div>
+<div class="api-item" id="CompilerContext.gen_block_function_node"><p class="api-sig"><code>fn uint CompilerContext.gen_block_function_node(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3791:25</p></div>
+<div class="api-item" id="CompilerContext.gen_block_functions"><p class="api-sig"><code>fn void? CompilerContext.gen_block_functions(<a href="#CompilerContext">CompilerContext*</a> self, uint stmts, uint outer_depth)</code></p><p class="api-src">src/compiler/gen.c3:3736:26</p></div>
+<div class="api-item" id="CompilerContext.gen_call"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_call(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="#Phase">Phase*</a> ph, Vec{uint}* optional = null)</code></p><p class="api-src">src/compiler/gen.c3:2410:25</p></div>
+<div class="api-item" id="CompilerContext.gen_call_args_stable"><p class="api-sig"><code>fn bool CompilerContext.gen_call_args_stable(<a href="#CompilerContext">CompilerContext*</a> self, uint first, uint last)</code></p><p class="api-src">src/compiler/gen.c3:3712:25</p></div>
+<div class="api-item" id="CompilerContext.gen_chain"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_chain(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="#Phase">Phase*</a> ph, <a href="#MemberTarget">MemberTarget*</a> target = null, uint rhs = 0, Vec{uint}* optional = null)</code></p><p class="api-src">src/compiler/gen.c3:2268:25</p></div>
+<div class="api-item" id="CompilerContext.gen_class"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_class(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3597:25</p></div>
+<div class="api-item" id="CompilerContext.gen_class_body"><p class="api-sig"><code>fn ushort? CompilerContext.gen_class_body(<a href="#CompilerContext">CompilerContext*</a> self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = REG_NONE, uint class_name_str_idx = 0, bool is_default_export = false, uint ast_node = 0)</code></p><p class="api-src">src/compiler/class.c3:303:28</p></div>
+<div class="api-item" id="CompilerContext.gen_closure"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_closure(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint object_home = uint::max)</code></p><p class="api-src">src/compiler/gen.c3:1450:25</p></div>
+<div class="api-item" id="CompilerContext.gen_collect_pattern"><p class="api-sig"><code>fn void? CompilerContext.gen_collect_pattern(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="#DestructBinds">DestructBinds*</a> binds, ushort source = 0, ushort parent = 0xFFFF)</code></p><p class="api-src">src/compiler/gen.c3:3096:26</p></div>
+<div class="api-item" id="CompilerContext.gen_compile_function"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> CompilerContext.gen_compile_function(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint object_home = 0xFFFFFFFF)</code></p><p class="api-src">src/compiler/gen.c3:1480:39</p></div>
+<div class="api-item" id="CompilerContext.gen_cond"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_cond(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:1624:25</p></div>
+<div class="api-item" id="CompilerContext.gen_const_store"><p class="api-sig"><code>fn <a href="#Val">Val</a> CompilerContext.gen_const_store(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg, uint name_idx, bool discard)</code></p><p class="api-src">src/compiler/gen.c3:1981:24</p></div>
+<div class="api-item" id="CompilerContext.gen_constant_array"><p class="api-sig"><code>fn bool CompilerContext.gen_constant_array(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-ast.html#Ast">Ast*</a> tree, uint elems, ushort dst)</code></p><p class="api-src">src/compiler/gen.c3:2806:25</p></div>
+<div class="api-item" id="CompilerContext.gen_declare_pattern"><p class="api-sig"><code>fn void CompilerContext.gen_declare_pattern(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind[]</a> binds, <a href="#ScopeKind">ScopeKind</a> kind, bool parameter = false)</code></p><p class="api-src">src/compiler/gen.c3:3197:25</p></div>
+<div class="api-item" id="CompilerContext.gen_delete"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_delete(<a href="#CompilerContext">CompilerContext*</a> self, uint operand)</code></p><p class="api-src">src/compiler/gen.c3:2661:25</p></div>
+<div class="api-item" id="CompilerContext.gen_destruct_assign"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_destruct_assign(<a href="#CompilerContext">CompilerContext*</a> self, uint pattern, uint rhs)</code></p><p class="api-src">src/compiler/gen.c3:3328:25</p></div>
+<div class="api-item" id="CompilerContext.gen_destruct_decl"><p class="api-sig"><code>fn void? CompilerContext.gen_destruct_decl(<a href="#CompilerContext">CompilerContext*</a> self, uint pattern, uint init, <a href="#ScopeKind">ScopeKind</a> kind)</code></p><p class="api-src">src/compiler/gen.c3:3204:26</p></div>
+<div class="api-item" id="CompilerContext.gen_do_while"><p class="api-sig"><code>fn void? CompilerContext.gen_do_while(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:764:26</p></div>
+<div class="api-item" id="CompilerContext.gen_export_pattern"><p class="api-sig"><code>fn void? CompilerContext.gen_export_pattern(<a href="#CompilerContext">CompilerContext*</a> self, uint n, bool lexical)</code></p><p class="api-src">src/compiler/gen_module.c3:21:26</p></div>
+<div class="api-item" id="CompilerContext.gen_expr"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_expr(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint ctx)</code></p><p class="api-src">src/compiler/gen.c3:1171:25</p></div>
+<div class="api-item" id="CompilerContext.gen_filled_array"><p class="api-sig"><code>fn bool? CompilerContext.gen_filled_array(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-ast.html#Ast">Ast*</a> tree, uint elems, ushort dst)</code></p><p class="api-src">src/compiler/gen.c3:2835:26</p></div>
+<div class="api-item" id="CompilerContext.gen_fold_member_read"><p class="api-sig"><code>fn <a href="#StoreForm">StoreForm</a> CompilerContext.gen_fold_member_read(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#MemberTarget">MemberTarget*</a> target)</code></p><p class="api-src">src/compiler/gen.c3:2123:30</p></div>
+<div class="api-item" id="CompilerContext.gen_for"><p class="api-sig"><code>fn void? CompilerContext.gen_for(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:780:26</p></div>
+<div class="api-item" id="CompilerContext.gen_for_each"><p class="api-sig"><code>fn void? CompilerContext.gen_for_each(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:998:26</p></div>
+<div class="api-item" id="CompilerContext.gen_for_pattern"><p class="api-sig"><code>fn void? CompilerContext.gen_for_pattern(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint pattern, bool declared, bool lexical, bool constant, uint saved_scope, ushort saved_reg)</code></p><p class="api-src">src/compiler/gen.c3:3345:26</p></div>
+<div class="api-item" id="CompilerContext.gen_function"><p class="api-sig"><code>fn void? CompilerContext.gen_function(<a href="#CompilerContext">CompilerContext*</a> self, uint scope)</code></p><p class="api-src">src/compiler/gen.c3:61:26</p></div>
+<div class="api-item" id="CompilerContext.gen_function_body"><p class="api-sig"><code>fn void? CompilerContext.gen_function_body(<a href="#CompilerContext">CompilerContext*</a> self, uint body)</code></p><p class="api-src">src/compiler/gen.c3:211:26</p></div>
+<div class="api-item" id="CompilerContext.gen_function_stmt"><p class="api-sig"><code>fn void? CompilerContext.gen_function_stmt(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3769:26</p></div>
+<div class="api-item" id="CompilerContext.gen_fused_generator"><p class="api-sig"><code>fn bool? CompilerContext.gen_fused_generator(<a href="#CompilerContext">CompilerContext*</a> self, uint n, char[] name, bool constant, uint call, uint body, uint saved_scope, ushort saved_reg)</code></p><p class="api-src">src/compiler/generator_fusion.c3:158:26</p></div>
+<div class="api-item" id="CompilerContext.gen_fused_return"><p class="api-sig"><code>fn void? CompilerContext.gen_fused_return(<a href="#CompilerContext">CompilerContext*</a> self, uint arg)</code></p><p class="api-src">src/compiler/generator_fusion.c3:257:26</p></div>
+<div class="api-item" id="CompilerContext.gen_fused_yield"><p class="api-sig"><code>fn void? CompilerContext.gen_fused_yield(<a href="#CompilerContext">CompilerContext*</a> self, uint y)</code></p><p class="api-src">src/compiler/generator_fusion.c3:230:26</p></div>
+<div class="api-item" id="CompilerContext.gen_hof_call"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_hof_call(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/hof_inline.c3:55:25</p></div>
+<div class="api-item" id="CompilerContext.gen_ident"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_ident(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:1388:25</p></div>
+<div class="api-item" id="CompilerContext.gen_if"><p class="api-sig"><code>fn void? CompilerContext.gen_if(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:658:26</p></div>
+<div class="api-item" id="CompilerContext.gen_import"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_import(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3519:25</p></div>
+<div class="api-item" id="CompilerContext.gen_index_step"><p class="api-sig"><code>fn void CompilerContext.gen_index_step(<a href="#CompilerContext">CompilerContext*</a> self, ushort idx_reg)</code></p><p class="api-src">src/compiler/gen.c3:2931:25</p></div>
+<div class="api-item" id="CompilerContext.gen_init_property"><p class="api-sig"><code>fn void? CompilerContext.gen_init_property(<a href="#CompilerContext">CompilerContext*</a> self, uint p, ushort obj_reg, Vec{LiteralSlot}* slots, bool* fixed_shape, bool* seen_proto_key, uint* home)</code></p><p class="api-src">src/compiler/gen.c3:2997:26</p></div>
+<div class="api-item" id="CompilerContext.gen_invalid_call_target"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_invalid_call_target(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3823:25</p></div>
+<div class="api-item" id="CompilerContext.gen_key_token"><p class="api-sig"><code>fn <a href="boomkat-lexer.html#Token">Token</a> CompilerContext.gen_key_token(<a href="#CompilerContext">CompilerContext*</a> self, uint key)</code></p><p class="api-src">src/compiler/gen.c3:3637:26</p></div>
+<div class="api-item" id="CompilerContext.gen_label"><p class="api-sig"><code>fn void? CompilerContext.gen_label(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:959:26</p></div>
+<div class="api-item" id="CompilerContext.gen_line"><p class="api-sig"><code>fn void CompilerContext.gen_line(<a href="#CompilerContext">CompilerContext*</a> self, uint tok)</code></p><p class="api-src">src/compiler/gen.c3:41:25</p></div>
+<div class="api-item" id="CompilerContext.gen_line_end"><p class="api-sig"><code>fn void CompilerContext.gen_line_end(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:49:25</p></div>
+<div class="api-item" id="CompilerContext.gen_line_main"><p class="api-sig"><code>fn void CompilerContext.gen_line_main(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:54:25</p></div>
+<div class="api-item" id="CompilerContext.gen_literal_member"><p class="api-sig"><code>fn bool? CompilerContext.gen_literal_member(<a href="#CompilerContext">CompilerContext*</a> self, uint node, <a href="#Val">Val*</a> result)</code></p><p class="api-src">src/compiler/ast_peepholes.c3:7:26</p></div>
+<div class="api-item" id="CompilerContext.gen_logical"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_logical(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="boomkat-lexer.html#TokenType">TokenType</a> tok, <a href="#Val">Val</a> left)</code></p><p class="api-src">src/compiler/gen.c3:1588:25</p></div>
+<div class="api-item" id="CompilerContext.gen_logical_assign"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_logical_assign(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="boomkat-lexer.html#TokenType">TokenType</a> op)</code></p><p class="api-src">src/compiler/gen.c3:1911:25</p></div>
+<div class="api-item" id="CompilerContext.gen_loop_jump"><p class="api-sig"><code>fn void? CompilerContext.gen_loop_jump(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:1121:26</p></div>
+<div class="api-item" id="CompilerContext.gen_loop_test"><p class="api-sig"><code>fn void? CompilerContext.gen_loop_test(<a href="#CompilerContext">CompilerContext*</a> self, uint test, uint body_label, bool simple, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, ushort pinned)</code></p><p class="api-src">src/compiler/gen.c3:712:26</p></div>
+<div class="api-item" id="CompilerContext.gen_member_assign"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_member_assign(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2152:25</p></div>
+<div class="api-item" id="CompilerContext.gen_member_bind"><p class="api-sig"><code>fn void? CompilerContext.gen_member_bind(<a href="#CompilerContext">CompilerContext*</a> self, uint target_node, ushort value)</code></p><p class="api-src">src/compiler/gen.c3:984:26</p></div>
+<div class="api-item" id="CompilerContext.gen_member_store_as"><p class="api-sig"><code>fn void CompilerContext.gen_member_store_as(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#StoreForm">StoreForm</a> form, <a href="#MemberTarget">MemberTarget*</a> target, ushort value)</code></p><p class="api-src">src/compiler/gen.c3:2141:25</p></div>
+<div class="api-item" id="CompilerContext.gen_member_target"><p class="api-sig"><code>fn <a href="#MemberTarget">MemberTarget?</a> CompilerContext.gen_member_target(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint rhs = 0)</code></p><p class="api-src">src/compiler/gen.c3:2082:34</p></div>
+<div class="api-item" id="CompilerContext.gen_member_update"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_member_update(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint ctx)</code></p><p class="api-src">src/compiler/gen.c3:2191:25</p></div>
+<div class="api-item" id="CompilerContext.gen_module_lexical"><p class="api-sig"><code>fn bool CompilerContext.gen_module_lexical(<a href="#CompilerContext">CompilerContext*</a> self, uint atom)</code></p><p class="api-src">src/compiler/gen_module.c3:42:25</p></div>
+<div class="api-item" id="CompilerContext.gen_module_metadata"><p class="api-sig"><code>fn void? CompilerContext.gen_module_metadata(<a href="#CompilerContext">CompilerContext*</a> self, uint stmts)</code></p><p class="api-src">src/compiler/gen_module.c3:50:26</p></div>
+<div class="api-item" id="CompilerContext.gen_module_request"><p class="api-sig"><code>fn uint CompilerContext.gen_module_request(<a href="#CompilerContext">CompilerContext*</a> self, uint rec, bool deferred = false)</code></p><p class="api-src">src/compiler/gen_module.c3:7:25</p></div>
+<div class="api-item" id="CompilerContext.gen_module_slots"><p class="api-sig"><code>fn void CompilerContext.gen_module_slots(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/gen_module.c3:126:25</p></div>
+<div class="api-item" id="CompilerContext.gen_name"><p class="api-sig"><code>fn char[] CompilerContext.gen_name(<a href="#CompilerContext">CompilerContext*</a> self, uint atom)</code></p><p class="api-src">src/compiler/gen.c3:34:27</p></div>
+<div class="api-item" id="CompilerContext.gen_new"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_new(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2771:25</p></div>
+<div class="api-item" id="CompilerContext.gen_number"><p class="api-sig"><code>fn <a href="#Val">Val</a> CompilerContext.gen_number(<a href="#CompilerContext">CompilerContext*</a> self, double value)</code></p><p class="api-src">src/compiler/constant_fold.c3:65:24</p></div>
+<div class="api-item" id="CompilerContext.gen_object"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_object(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2942:25</p></div>
+<div class="api-item" id="CompilerContext.gen_optional_chain"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_optional_chain(<a href="#CompilerContext">CompilerContext*</a> self, uint n, bool deleting = false)</code></p><p class="api-src">src/compiler/gen.c3:3486:25</p></div>
+<div class="api-item" id="CompilerContext.gen_optional_test"><p class="api-sig"><code>fn void CompilerContext.gen_optional_test(<a href="#CompilerContext">CompilerContext*</a> self, ushort value, Vec{uint}* jumps)</code></p><p class="api-src">src/compiler/gen.c3:3475:25</p></div>
+<div class="api-item" id="CompilerContext.gen_pattern_key"><p class="api-sig"><code>fn uint? CompilerContext.gen_pattern_key(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3160:26</p></div>
+<div class="api-item" id="CompilerContext.gen_pattern_parameters"><p class="api-sig"><code>fn void? CompilerContext.gen_pattern_parameters(<a href="#CompilerContext">CompilerContext*</a> self, uint params, <a href="#DestructBind">DestructBind[]</a> binds)</code></p><p class="api-src">src/compiler/gen.c3:3411:26</p></div>
+<div class="api-item" id="CompilerContext.gen_pinned_number"><p class="api-sig"><code>fn ushort CompilerContext.gen_pinned_number(<a href="#CompilerContext">CompilerContext*</a> self, double val)</code></p><p class="api-src">src/compiler/gen.c3:700:27</p></div>
+<div class="api-item" id="CompilerContext.gen_private_in"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_private_in(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3697:25</p></div>
+<div class="api-item" id="CompilerContext.gen_private_names"><p class="api-sig"><code>fn void? CompilerContext.gen_private_names(<a href="#CompilerContext">CompilerContext*</a> self, uint members)</code></p><p class="api-src">src/compiler/gen.c3:3659:26</p></div>
+<div class="api-item" id="CompilerContext.gen_program"><p class="api-sig"><code>fn void? CompilerContext.gen_program(<a href="#CompilerContext">CompilerContext*</a> self, bool global_checks = true)</code></p><p class="api-src">src/compiler/gen.c3:3830:26</p></div>
+<div class="api-item" id="CompilerContext.gen_projection_block"><p class="api-sig"><code>fn bool? CompilerContext.gen_projection_block(<a href="#CompilerContext">CompilerContext*</a> self, uint statements)</code></p><p class="api-src">src/compiler/ast_spread.c3:8:26</p></div>
+<div class="api-item" id="CompilerContext.gen_regexp_test"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_regexp_test(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2570:25</p></div>
+<div class="api-item" id="CompilerContext.gen_remove_member_read"><p class="api-sig"><code>fn void CompilerContext.gen_remove_member_read(<a href="#CompilerContext">CompilerContext*</a> self, bool super)</code></p><p class="api-src">src/compiler/gen.c3:975:25</p></div>
+<div class="api-item" id="CompilerContext.gen_scalar_array_pattern"><p class="api-sig"><code>fn bool? CompilerContext.gen_scalar_array_pattern(<a href="#CompilerContext">CompilerContext*</a> self, uint init, <a href="#DestructBind">DestructBind[]</a> binds, <a href="#ScopeKind">ScopeKind</a> kind)</code></p><p class="api-src">src/compiler/gen.c3:3281:26</p></div>
+<div class="api-item" id="CompilerContext.gen_scalar_new_member"><p class="api-sig"><code>fn bool? CompilerContext.gen_scalar_new_member(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="#Val">Val*</a> result)</code></p><p class="api-src">src/compiler/class_scalar.c3:138:26</p></div>
+<div class="api-item" id="CompilerContext.gen_scalar_object_pattern"><p class="api-sig"><code>fn bool? CompilerContext.gen_scalar_object_pattern(<a href="#CompilerContext">CompilerContext*</a> self, uint init, <a href="#DestructBind">DestructBind[]</a> binds, <a href="#ScopeKind">ScopeKind</a> kind)</code></p><p class="api-src">src/compiler/gen.c3:3222:26</p></div>
+<div class="api-item" id="CompilerContext.gen_sequence"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_sequence(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint ctx)</code></p><p class="api-src">src/compiler/gen.c3:1398:25</p></div>
+<div class="api-item" id="CompilerContext.gen_simple_cond"><p class="api-sig"><code>fn bool CompilerContext.gen_simple_cond(<a href="#CompilerContext">CompilerContext*</a> self, uint test, <a href="boomkat-bytecode.html#Opcode">Opcode*</a> op, double* rhs)</code></p><p class="api-src">src/compiler/gen.c3:681:25</p></div>
+<div class="api-item" id="CompilerContext.gen_spread_projection"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_spread_projection(<a href="#CompilerContext">CompilerContext*</a> self, uint node)</code></p><p class="api-src">src/compiler/ast_spread.c3:65:25</p></div>
+<div class="api-item" id="CompilerContext.gen_stmt"><p class="api-sig"><code>fn void? CompilerContext.gen_stmt(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:305:26</p></div>
+<div class="api-item" id="CompilerContext.gen_super"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_super(<a href="#CompilerContext">CompilerContext*</a> self, uint n, <a href="#MemberTarget">MemberTarget*</a> target)</code></p><p class="api-src">src/compiler/gen.c3:2236:25</p></div>
+<div class="api-item" id="CompilerContext.gen_super_call"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_super_call(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3677:25</p></div>
+<div class="api-item" id="CompilerContext.gen_suspend"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_suspend(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:1345:25</p></div>
+<div class="api-item" id="CompilerContext.gen_switch"><p class="api-sig"><code>fn void? CompilerContext.gen_switch(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:494:26</p></div>
+<div class="api-item" id="CompilerContext.gen_tagged_template"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_tagged_template(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:3545:25</p></div>
+<div class="api-item" id="CompilerContext.gen_tail_expr"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_tail_expr(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2363:25</p></div>
+<div class="api-item" id="CompilerContext.gen_take_store_loads"><p class="api-sig"><code>fn <a href="#StoreForm">StoreForm</a> CompilerContext.gen_take_store_loads(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#MemberTarget">MemberTarget*</a> target)</code></p><p class="api-src">src/compiler/gen.c3:2105:30</p></div>
+<div class="api-item" id="CompilerContext.gen_target"><p class="api-sig"><code>fn <a href="#Target">Target?</a> CompilerContext.gen_target(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/gen.c3:1669:28</p></div>
+<div class="api-item" id="CompilerContext.gen_target_writes_local"><p class="api-sig"><code>fn bool CompilerContext.gen_target_writes_local(<a href="#CompilerContext">CompilerContext*</a> self, uint n, ushort reg, uint* budget)</code></p><p class="api-src">src/compiler/gen.c3:3797:25</p></div>
+<div class="api-item" id="CompilerContext.gen_tdz"><p class="api-sig"><code>fn void CompilerContext.gen_tdz(<a href="#CompilerContext">CompilerContext*</a> self, uint stmts, uint outer_depth)</code></p><p class="api-src">src/compiler/gen.c3:275:25</p></div>
+<div class="api-item" id="CompilerContext.gen_tdz_pattern"><p class="api-sig"><code>fn void CompilerContext.gen_tdz_pattern(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint outer_depth)</code></p><p class="api-src">src/compiler/gen.c3:3174:25</p></div>
+<div class="api-item" id="CompilerContext.gen_template"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_template(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:1418:25</p></div>
+<div class="api-item" id="CompilerContext.gen_try"><p class="api-sig"><code>fn void? CompilerContext.gen_try(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:576:26</p></div>
+<div class="api-item" id="CompilerContext.gen_typeof"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_typeof(<a href="#CompilerContext">CompilerContext*</a> self, uint operand)</code></p><p class="api-src">src/compiler/gen.c3:2625:25</p></div>
+<div class="api-item" id="CompilerContext.gen_unary"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_unary(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:2601:25</p></div>
+<div class="api-item" id="CompilerContext.gen_update"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_update(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint ctx)</code></p><p class="api-src">src/compiler/gen.c3:1991:25</p></div>
+<div class="api-item" id="CompilerContext.gen_var_decl"><p class="api-sig"><code>fn void? CompilerContext.gen_var_decl(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:414:26</p></div>
+<div class="api-item" id="CompilerContext.gen_while"><p class="api-sig"><code>fn void? CompilerContext.gen_while(<a href="#CompilerContext">CompilerContext*</a> self, uint n)</code></p><p class="api-src">src/compiler/gen.c3:738:26</p></div>
+<div class="api-item" id="CompilerContext.gen_with_assign"><p class="api-sig"><code>fn <a href="#Val">Val?</a> CompilerContext.gen_with_assign(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint name, <a href="boomkat-lexer.html#TokenType">TokenType</a> op)</code></p><p class="api-src">src/compiler/gen.c3:1862:25</p></div>
+<div class="api-item" id="CompilerContext.gen_writes_local"><p class="api-sig"><code>fn bool CompilerContext.gen_writes_local(<a href="#CompilerContext">CompilerContext*</a> self, uint first, uint last, ushort reg)</code></p><p class="api-src">src/compiler/gen.c3:2065:25</p></div>
+<div class="api-item" id="CompilerContext.get_module_def"><p class="api-sig"><code>fn <a href="#CompModuleDef">CompModuleDef*</a> CompilerContext.get_module_def(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/statements.c3:1001:35</p></div>
+<div class="api-item" id="CompilerContext.has_thunk_defaults"><p class="api-sig"><code>fn bool CompilerContext.has_thunk_defaults(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1224:25</p></div>
+<div class="api-item" id="CompilerContext.hof_arrow_inlinable"><p class="api-sig"><code>fn bool CompilerContext.hof_arrow_inlinable(<a href="#CompilerContext">CompilerContext*</a> self, uint first, uint arrow, uint max_params, bool block_ok)</code></p><p class="api-src">src/compiler/hof_inline.c3:31:25</p></div>
+<div class="api-item" id="CompilerContext.hoist_decls_in"><p class="api-sig"><code>fn void? CompilerContext.hoist_decls_in(<a href="#CompilerContext">CompilerContext*</a> self, uint scope, bool is_global, bool checks_only)</code></p><p class="api-src">src/compiler/functions.c3:1197:26</p></div>
+<div class="api-item" id="CompilerContext.hoist_function_indexed"><p class="api-sig"><code>fn void? CompilerContext.hoist_function_indexed(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-ast.html#Site">Site*</a> s)</code></p><p class="api-src">src/compiler/functions.c3:1254:26</p></div>
+<div class="api-item" id="CompilerContext.hoist_global_fn_decls_indexed"><p class="api-sig"><code>fn bool? CompilerContext.hoist_global_fn_decls_indexed(<a href="#CompilerContext">CompilerContext*</a> self, bool checks_only)</code></p><p class="api-src">src/compiler/functions.c3:1351:26</p></div>
+<div class="api-item" id="CompilerContext.hoist_one_var_name"><p class="api-sig"><code>fn void CompilerContext.hoist_one_var_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] raw_name, bool is_global, bool b33_record = false)</code></p><p class="api-src">src/compiler/functions.c3:1099:25</p></div>
+<div class="api-item" id="CompilerContext.in_with"><p class="api-sig"><code>fn bool CompilerContext.in_with(<a href="#CompilerContext">CompilerContext*</a> self) @inline</code></p><p class="api-src">src/compiler/scope.c3:259:25</p></div>
+<div class="api-item" id="CompilerContext.index_captures_of"><p class="api-sig"><code>fn bool CompilerContext.index_captures_of(<a href="#CompilerContext">CompilerContext*</a> self, uint scope)</code></p><p class="api-src">src/compiler/captures.c3:31:25</p></div>
+<div class="api-item" id="CompilerContext.index_outer_names"><p class="api-sig"><code>fn void CompilerContext.index_outer_names(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-ast.html#AstIndex">AstIndex*</a> idx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> f)</code></p><p class="api-src">src/compiler/lazy.c3:61:25</p></div>
+<div class="api-item" id="CompilerContext.init"><p class="api-sig"><code>fn void CompilerContext.init(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-lexer.html#Lexer">Lexer*</a> lex, void* heap)</code></p><p class="api-src">src/compiler/context.c3:858:25</p></div>
+<div class="api-item" id="CompilerContext.init_arrow_context"><p class="api-sig"><code>fn void CompilerContext.init_arrow_context(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#CompilerContext">CompilerContext*</a> arrow_ctx, bool is_async_arrow)</code></p><p class="api-src">src/compiler/functions.c3:2067:25</p></div>
+<div class="api-item" id="CompilerContext.innermost_loop"><p class="api-sig"><code>fn <a href="#LoopInfo">LoopInfo*</a> CompilerContext.innermost_loop(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/patches.c3:38:30</p></div>
+<div class="api-item" id="CompilerContext.innermost_private_scope"><p class="api-sig"><code>fn <a href="#PrivateScope">PrivateScope</a> CompilerContext.innermost_private_scope(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/private_names.c3:136:33</p></div>
+<div class="api-item" id="CompilerContext.insert_constant_hash"><p class="api-sig"><code>fn void CompilerContext.insert_constant_hash(<a href="#CompilerContext">CompilerContext*</a> self, ulong val_bits, uint idx)</code></p><p class="api-src">src/compiler/constants.c3:45:25</p></div>
+<div class="api-item" id="CompilerContext.intern_private_binding_name"><p class="api-sig"><code>fn void* CompilerContext.intern_private_binding_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/private_names.c3:201:26</p></div>
+<div class="api-item" id="CompilerContext.intern_slot_name"><p class="api-sig"><code>fn char[] CompilerContext.intern_slot_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] slot_name)</code></p><p class="api-src">src/compiler/private_names.c3:59:27</p></div>
+<div class="api-item" id="CompilerContext.is_async_gen"><p class="api-sig"><code>macro bool CompilerContext.is_async_gen(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:845:28</p></div>
+<div class="api-item" id="CompilerContext.is_captured_name"><p class="api-sig"><code>fn bool CompilerContext.is_captured_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/captures.c3:25:25</p></div>
+<div class="api-item" id="CompilerContext.is_declared_global"><p class="api-sig"><code>fn bool CompilerContext.is_declared_global(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/emit.c3:115:25</p></div>
+<div class="api-item" id="CompilerContext.is_existing_local_env_resident"><p class="api-sig"><code>fn bool CompilerContext.is_existing_local_env_resident(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:359:25</p></div>
+<div class="api-item" id="CompilerContext.is_free_global_name"><p class="api-sig"><code>fn bool CompilerContext.is_free_global_name(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/emit.c3:150:25</p></div>
+<div class="api-item" id="CompilerContext.is_hoisted_fn"><p class="api-sig"><code>fn bool CompilerContext.is_hoisted_fn(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/context.c3:1048:25</p></div>
+<div class="api-item" id="CompilerContext.is_local_var_reg"><p class="api-sig"><code>fn bool CompilerContext.is_local_var_reg(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg)</code></p><p class="api-src">src/compiler/scope.c3:509:25</p></div>
+<div class="api-item" id="CompilerContext.is_outer_cell"><p class="api-sig"><code>fn bool CompilerContext.is_outer_cell(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/emit.c3:178:25</p></div>
+<div class="api-item" id="CompilerContext.is_param_name"><p class="api-sig"><code>fn bool CompilerContext.is_param_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:423:25</p></div>
+<div class="api-item" id="CompilerContext.is_script_global"><p class="api-sig"><code>fn bool CompilerContext.is_script_global(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/emit.c3:124:25</p></div>
+<div class="api-item" id="CompilerContext.is_slot_global_name"><p class="api-sig"><code>fn bool CompilerContext.is_slot_global_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:310:25</p></div>
+<div class="api-item" id="CompilerContext.is_slot_global_name_index"><p class="api-sig"><code>fn bool CompilerContext.is_slot_global_name_index(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/scope.c3:315:25</p></div>
+<div class="api-item" id="CompilerContext.is_statically_resolvable_local"><p class="api-sig"><code>fn bool CompilerContext.is_statically_resolvable_local(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:558:25</p></div>
+<div class="api-item" id="CompilerContext.is_sync_generator"><p class="api-sig"><code>macro bool CompilerContext.is_sync_generator(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:850:28</p></div>
+<div class="api-item" id="CompilerContext.iter_close_catcher_skip"><p class="api-sig"><code>fn uint CompilerContext.iter_close_catcher_skip(<a href="#CompilerContext">CompilerContext*</a> self, uint li)</code></p><p class="api-src">src/compiler/statements.c3:942:25</p></div>
+<div class="api-item" id="CompilerContext.keep_name"><p class="api-sig"><code>fn char[] CompilerContext.keep_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/context.c3:778:27</p></div>
+<div class="api-item" id="CompilerContext.lookup_constant_hash"><p class="api-sig"><code>fn uint CompilerContext.lookup_constant_hash(<a href="#CompilerContext">CompilerContext*</a> self, ulong val_bits)</code></p><p class="api-src">src/compiler/constants.c3:22:25</p></div>
+<div class="api-item" id="CompilerContext.loop_depth"><p class="api-sig"><code>fn uint CompilerContext.loop_depth(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/patches.c3:36:25</p></div>
+<div class="api-item" id="CompilerContext.loop_jump_op"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#Opcode">Opcode</a> CompilerContext.loop_jump_op(<a href="#CompilerContext">CompilerContext*</a> self, uint loop_idx, <a href="boomkat-bytecode.html#Opcode">Opcode</a> crossing_op)</code></p><p class="api-src">src/compiler/patches.c3:64:27</p></div>
+<div class="api-item" id="CompilerContext.mark_default_expr_captures"><p class="api-sig"><code>fn void CompilerContext.mark_default_expr_captures(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func)</code></p><p class="api-src">src/compiler/functions.c3:1780:25</p></div>
+<div class="api-item" id="CompilerContext.mark_scope_captured"><p class="api-sig"><code>fn void CompilerContext.mark_scope_captured(<a href="#CompilerContext">CompilerContext*</a> self, uint index)</code></p><p class="api-src">src/compiler/scope.c3:228:25</p></div>
+<div class="api-item" id="CompilerContext.mark_scope_catch_param"><p class="api-sig"><code>fn void CompilerContext.mark_scope_catch_param(<a href="#CompilerContext">CompilerContext*</a> self, uint index)</code></p><p class="api-src">src/compiler/scope.c3:239:25</p></div>
+<div class="api-item" id="CompilerContext.mark_var_captured"><p class="api-sig"><code>fn void CompilerContext.mark_var_captured(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:471:25</p></div>
+<div class="api-item" id="CompilerContext.member_key_const"><p class="api-sig"><code>fn uint CompilerContext.member_key_const(<a href="#CompilerContext">CompilerContext*</a> self, ushort prop)</code></p><p class="api-src">src/compiler/emit.c3:74:25</p></div>
+<div class="api-item" id="CompilerContext.mint_priv_closure_slot"><p class="api-sig"><code>fn char[] CompilerContext.mint_priv_closure_slot(<a href="#CompilerContext">CompilerContext*</a> self, usz index, char[] tag)</code></p><p class="api-src">src/compiler/class.c3:70:27</p></div>
+<div class="api-item" id="CompilerContext.name_text"><p class="api-sig"><code>fn char[] CompilerContext.name_text(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> name)</code></p><p class="api-src">src/compiler/context.c3:786:27</p></div>
+<div class="api-item" id="CompilerContext.names_catch_param"><p class="api-sig"><code>fn bool CompilerContext.names_catch_param(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:371:25</p></div>
+<div class="api-item" id="CompilerContext.note_arguments_reference"><p class="api-sig"><code>fn void? CompilerContext.note_arguments_reference(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/expressions.c3:44:26</p></div>
+<div class="api-item" id="CompilerContext.note_arguments_reference_by_index"><p class="api-sig"><code>fn void? CompilerContext.note_arguments_reference_by_index(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/expressions.c3:35:26</p></div>
+<div class="api-item" id="CompilerContext.note_far_offset"><p class="api-sig"><code>fn void CompilerContext.note_far_offset(<a href="#CompilerContext">CompilerContext*</a> self, uint addr, bool far, uint target)</code></p><p class="api-src">src/compiler/emit.c3:293:25</p></div>
+<div class="api-item" id="CompilerContext.note_tail_call"><p class="api-sig"><code>fn void CompilerContext.note_tail_call(<a href="#CompilerContext">CompilerContext*</a> self, uint n, uint start)</code></p><p class="api-src">src/compiler/gen.c3:2395:25</p></div>
+<div class="api-item" id="CompilerContext.open_destruct_iter"><p class="api-sig"><code>fn <a href="#DestructIterState">DestructIterState*</a> CompilerContext.open_destruct_iter(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructIters">DestructIters*</a> iters, <a href="#DestructBind">DestructBind[]</a> binds, uint di, ushort src_reg)</code></p><p class="api-src">src/compiler/functions.c3:426:39</p></div>
+<div class="api-item" id="CompilerContext.outer_name_flags"><p class="api-sig"><code>fn char CompilerContext.outer_name_flags(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-ast.html#AstIndex">AstIndex*</a> idx, uint scope, uint atom)</code></p><p class="api-src">src/compiler/lazy.c3:138:25</p></div>
+<div class="api-item" id="CompilerContext.part_producer_kind"><p class="api-sig"><code>fn <a href="#PartKind">PartKind</a> CompilerContext.part_producer_kind(<a href="#CompilerContext">CompilerContext*</a> self, uint start, uint end, ushort reg, uint depth)</code></p><p class="api-src">src/compiler/expressions.c3:281:29</p></div>
+<div class="api-item" id="CompilerContext.patch_chain"><p class="api-sig"><code>fn void CompilerContext.patch_chain(<a href="#CompilerContext">CompilerContext*</a> self, uint chain_head)</code></p><p class="api-src">src/compiler/patches.c3:23:25</p></div>
+<div class="api-item" id="CompilerContext.patch_continue_chain"><p class="api-sig"><code>fn void CompilerContext.patch_continue_chain(<a href="#CompilerContext">CompilerContext*</a> self, uint head, uint target)</code></p><p class="api-src">src/compiler/patches.c3:73:25</p></div>
+<div class="api-item" id="CompilerContext.patch_jump"><p class="api-sig"><code>fn void CompilerContext.patch_jump(<a href="#CompilerContext">CompilerContext*</a> self, uint addr)</code></p><p class="api-src">src/compiler/emit.c3:324:25</p></div>
+<div class="api-item" id="CompilerContext.patch_jump_to"><p class="api-sig"><code>fn void CompilerContext.patch_jump_to(<a href="#CompilerContext">CompilerContext*</a> self, uint addr, uint target_addr)</code></p><p class="api-src">src/compiler/emit.c3:311:25</p></div>
+<div class="api-item" id="CompilerContext.pin_reg"><p class="api-sig"><code>fn void CompilerContext.pin_reg(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg)</code></p><p class="api-src">src/compiler/dispose.c3:31:25</p></div>
+<div class="api-item" id="CompilerContext.pop_loop"><p class="api-sig"><code>fn void CompilerContext.pop_loop(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/patches.c3:84:25</p></div>
+<div class="api-item" id="CompilerContext.pop_private_scope"><p class="api-sig"><code>fn void CompilerContext.pop_private_scope(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/private_names.c3:91:25</p></div>
+<div class="api-item" id="CompilerContext.pop_scope"><p class="api-sig"><code>fn void CompilerContext.pop_scope(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/scope.c3:21:25</p></div>
+<div class="api-item" id="CompilerContext.pop_scope_to"><p class="api-sig"><code>fn void CompilerContext.pop_scope_to(<a href="#CompilerContext">CompilerContext*</a> self, uint saved_depth)</code></p><p class="api-src">src/compiler/scope.c3:26:25</p></div>
+<div class="api-item" id="CompilerContext.private_entry"><p class="api-sig"><code>fn <a href="#PrivateNameEntry">PrivateNameEntry*?</a> CompilerContext.private_entry(<a href="#CompilerContext">CompilerContext*</a> self, char[] canonical, uint from = 0)</code></p><p class="api-src">src/compiler/private_names.c3:105:39</p></div>
+<div class="api-item" id="CompilerContext.private_slot_name"><p class="api-sig"><code>fn char[] CompilerContext.private_slot_name(<a href="#CompilerContext">CompilerContext*</a> self, uint class_id, char[] name)</code></p><p class="api-src">src/compiler/private_names.c3:49:27</p></div>
+<div class="api-item" id="CompilerContext.push_loop"><p class="api-sig"><code>fn void CompilerContext.push_loop(<a href="#CompilerContext">CompilerContext*</a> self, uint continue_target, bool is_loop)</code></p><p class="api-src">src/compiler/patches.c3:40:25</p></div>
+<div class="api-item" id="CompilerContext.push_param_default"><p class="api-sig"><code>fn void CompilerContext.push_param_default(<a href="#CompilerContext">CompilerContext*</a> self, ushort param_reg, uint name_idx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> thunk)</code></p><p class="api-src">src/compiler/functions.c3:1581:25</p></div>
+<div class="api-item" id="CompilerContext.push_private_scope"><p class="api-sig"><code>fn void CompilerContext.push_private_scope(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/private_names.c3:85:25</p></div>
+<div class="api-item" id="CompilerContext.push_scope"><p class="api-sig"><code>fn void CompilerContext.push_scope(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/scope.c3:16:25</p></div>
+<div class="api-item" id="CompilerContext.push_scope_marker"><p class="api-sig"><code>fn void CompilerContext.push_scope_marker(<a href="#CompilerContext">CompilerContext*</a> self, bool is_body = false)</code></p><p class="api-src">src/compiler/scope.c3:75:25</p></div>
+<div class="api-item" id="CompilerContext.reclaim_stmt_regs"><p class="api-sig"><code>fn void CompilerContext.reclaim_stmt_regs(<a href="#CompilerContext">CompilerContext*</a> self, ushort base)</code></p><p class="api-src">src/compiler/regalloc.c3:91:25</p></div>
+<div class="api-item" id="CompilerContext.record_b33_hoist"><p class="api-sig"><code>fn void CompilerContext.record_b33_hoist(<a href="#CompilerContext">CompilerContext*</a> self, char[] var_name, uint var_reg, uint hoist_pc)</code></p><p class="api-src">src/compiler/context.c3:1082:25</p></div>
+<div class="api-item" id="CompilerContext.record_declared_global"><p class="api-sig"><code>fn void CompilerContext.record_declared_global(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/emit.c3:107:25</p></div>
+<div class="api-item" id="CompilerContext.record_error"><p class="api-sig"><code>fn void CompilerContext.record_error(<a href="#CompilerContext">CompilerContext*</a> self, char[] msg)</code></p><p class="api-src">src/compiler/context.c3:263:25</p></div>
+<div class="api-item" id="CompilerContext.record_eval_var_name"><p class="api-sig"><code>fn void CompilerContext.record_eval_var_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] raw_name)</code></p><p class="api-src">src/compiler/functions.c3:1082:25</p></div>
+<div class="api-item" id="CompilerContext.record_outer_names"><p class="api-sig"><code>fn void CompilerContext.record_outer_names(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> f, uint scope)</code></p><p class="api-src">src/compiler/lazy.c3:82:25</p></div>
+<div class="api-item" id="CompilerContext.register_export"><p class="api-sig"><code>fn void? CompilerContext.register_export(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#CompModuleDef">CompModuleDef*</a> mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false, bool declares_binding = false)</code></p><p class="api-src">src/compiler/statements.c3:218:26</p></div>
+<div class="api-item" id="CompilerContext.release_private_names"><p class="api-sig"><code>fn void CompilerContext.release_private_names(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:967:25</p></div>
+<div class="api-item" id="CompilerContext.reserve_arguments_register"><p class="api-sig"><code>fn void CompilerContext.reserve_arguments_register(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/captures.c3:108:25</p></div>
+<div class="api-item" id="CompilerContext.resolve_assign_targets"><p class="api-sig"><code>fn void CompilerContext.resolve_assign_targets(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#DestructBind">DestructBind[]</a> binds)</code></p><p class="api-src">src/compiler/destructuring.c3:40:25</p></div>
+<div class="api-item" id="CompilerContext.resolve_capture_candidates"><p class="api-sig"><code>fn void CompilerContext.resolve_capture_candidates(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> child)</code></p><p class="api-src">src/compiler/capture_slots.c3:56:25</p></div>
+<div class="api-item" id="CompilerContext.resolve_private_name"><p class="api-sig"><code>fn <a href="#PrivateNameEntry">PrivateNameEntry*?</a> CompilerContext.resolve_private_name(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/private_names.c3:210:39</p></div>
+<div class="api-item" id="CompilerContext.resolve_slot_global"><p class="api-sig"><code>fn ushort? CompilerContext.resolve_slot_global(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:286:28</p></div>
+<div class="api-item" id="CompilerContext.resolve_slot_global_by_index"><p class="api-sig"><code>fn ushort? CompilerContext.resolve_slot_global_by_index(<a href="#CompilerContext">CompilerContext*</a> self, uint name_idx)</code></p><p class="api-src">src/compiler/scope.c3:323:28</p></div>
+<div class="api-item" id="CompilerContext.resolve_var"><p class="api-sig"><code>fn ushort? CompilerContext.resolve_var(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:263:28</p></div>
+<div class="api-item" id="CompilerContext.restore_name_eval"><p class="api-sig"><code>fn void CompilerContext.restore_name_eval(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#NameEvalFrame">NameEvalFrame</a> f)</code></p><p class="api-src">src/compiler/context.c3:818:25</p></div>
+<div class="api-item" id="CompilerContext.same_scope_floor"><p class="api-sig"><code>fn uint CompilerContext.same_scope_floor(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/scope.c3:378:25</p></div>
+<div class="api-item" id="CompilerContext.save_name_eval"><p class="api-sig"><code>fn <a href="#NameEvalFrame">NameEvalFrame</a> CompilerContext.save_name_eval(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:811:34</p></div>
+<div class="api-item" id="CompilerContext.scope_entry"><p class="api-sig"><code>fn <a href="#ScopeEntry">ScopeEntry*</a> CompilerContext.scope_entry(<a href="#CompilerContext">CompilerContext*</a> self, char[] name)</code></p><p class="api-src">src/compiler/scope.c3:51:32</p></div>
+<div class="api-item" id="CompilerContext.scope_entry_of"><p class="api-sig"><code>fn <a href="#ScopeEntry">ScopeEntry*</a> CompilerContext.scope_entry_of(<a href="#CompilerContext">CompilerContext*</a> self, void* key)</code></p><p class="api-src">src/compiler/scope.c3:44:32</p></div>
+<div class="api-item" id="CompilerContext.scope_reg_floor"><p class="api-sig"><code>fn uint CompilerContext.scope_reg_floor(<a href="#CompilerContext">CompilerContext*</a> self) @inline</code></p><p class="api-src">src/compiler/regalloc.c3:97:25</p></div>
+<div class="api-item" id="CompilerContext.set_branch"><p class="api-sig"><code>fn void CompilerContext.set_branch(<a href="#CompilerContext">CompilerContext*</a> self, uint addr, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, uint a, int offset)</code></p><p class="api-src">src/compiler/emit.c3:276:25</p></div>
+<div class="api-item" id="CompilerContext.set_compile_error"><p class="api-sig"><code>fn void CompilerContext.set_compile_error(<a href="#CompilerContext">CompilerContext*</a> self, char[] msg)</code></p><p class="api-src">src/compiler/context.c3:274:25</p></div>
+<div class="api-item" id="CompilerContext.set_numeric_inferred_name"><p class="api-sig"><code>fn void? CompilerContext.set_numeric_inferred_name(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-lexer.html#Token">Token</a> key_tok, bool is_number, double num_value, bool is_bigint, char[] bigint_src)</code></p><p class="api-src">src/compiler/class.c3:164:26</p></div>
+<div class="api-item" id="CompilerContext.set_try"><p class="api-sig"><code>fn void CompilerContext.set_try(<a href="#CompilerContext">CompilerContext*</a> self, uint try_pc, uint flags, uint catch_off, uint finally_off)</code></p><p class="api-src">src/compiler/emit.c3:285:25</p></div>
+<div class="api-item" id="CompilerContext.shadowed_by"><p class="api-sig"><code>fn <a href="#ScopeEntry">ScopeEntry*</a> CompilerContext.shadowed_by(<a href="#CompilerContext">CompilerContext*</a> self, <a href="#ScopeEntry">ScopeEntry*</a> e) @inline</code></p><p class="api-src">src/compiler/scope.c3:63:32</p></div>
+<div class="api-item" id="CompilerContext.shield_computed_key"><p class="api-sig"><code>fn ushort CompilerContext.shield_computed_key(<a href="#CompilerContext">CompilerContext*</a> self, ushort key_reg)</code></p><p class="api-src">src/compiler/scope.c3:535:27</p></div>
+<div class="api-item" id="CompilerContext.specialize_object_literal"><p class="api-sig"><code>fn void CompilerContext.specialize_object_literal(<a href="#CompilerContext">CompilerContext*</a> self, uint new_pc, <a href="#LiteralSlot">LiteralSlot[]</a> slots)</code></p><p class="api-src">src/compiler/literals.c3:13:25</p></div>
+<div class="api-item" id="CompilerContext.template_part"><p class="api-sig"><code>fn <a href="#TemplatePart">TemplatePart</a> CompilerContext.template_part(<a href="#CompilerContext">CompilerContext*</a> self, <a href="boomkat-lexer.html#Token">Token</a> tok, bool invalid)</code></p><p class="api-src">src/compiler/expressions.c3:84:33</p></div>
+<div class="api-item" id="CompilerContext.this_cannot_change"><p class="api-sig"><code>fn bool CompilerContext.this_cannot_change(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/context.c3:1259:25</p></div>
+<div class="api-item" id="CompilerContext.tostr_into_temp"><p class="api-sig"><code>fn ushort CompilerContext.tostr_into_temp(<a href="#CompilerContext">CompilerContext*</a> self, ushort reg)</code></p><p class="api-src">src/compiler/expressions.c3:260:27</p></div>
+<div class="api-item" id="CompilerContext.try_emit_typeof_register"><p class="api-sig"><code>fn ushort? CompilerContext.try_emit_typeof_register(<a href="#CompilerContext">CompilerContext*</a> self, char[] id_name)</code></p><p class="api-src">src/compiler/expressions.c3:61:28</p></div>
+<div class="api-item" id="CompilerContext.widen_far_offsets"><p class="api-sig"><code>fn void? CompilerContext.widen_far_offsets(<a href="#CompilerContext">CompilerContext*</a> self)</code></p><p class="api-src">src/compiler/far_offsets.c3:16:26</p></div>
+<div class="api-item" id="CompImportEntry"><pre><code>struct CompImportEntry {
+  char[] local_name;
+  char[] import_name;
+  uint req_module_idx;
+  bool is_star;
+  bool is_default;
+  bool is_deferred;
+  bool is_source;
+}</code></pre><p class="api-src">src/compiler/statements.c3:19:8</p></div>
+<div class="api-item" id="CompModuleDef"><pre><code>struct CompModuleDef {
+  char[] module_name;
+  char status;
+  Vec{CompImportEntry} imports;
+  Vec{CompExportEntry} exports;
+  Vec{CompStarExportEntry} star_exports;
+  Vec{CompReqModuleEntry} req_modules;
+  Vec{CompFuncDeclEntry} func_decls;
+}</code></pre><p class="api-src">src/compiler/statements.c3:141:8</p></div>
+<div class="api-item" id="CompReqModuleEntry"><pre><code>struct CompReqModuleEntry {
+  char[] module_name;
+  void* resolved;
+  <a href="#ModuleAttrType">ModuleAttrType</a> attr_type;
+  bool type_only;
+  bool deferred;
+  uint eval_order;
+}</code></pre><p class="api-src">src/compiler/statements.c3:63:8</p></div>
+<div class="api-item" id="CompStarExportEntry"><pre><code>struct CompStarExportEntry {
+  uint req_module_idx;
+}</code></pre><p class="api-src">src/compiler/statements.c3:47:8</p></div>
+<div class="api-item" id="CONST_OVERFLOW"><pre><code>faultdef CONST_OVERFLOW</code></pre><p class="api-src">src/compiler/context.c3:25:10</p></div>
+<div class="api-item" id="ConstHashEntry"><pre><code>struct ConstHashEntry {
+  ulong hash;
+  uint index;
+}</code></pre><p class="api-src">src/compiler/context.c3:98:8</p></div>
+<div class="api-item" id="DestructBind"><pre><code>struct DestructBind {
+  bool ast_parameter_tdz;
+  uint ast_target;
+  uint ast_default;
+  uint ast_key;
+  uint name_idx;
+  uint key_idx;
+  ushort arg_idx;
+  ushort index;
+  bool is_object;
+  bool has_default;
+  bool is_synthetic;
+  bool is_hole;
+  bool is_empty_pattern;
+  uint default_func_idx;
+  ushort parent_idx;
+  bool is_member_target;
+  ushort member_obj_reg;
+  ushort member_prop_reg;
+  bool is_computed_key;
+  ushort computed_key_reg;
+  bool assign_needs_putvar;
+  ushort resolve_probe_reg;
+  ushort iter_idx;
+  bool is_private_target;
+  bool is_super_target;
+  ushort private_brand_reg;
+  uint private_brand_name_c;
+  ushort rest_array_reg;
+  ushort rest_index_reg;
+  ushort group_reg;
+  ushort binding_reg;
+}</code></pre><p class="api-src">src/compiler/functions.c3:62:8</p></div>
+<div class="api-item" id="DestructBinds"><pre><code>alias DestructBinds = Vec{DestructBind}</code></pre><p class="api-src">src/compiler/functions.c3:145:7</p></div>
+<div class="api-item" id="DestructIters"><pre><code>struct DestructIters {
+  <a href="#DestructIterState">DestructIterState[]</a> states;
+  uint count;
+  ushort outermost;
+}</code></pre><p class="api-src">src/compiler/functions.c3:417:8</p></div>
+<div class="api-item" id="DestructIterState"><pre><code>struct DestructIterState {
+  ushort method_reg;
+  ushort next_reg;
+  ushort callee_reg;
+  ushort callee_this_reg;
+  ushort save_reg;
+}</code></pre><p class="api-src">src/compiler/functions.c3:33:8</p></div>
+<div class="api-item" id="DestructParamDefault"><pre><code>struct DestructParamDefault {
+  ushort arg_slot;
+  uint default_func_idx;
+}</code></pre><p class="api-src">src/compiler/context.c3:251:8</p></div>
+<div class="api-item" id="DestructStoreMode"><pre><code>enum DestructStoreMode : int {
+  PARAM_SYNC,
+  DECLARE,
+  ASSIGN_TARGET,
+}</code></pre><p class="api-src">src/compiler/functions.c3:54:6</p></div>
+<div class="api-item" id="DisposeScope"><pre><code>struct DisposeScope {
+  ushort list_reg;
+  ushort pending_reg;
+  ushort has_error_reg;
+  bool is_async;
+}</code></pre><p class="api-src">src/compiler/context.c3:221:8</p></div>
+<div class="api-item" id="FarOffset"><pre><code>struct FarOffset {
+  uint addr;
+  uint target;
+}</code></pre><p class="api-src">src/compiler/context.c3:296:8</p></div>
+<div class="api-item" id="ForOfHead"><pre><code>struct ForOfHead {
+  <a href="#ForOfKind">ForOfKind</a> kind;
+  ushort id_reg;
+  uint id_name_idx;
+  bool id_is_bare;
+  bool id_reg_resident;
+  bool id_walk_chain;
+  bool is_lexical;
+  bool is_const;
+  bool is_using;
+  bool is_await_using;
+  <a href="#DestructBind">DestructBind[]</a> binds;
+  <a href="#DestructStoreMode">DestructStoreMode</a> store_mode;
+  bool is_object_pattern;
+  uint ast_target;
+}</code></pre><p class="api-src">src/compiler/statements.c3:93:8</p></div>
+<div class="api-item" id="ForOfKind"><pre><code>enum ForOfKind : int {
+  IDENT,
+  DESTRUCTURE,
+  MEMBER,
+}</code></pre><p class="api-src">src/compiler/statements.c3:87:6</p></div>
+<div class="api-item" id="FuseState"><pre><code>struct FuseState {
+  bool renaming;
+  char depth;
+  Vec{char[]} names;
+  ushort binding;
+  uint name_idx;
+  bool constant;
+  uint body;
+  int lex_base;
+  Vec{uint} exits;
+}</code></pre><p class="api-src">src/compiler/generator_fusion.c3:22:8</p></div>
+<div class="api-item" id="Fusion3Match"><pre><code>struct Fusion3Match {
+  bool matched;
+  <a href="boomkat-bytecode.html#Opcode">Opcode</a> rewrite_op;
+  uint reg;
+  uint imm;
+}</code></pre><p class="api-src">src/compiler/fusion.c3:707:8</p></div>
+<div class="api-item" id="Fusion3MatchFn"><pre><code>alias Fusion3MatchFn = fn <a href="#Fusion3Match">Fusion3Match</a>(<a href="boomkat-bytecode.html#Instruction">Instruction</a> slot0, <a href="boomkat-bytecode.html#Instruction">Instruction</a> slot1, <a href="boomkat-bytecode.html#Instruction">Instruction</a> slot2, void* ctx)</code></pre><p class="api-src">src/compiler/fusion.c3:716:7</p></div>
+<div class="api-item" id="Fusion3Rule"><pre><code>struct Fusion3Rule {
+  <a href="#Fusion3MatchFn">Fusion3MatchFn</a> match;
+}</code></pre><p class="api-src">src/compiler/fusion.c3:718:8</p></div>
+<div class="api-item" id="FusionConsumerFn"><pre><code>alias FusionConsumerFn = fn <a href="#FusionMatch">FusionMatch</a>(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, <a href="boomkat-bytecode.html#Instruction">Instruction</a> consumer, uint scratch_reg, void* ctx)</code></pre><p class="api-src">src/compiler/fusion.c3:67:7</p></div>
+<div class="api-item" id="FusionMatch"><pre><code>struct FusionMatch {
+  bool matched;
+  <a href="boomkat-bytecode.html#Opcode">Opcode</a> rewrite_op;
+  uint dest_reg;
+  uint src_reg;
+  uint imm;
+}</code></pre><p class="api-src">src/compiler/fusion.c3:46:8</p></div>
+<div class="api-item" id="FusionRule"><pre><code>struct FusionRule {
+  <a href="#FusionTriggerFn">FusionTriggerFn</a> trigger;
+  <a href="#FusionConsumerFn">FusionConsumerFn</a> consumer;
+  bool gap;
+}</code></pre><p class="api-src">src/compiler/fusion.c3:73:8</p></div>
+<div class="api-item" id="FusionTriggerFn"><pre><code>alias FusionTriggerFn = fn <a href="#FusionMatch">FusionMatch</a>(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, void* ctx)</code></pre><p class="api-src">src/compiler/fusion.c3:61:7</p></div>
+<div class="api-item" id="HofKind"><pre><code>enum HofKind : char {
+  FOR_EACH,
+  REDUCE,
+  MAP,
+  FILTER,
+  SOME,
+  EVERY,
+  FIND,
+  FIND_INDEX,
+}</code></pre><p class="api-src">src/compiler/hof_inline.c3:18:6</p></div>
+<div class="api-item" id="IterRec"><pre><code>struct IterRec {
+  ushort method_reg;
+  ushort next_reg;
+  ushort callee_reg;
+  ushort callee_this_reg;
+  bool is_await;
+  uint fast_exit;
+  bool has_fast_exit;
+}</code></pre><p class="api-src">src/compiler/statements.c3:408:8</p></div>
+<div class="api-item" id="LabelInfo"><pre><code>struct LabelInfo {
+  char[] name;
+  uint loop_index;
+  bool is_loop;
+}</code></pre><p class="api-src">src/compiler/context.c3:213:8</p></div>
+<div class="api-item" id="LiteralSlot"><pre><code>struct LiteralSlot {
+  uint key;
+  uint key_pc;
+  uint store_pc;
+}</code></pre><p class="api-src">src/compiler/literals.c3:7:8</p></div>
+<div class="api-item" id="LoopInfo"><pre><code>struct LoopInfo {
+  uint continue_target;
+  uint break_patch_head;
+  uint continue_patch_head;
+  bool is_loop;
+  int saved_lex_depth;
+  int saved_with_depth;
+  int iter_close_reg;
+  bool is_await_loop;
+  bool deferred_close;
+  ushort close_reg;
+  uint saved_try_depth;
+}</code></pre><p class="api-src">src/compiler/context.c3:190:8</p></div>
+<div class="api-item" id="MemberTarget"><pre><code>struct MemberTarget {
+  <a href="#Val">Val</a> base;
+  ushort key;
+  ushort value;
+  uint key_const;
+  <a href="#Val">Val</a> markers;
+  bool super;
+  bool private;
+}</code></pre><p class="api-src">src/compiler/gen.c3:2052:8</p></div>
+<div class="api-item" id="ModuleAttrType"><pre><code>enum ModuleAttrType : char {
+  NONE,
+  JSON,
+  TEXT,
+  BYTES,
+}</code></pre><p class="api-src">src/compiler/statements.c3:56:6</p></div>
+<div class="api-item" id="MoveelimRoles"><pre><code>bitstruct MoveelimRoles : char {
+  bool a_read : 0..0;
+  bool b_read : 1..1;
+  bool c_read : 2..2;
+  bool a_write : 3..3;
+  bool general : 4..4;
+}</code></pre><p class="api-src">src/compiler/moveelim.c3:255:11</p></div>
+<div class="api-item" id="NameEvalFrame"><pre><code>struct NameEvalFrame {
+  bool has;
+  char[] name;
+}</code></pre><p class="api-src">src/compiler/context.c3:806:8</p></div>
+<div class="api-item" id="NOT_HOF_CALL"><pre><code>faultdef NOT_HOF_CALL</code></pre><p class="api-src">src/compiler/hof_inline.c3:29:10</p></div>
+<div class="api-item" id="NOT_REGEXP_TEST"><pre><code>faultdef NOT_REGEXP_TEST</code></pre><p class="api-src">src/compiler/gen.c3:2569:10</p></div>
+<div class="api-item" id="ParamDefault"><pre><code>struct ParamDefault {
+  ushort param_reg;
+  uint param_name_idx;
+  uint default_func_idx;
+  uint ast_expr;
+  bool is_literal;
+  <a href="boomkat-bytecode.html#Instruction">Instruction</a> literal;
+}</code></pre><p class="api-src">src/compiler/context.c3:238:8</p></div>
+<div class="api-item" id="ParamExprScope"><pre><code>struct ParamExprScope {
+  <a href="boomkat-ast.html#Resolver">Resolver*</a> res;
+  uint func_scope;
+  uint params;
+  uint before;
+  bool allow_this;
+}</code></pre><p class="api-src">src/compiler/param_defaults.c3:8:8</p></div>
+<div class="api-item" id="PartKind"><pre><code>enum PartKind : uint {
+  PART_UNKNOWN,
+  PART_DEFER,
+}</code></pre><p class="api-src">src/compiler/expressions.c3:14:6</p></div>
+<div class="api-item" id="PatchEntry"><pre><code>struct PatchEntry {
+  uint addr;
+  uint next;
+}</code></pre><p class="api-src">src/compiler/context.c3:229:8</p></div>
+<div class="api-item" id="PerIterBinding"><pre><code>struct PerIterBinding {
+  uint name_idx;
+  bool is_const;
+}</code></pre><p class="api-src">src/compiler/statements.c3:378:8</p></div>
+<div class="api-item" id="PerIterBindings"><pre><code>alias PerIterBindings = Vec{PerIterBinding}</code></pre><p class="api-src">src/compiler/statements.c3:383:7</p></div>
+<div class="api-item" id="Phase"><pre><code>enum Phase : char {
+  MEMBER,
+  CALL,
+}</code></pre><p class="api-src">src/compiler/gen.c3:2213:6</p></div>
+<div class="api-item" id="PrivateNameEntry"><pre><code>struct PrivateNameEntry {
+  char[] name;
+  uint hash;
+  uint next;
+  char[] slot_name;
+  char[] brand_slot_name;
+  bool is_method;
+  bool has_getter;
+  bool has_setter;
+  bool is_static;
+  char[] method_closure_slot_name;
+  char[] getter_closure_slot_name;
+  char[] setter_closure_slot_name;
+}</code></pre><p class="api-src">src/compiler/context.c3:2254:8</p></div>
+<div class="api-item" id="PrivateNameEntry.names"><p class="api-sig"><code>fn char[]*[6] PrivateNameEntry.names(<a href="#PrivateNameEntry">PrivateNameEntry*</a> self)</code></p><p class="api-src">src/compiler/context.c3:2201:32</p></div>
+<div class="api-item" id="PrivateNameTable"><pre><code>struct PrivateNameTable {
+  <a href="#PrivateNameEntry">PrivateNameEntry*</a> entries;
+  uint count;
+  uint cap;
+  uint* heads;
+  uint heads_cap;
+  uint linked;
+  Vec{PrivateScope} scopes;
+}</code></pre><p class="api-src">src/compiler/context.c3:2228:8</p></div>
+<div class="api-item" id="PrivateScope"><pre><code>struct PrivateScope {
+  uint start;
+  uint class_id;
+}</code></pre><p class="api-src">src/compiler/context.c3:2246:8</p></div>
+<div class="api-item" id="REGISTER_OVERFLOW"><pre><code>faultdef REGISTER_OVERFLOW</code></pre><p class="api-src">src/compiler/context.c3:23:10</p></div>
+<div class="api-item" id="RegSet"><pre><code>struct RegSet {
+  uint* words;
+  uint word_count;
+}</code></pre><p class="api-src">src/compiler/moveelim.c3:33:8</p></div>
+<div class="api-item" id="RegSet.clear"><p class="api-sig"><code>fn void RegSet.clear(<a href="#RegSet">RegSet*</a> self)</code></p><p class="api-src">src/compiler/moveelim.c3:38:16</p></div>
+<div class="api-item" id="RegSet.copy_from"><p class="api-sig"><code>fn void RegSet.copy_from(<a href="#RegSet">RegSet*</a> self, <a href="#RegSet">RegSet*</a> other)</code></p><p class="api-src">src/compiler/moveelim.c3:76:16</p></div>
+<div class="api-item" id="RegSet.equals"><p class="api-sig"><code>fn bool RegSet.equals(<a href="#RegSet">RegSet*</a> self, <a href="#RegSet">RegSet*</a> other)</code></p><p class="api-src">src/compiler/moveelim.c3:84:16</p></div>
+<div class="api-item" id="RegSet.set"><p class="api-sig"><code>fn void RegSet.set(<a href="#RegSet">RegSet*</a> self, uint reg)</code></p><p class="api-src">src/compiler/moveelim.c3:47:16</p></div>
+<div class="api-item" id="RegSet.test"><p class="api-sig"><code>fn bool RegSet.test(<a href="#RegSet">RegSet*</a> self, uint reg)</code></p><p class="api-src">src/compiler/moveelim.c3:70:16</p></div>
+<div class="api-item" id="RegSet.union_with"><p class="api-sig"><code>fn void RegSet.union_with(<a href="#RegSet">RegSet*</a> self, <a href="#RegSet">RegSet*</a> other)</code></p><p class="api-src">src/compiler/moveelim.c3:80:16</p></div>
+<div class="api-item" id="RegSet.unset"><p class="api-sig"><code>fn void RegSet.unset(<a href="#RegSet">RegSet*</a> self, uint reg)</code></p><p class="api-src">src/compiler/moveelim.c3:53:16</p></div>
+<div class="api-item" id="SCOPE_ERROR"><pre><code>faultdef SCOPE_ERROR</code></pre><p class="api-src">src/compiler/context.c3:22:10</p></div>
+<div class="api-item" id="ScopeEntry"><pre><code>struct ScopeEntry {
+  char[] name;
+  ushort reg;
+  <a href="#ScopeKind">ScopeKind</a> kind;
+  uint reg_floor;
+  uint binding_id;
+  bool is_captured;
+  uint shadowed;
+  bool is_tdz;
+  bool is_param;
+  bool is_catch_param;
+  bool is_fn_decl;
+  bool is_slot_global;
+  bool is_body_mark;
+}</code></pre><p class="api-src">src/compiler/context.c3:143:8</p></div>
+<div class="api-item" id="ScopeKind"><pre><code>enum ScopeKind : char {
+  VAR,
+  LET,
+  CONST,
+  SCOPEMARK,
+}</code></pre><p class="api-src">src/compiler/context.c3:125:6</p></div>
+<div class="api-item" id="StoreForm"><pre><code>enum StoreForm : char {
+  PUTPROP,
+  PUTPROPC,
+  PUTTHISC,
+}</code></pre><p class="api-src">src/compiler/gen.c3:2092:6</p></div>
+<div class="api-item" id="SwitchClause"><pre><code>struct SwitchClause {
+  uint body_addr;
+  uint ft_jump_addr;
+}</code></pre><p class="api-src">src/compiler/statements.c3:373:8</p></div>
+<div class="api-item" id="Target"><pre><code>struct Target {
+  ushort reg;
+  bool local;
+  bool global;
+  uint name_idx;
+  bool cell;
+}</code></pre><p class="api-src">src/compiler/gen.c3:1661:8</p></div>
+<div class="api-item" id="TemplatePart"><pre><code>struct TemplatePart {
+  uint str_idx;
+  uint raw_idx;
+  bool invalid;
+}</code></pre><p class="api-src">src/compiler/expressions.c3:78:8</p></div>
+<div class="api-item" id="Val"><pre><code>struct Val {
+  ushort reg;
+  bool local;
+  ushort lreg;
+}</code></pre><p class="api-src">src/compiler/gen.c3:20:8</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="AWAIT_LIVE_MAX_CODE"><p class="api-sig"><code>const uint AWAIT_LIVE_MAX_CODE = 2048;</code></p><p class="api-src">src/compiler/await_liveness.c3:8:12</p></div>
+<div class="api-item" id="AWAIT_LIVE_MAX_REGS"><p class="api-sig"><code>const uint AWAIT_LIVE_MAX_REGS = 64;</code></p><p class="api-src">src/compiler/await_liveness.c3:7:12</p></div>
+<div class="api-item" id="CMP_BRANCH_RULES"><p class="api-sig"><code>const <a href="#CmpBranchRule">CmpBranchRule[8]</a> CMP_BRANCH_RULES = { { Opcode.LT, Opcode.JMP_NLT, Opcode.JMP_LT }, { Opcode.LE, Opcode.JMP_NLE, Opcode.JMP_LE }, { Opcode.GT, Opcode.JMP_NGT, Opcode.JMP_GT }, { Opcode.GE, Opcode.JMP_NGE, Opcode.JMP_GE }, { Opcode.SEQ, Opcode.JMP_SNEQ, Opcode.JMP_SEQ }, { Opcode.SNEQ, Opcode.JMP_SEQ, Opcode.JMP_SNEQ }, { Opcode.EQ, Opcode.JMP_NEQ, Opcode.JMP_EQ }, { Opcode.NEQ, Opcode.JMP_EQ, Opcode.JMP_NEQ }, };</code></p><p class="api-src">src/compiler/fusion.c3:818:24</p></div>
+<div class="api-item" id="COMPILE_STACK_FALLBACK"><p class="api-sig"><code>const usz COMPILE_STACK_FALLBACK = 524288;</code></p><p class="api-src">src/compiler/context.c3:52:11</p></div>
+<div class="api-item" id="COMPILE_STACK_RESERVE"><p class="api-sig"><code>const usz COMPILE_STACK_RESERVE = 262144;</code></p><p class="api-src">src/compiler/context.c3:49:11</p></div>
+<div class="api-item" id="CONSTANT_ARRAY_MAX_CAPACITY"><p class="api-sig"><code>const uint CONSTANT_ARRAY_MAX_CAPACITY = 256;</code></p><p class="api-src">src/compiler/gen.c3:2804:12</p></div>
+<div class="api-item" id="CTX_POSTFIX"><p class="api-sig"><code>const uint CTX_POSTFIX = 2;</code></p><p class="api-src">src/compiler/gen.c3:1167:12</p></div>
+<div class="api-item" id="CTX_STMT"><p class="api-sig"><code>const uint CTX_STMT = 3;</code></p><p class="api-src">src/compiler/gen.c3:1168:12</p></div>
+<div class="api-item" id="CTX_VOID"><p class="api-sig"><code>const uint CTX_VOID = 1;</code></p><p class="api-src">src/compiler/gen.c3:1166:12</p></div>
+<div class="api-item" id="FUSE_MAX_PARAMS"><p class="api-sig"><code>const uint FUSE_MAX_PARAMS = 8;</code></p><p class="api-src">src/compiler/generator_fusion.c3:39:12</p></div>
+<div class="api-item" id="FUSE_MAX_YIELDS"><p class="api-sig"><code>const uint FUSE_MAX_YIELDS = 3;</code></p><p class="api-src">src/compiler/generator_fusion.c3:38:12</p></div>
+<div class="api-item" id="FUSION_GAP_MAX"><p class="api-sig"><code>const uint FUSION_GAP_MAX = 6;</code></p><p class="api-src">src/compiler/fusion.c3:82:12</p></div>
+<div class="api-item" id="FUSION_GETPROPC"><p class="api-sig"><code>const <a href="#FusionRule">FusionRule</a> FUSION_GETPROPC = { .trigger = &amp;fusion_getpropc_trigger, .consumer = &amp;fusion_getpropc_consumer, };</code></p><p class="api-src">src/compiler/fusion.c3:587:18</p></div>
+<div class="api-item" id="FUSION_GETTHISC"><p class="api-sig"><code>const <a href="#FusionRule">FusionRule</a> FUSION_GETTHISC = { .trigger = &amp;fusion_this_trigger, .consumer = &amp;fusion_getthisc_consumer, };</code></p><p class="api-src">src/compiler/fusion.c3:658:18</p></div>
+<div class="api-item" id="FUSION_IMM_BINOP"><p class="api-sig"><code>const <a href="#FusionRule">FusionRule</a> FUSION_IMM_BINOP = { .trigger = &amp;fusion_imm_binop_trigger, .consumer = &amp;fusion_imm_binop_consumer, };</code></p><p class="api-src">src/compiler/fusion.c3:540:18</p></div>
+<div class="api-item" id="FUSION_INC_DEC_VAR"><p class="api-sig"><code>const <a href="#Fusion3Rule">Fusion3Rule</a> FUSION_INC_DEC_VAR = { .match = &amp;fusion_inc_dec_var_match, };</code></p><p class="api-src">src/compiler/fusion.c3:766:19</p></div>
+<div class="api-item" id="FUSION_NULL_BRANCH"><p class="api-sig"><code>const <a href="#FusionRule">FusionRule</a> FUSION_NULL_BRANCH = { .trigger = &amp;fusion_null_branch_trigger, .consumer = &amp;fusion_null_branch_consumer, };</code></p><p class="api-src">src/compiler/fusion.c3:1115:18</p></div>
+<div class="api-item" id="FUSION_PUTPROPC"><p class="api-sig"><code>const <a href="#FusionRule">FusionRule</a> FUSION_PUTPROPC = { .trigger = &amp;fusion_getpropc_trigger, .consumer = &amp;fusion_putpropc_consumer, .gap = true, };</code></p><p class="api-src">src/compiler/fusion.c3:622:18</p></div>
+<div class="api-item" id="FUSION_PUTTHISC"><p class="api-sig"><code>const <a href="#FusionRule">FusionRule</a> FUSION_PUTTHISC = { .trigger = &amp;fusion_this_trigger, .consumer = &amp;fusion_putthisc_consumer, .gap = true, };</code></p><p class="api-src">src/compiler/fusion.c3:686:18</p></div>
+<div class="api-item" id="g_compile_stack_floor"><p class="api-sig"><code>uptr g_compile_stack_floor;</code></p><p class="api-src">src/compiler/context.c3:58:13</p></div>
+<div class="api-item" id="g_disable_optimize"><p class="api-sig"><code>bool g_disable_optimize = false;</code></p><p class="api-src">src/compiler/context.c3:283:6</p></div>
+<div class="api-item" id="gen_trace"><p class="api-sig"><code>bool gen_trace;</code></p><p class="api-src">src/compiler/gen.c3:32:6</p></div>
+<div class="api-item" id="INITIAL_CODE"><p class="api-sig"><code>const uint INITIAL_CODE = 512;</code></p><p class="api-src">src/compiler/context.c3:37:12</p></div>
+<div class="api-item" id="INITIAL_CONST_HASH"><p class="api-sig"><code>const uint INITIAL_CONST_HASH = 256;</code></p><p class="api-src">src/compiler/context.c3:39:12</p></div>
+<div class="api-item" id="INITIAL_CONSTANTS"><p class="api-sig"><code>const uint INITIAL_CONSTANTS = 128;</code></p><p class="api-src">src/compiler/context.c3:38:12</p></div>
+<div class="api-item" id="INITIAL_HOISTED_DEFERS"><p class="api-sig"><code>const uint INITIAL_HOISTED_DEFERS = 8;</code></p><p class="api-src">src/compiler/context.c3:86:12</p></div>
+<div class="api-item" id="INITIAL_HOISTED_FNS"><p class="api-sig"><code>const uint INITIAL_HOISTED_FNS = 128;</code></p><p class="api-src">src/compiler/context.c3:83:12</p></div>
+<div class="api-item" id="INITIAL_INNER_FUNCS"><p class="api-sig"><code>const uint INITIAL_INNER_FUNCS = 16;</code></p><p class="api-src">src/compiler/context.c3:40:12</p></div>
+<div class="api-item" id="INITIAL_PRIVATE_NAMES"><p class="api-sig"><code>const uint INITIAL_PRIVATE_NAMES = 64;</code></p><p class="api-src">src/compiler/context.c3:2213:12</p></div>
+<div class="api-item" id="INITIAL_SCOPE_DEPTH"><p class="api-sig"><code>const uint INITIAL_SCOPE_DEPTH = 256;</code></p><p class="api-src">src/compiler/context.c3:89:12</p></div>
+<div class="api-item" id="MAX_CODE_HARD"><p class="api-sig"><code>const uint MAX_CODE_HARD = 4194304;</code></p><p class="api-src">src/compiler/context.c3:43:12</p></div>
+<div class="api-item" id="MAX_CONSTANTS_HARD"><p class="api-sig"><code>const uint MAX_CONSTANTS_HARD = 1048576;</code></p><p class="api-src">src/compiler/context.c3:44:12</p></div>
+<div class="api-item" id="MAX_INNER_FUNCS_HARD"><p class="api-sig"><code>const uint MAX_INNER_FUNCS_HARD = 4194304;</code></p><p class="api-src">src/compiler/context.c3:45:12</p></div>
+<div class="api-item" id="MAX_LOWERED_CELLS"><p class="api-sig"><code>const uint MAX_LOWERED_CELLS = 255;</code></p><p class="api-src">src/compiler/cells.c3:8:12</p></div>
+<div class="api-item" id="MAX_PARAMS"><p class="api-sig"><code>const uint MAX_PARAMS = 32;</code></p><p class="api-src">src/compiler/context.c3:32:12</p></div>
+<div class="api-item" id="MAX_PRIVATE_NAMES_HARD"><p class="api-sig"><code>const uint MAX_PRIVATE_NAMES_HARD = 1048576;</code></p><p class="api-src">src/compiler/context.c3:2217:12</p></div>
+<div class="api-item" id="MAX_REGISTERS"><p class="api-sig"><code>const uint MAX_REGISTERS = 65535;</code></p><p class="api-src">src/compiler/context.c3:31:12</p></div>
+<div class="api-item" id="moveelim_roles"><p class="api-sig"><code><a href="#MoveelimRoles">MoveelimRoles[256]</a> moveelim_roles;</code></p><p class="api-src">src/compiler/moveelim.c3:264:20</p></div>
+<div class="api-item" id="moveelim_roles_ready"><p class="api-sig"><code>bool moveelim_roles_ready;</code></p><p class="api-src">src/compiler/moveelim.c3:265:6</p></div>
+<div class="api-item" id="NO_KEY_CONST"><p class="api-sig"><code>const uint NO_KEY_CONST = 4294967295;</code></p><p class="api-src">src/compiler/emit.c3:69:12</p></div>
+<div class="api-item" id="NO_PARAM_NAME"><p class="api-sig"><code>const uint NO_PARAM_NAME = 4294967295;</code></p><p class="api-src">src/compiler/functions.c3:16:12</p></div>
+<div class="api-item" id="NO_PATCH"><p class="api-sig"><code>const uint NO_PATCH = 4294967295;</code></p><p class="api-src">src/compiler/context.c3:94:12</p></div>
+<div class="api-item" id="PREC_ADDITIVE"><p class="api-sig"><code>const int PREC_ADDITIVE = 13;</code></p><p class="api-src">src/compiler/context.c3:117:11</p></div>
+<div class="api-item" id="PREC_BITWISE_AND"><p class="api-sig"><code>const int PREC_BITWISE_AND = 9;</code></p><p class="api-src">src/compiler/context.c3:113:11</p></div>
+<div class="api-item" id="PREC_BITWISE_OR"><p class="api-sig"><code>const int PREC_BITWISE_OR = 7;</code></p><p class="api-src">src/compiler/context.c3:111:11</p></div>
+<div class="api-item" id="PREC_BITWISE_XOR"><p class="api-sig"><code>const int PREC_BITWISE_XOR = 8;</code></p><p class="api-src">src/compiler/context.c3:112:11</p></div>
+<div class="api-item" id="PREC_EQUALITY"><p class="api-sig"><code>const int PREC_EQUALITY = 10;</code></p><p class="api-src">src/compiler/context.c3:114:11</p></div>
+<div class="api-item" id="PREC_EXPONENTIATION"><p class="api-sig"><code>const int PREC_EXPONENTIATION = 15;</code></p><p class="api-src">src/compiler/context.c3:119:11</p></div>
+<div class="api-item" id="PREC_LOGICAL_AND"><p class="api-sig"><code>const int PREC_LOGICAL_AND = 6;</code></p><p class="api-src">src/compiler/context.c3:110:11</p></div>
+<div class="api-item" id="PREC_LOGICAL_OR"><p class="api-sig"><code>const int PREC_LOGICAL_OR = 5;</code></p><p class="api-src">src/compiler/context.c3:109:11</p></div>
+<div class="api-item" id="PREC_MULTIPLICATIVE"><p class="api-sig"><code>const int PREC_MULTIPLICATIVE = 14;</code></p><p class="api-src">src/compiler/context.c3:118:11</p></div>
+<div class="api-item" id="PREC_NONE"><p class="api-sig"><code>const int PREC_NONE = 0;</code></p><p class="api-src">src/compiler/context.c3:107:11</p></div>
+<div class="api-item" id="PREC_NULLISH"><p class="api-sig"><code>const int PREC_NULLISH = 4;</code></p><p class="api-src">src/compiler/context.c3:108:11</p></div>
+<div class="api-item" id="PREC_RELATIONAL"><p class="api-sig"><code>const int PREC_RELATIONAL = 11;</code></p><p class="api-src">src/compiler/context.c3:115:11</p></div>
+<div class="api-item" id="PREC_SHIFT"><p class="api-sig"><code>const int PREC_SHIFT = 12;</code></p><p class="api-src">src/compiler/context.c3:116:11</p></div>
+<div class="api-item" id="PRIVATE_SLOT_PREFIX_MAX"><p class="api-sig"><code>const usz PRIVATE_SLOT_PREFIX_MAX = 17;</code></p><p class="api-src">src/compiler/private_names.c3:31:11</p></div>
+<div class="api-item" id="REG_NONE"><p class="api-sig"><code>const ushort REG_NONE = 65535;</code></p><p class="api-src">src/compiler/context.c3:35:14</p></div>
+<div class="api-item" id="SCOPE_SCAN_MAX"><p class="api-sig"><code>const uint SCOPE_SCAN_MAX = 16;</code></p><p class="api-src">src/compiler/scope.c3:41:12</p></div>
+<div class="api-item" id="SHARED_BINDING"><p class="api-sig"><code>const uint SHARED_BINDING = 4294967295;</code></p><p class="api-src">src/compiler/register_bindings.c3:93:12</p></div>
+<div class="api-item" id="SOURCE_BINDING"><p class="api-sig"><code>const char[] SOURCE_BINDING = %source%;</code></p><p class="api-src">src/compiler/statements.c3:17:14</p></div>
+<div class="api-item" id="SPREAD_EVAL_REGS"><p class="api-sig"><code>const uint SPREAD_EVAL_REGS = 12;</code></p><p class="api-src">src/compiler/regalloc.c3:128:12</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="arguments_observes_bindings"><p class="api-sig"><code>fn bool arguments_observes_bindings(<a href="#CompilerContext">CompilerContext*</a> ctx)</code></p><p class="api-src">src/compiler/binding_analysis.c3:87:9</p></div>
+<div class="api-item" id="attach_function_info"><p class="api-sig"><code>fn void attach_function_info(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, char[] name, bool is_named_expr, uint src_start, uint inner_body_end_pos, bool is_async, char[] source)</code></p><p class="api-src">src/compiler/functions.c3:1889:9</p></div>
+<div class="api-item" id="await_liveness_opcode_allowed"><p class="api-sig"><code>fn bool await_liveness_opcode_allowed(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/await_liveness.c3:13:9</p></div>
+<div class="api-item" id="bindings_by_name"><p class="api-sig"><code>fn void bindings_by_name(<a href="#CompilerContext">CompilerContext*</a> ctx, uint[] by_name)</code></p><p class="api-src">src/compiler/register_bindings.c3:104:9</p></div>
+<div class="api-item" id="body_ignores_this"><p class="api-sig"><code>fn bool body_ignores_this(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func)</code></p><p class="api-src">src/compiler/context.c3:1235:9</p></div>
+<div class="api-item" id="boomkat_stack_low"><p class="api-sig"><code>fn uptr boomkat_stack_low()</code></p><p class="api-src">src/compiler/context.c3:54:16</p></div>
+<div class="api-item" id="build_await_liveness"><p class="api-sig"><code>fn void build_await_liveness(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, <a href="boomkat-heap.html#Heap">Heap*</a> heap)</code></p><p class="api-src">src/compiler/await_liveness.c3:120:9</p></div>
+<div class="api-item" id="build_jump_targets"><p class="api-sig"><code>fn void build_jump_targets(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets)</code></p><p class="api-src">src/compiler/fusion.c3:406:9</p></div>
+<div class="api-item" id="can_reuse_binding_environment"><p class="api-sig"><code>fn bool can_reuse_binding_environment(<a href="#CompilerContext">CompilerContext*</a> ctx)</code></p><p class="api-src">src/compiler/binding_analysis.c3:216:9</p></div>
+<div class="api-item" id="capture_name_operand"><p class="api-sig"><code>fn bool capture_name_operand(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint pc, uint* name)</code></p><p class="api-src">src/compiler/capture_slots.c3:41:9</p></div>
+<div class="api-item" id="cell_lowering_eligible"><p class="api-sig"><code>fn bool cell_lowering_eligible(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func)</code></p><p class="api-src">src/compiler/cells.c3:159:9</p></div>
+<div class="api-item" id="check_descendant_cell_uses"><p class="api-sig"><code>fn void check_descendant_cell_uses(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> inner, <a href="#CellCandidate">CellCandidate*</a> candidates, uint count, bool immediate)</code></p><p class="api-src">src/compiler/cells.c3:73:9</p></div>
+<div class="api-item" id="child_captures_key"><p class="api-sig"><code>fn bool child_captures_key(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> child, void* key)</code></p><p class="api-src">src/compiler/cells.c3:59:9</p></div>
+<div class="api-item" id="cmp_branch_fused_op"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#Opcode">Opcode</a> cmp_branch_fused_op(<a href="boomkat-bytecode.html#Opcode">Opcode</a> cmp_op, bool is_if_false)</code></p><p class="api-src">src/compiler/fusion.c3:832:11</p></div>
+<div class="api-item" id="cmp_result_live_from"><p class="api-sig"><code>fn bool cmp_result_live_from(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, uint start, uint reg, bool skip_first_target)</code></p><p class="api-src">src/compiler/fusion.c3:846:9</p></div>
+<div class="api-item" id="compile"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> compile(<a href="boomkat-lexer.html#Lexer">Lexer*</a> lex, void* heap, bool want_completion = false, bool non_strict_source = false, bool strict = false)</code></p><p class="api-src">src/compiler/entry.c3:37:23</p></div>
+<div class="api-item" id="compile_eval"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> compile_eval(<a href="boomkat-lexer.html#Lexer">Lexer*</a> lex, void* heap, bool allow_super = false, bool direct_in_function = false, void* parent_private_names = null, uint parent_private_name_count = 0, bool is_direct_eval = false, bool parent_super_is_home_object = false, bool allow_super_call = false, bool caller_forbids_arguments = false, char[] parent_super_name = {}, char[] parent_static_super_name = {}, char[] parent_home_object_name = {}, bool parent_super_home_is_object_literal = false, bool caller_is_strict = false, bool var_env_is_global = false)</code></p><p class="api-src">src/compiler/entry.c3:91:23</p></div>
+<div class="api-item" id="compile_function"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> compile_function(<a href="boomkat-lexer.html#Lexer">Lexer*</a> lex, void* heap, bool is_expr, bool dynamic = false)</code></p><p class="api-src">src/compiler/entry.c3:272:23</p></div>
+<div class="api-item" id="compile_function_kind"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> compile_function_kind(<a href="boomkat-lexer.html#Lexer">Lexer*</a> lex, void* heap, bool is_expr, bool is_generator, bool is_async, bool dynamic = false, bool constructable = false)</code></p><p class="api-src">src/compiler/entry.c3:276:23</p></div>
+<div class="api-item" id="compile_module"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> compile_module(<a href="boomkat-lexer.html#Lexer">Lexer*</a> lex, void* heap, char[] module_name, void* module_def)</code></p><p class="api-src">src/compiler/entry.c3:316:23</p></div>
+<div class="api-item" id="compile_stack_floor"><p class="api-sig"><code>fn uptr compile_stack_floor()</code></p><p class="api-src">src/compiler/context.c3:62:9</p></div>
+<div class="api-item" id="compound_assign_opcode"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#Opcode">Opcode</a> compound_assign_opcode(<a href="boomkat-lexer.html#TokenType">TokenType</a> tt)</code></p><p class="api-src">src/compiler/gen.c3:1677:11</p></div>
+<div class="api-item" id="context_name_key"><p class="api-sig"><code>fn void* context_name_key(<a href="#CompilerContext">CompilerContext*</a> ctx, uint name_idx)</code></p><p class="api-src">src/compiler/cells.c3:20:10</p></div>
+<div class="api-item" id="defer_functions_allowed"><p class="api-sig"><code>fn bool defer_functions_allowed()</code></p><p class="api-src">src/compiler/context.c3:289:9</p></div>
+<div class="api-item" id="drop_jumps_to_next"><p class="api-sig"><code>fn void drop_jumps_to_next(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count)</code></p><p class="api-src">src/compiler/fusion.c3:891:9</p></div>
+<div class="api-item" id="eliminate_join_allocation"><p class="api-sig"><code>fn void eliminate_join_allocation(<a href="#CompilerContext">CompilerContext*</a> ctx, bool* targets, bool* in_try, <a href="#RegSet">RegSet*</a> live_out, <a href="#RegSet">RegSet*</a> live_in, <a href="#RegSet">RegSet*</a> scratch)</code></p><p class="api-src">src/compiler/join_length.c3:8:9</p></div>
+<div class="api-item" id="eliminate_parameter_aliases"><p class="api-sig"><code>fn bool eliminate_parameter_aliases(<a href="#CompilerContext">CompilerContext*</a> ctx, bool* targets)</code></p><p class="api-src">src/compiler/parameter_aliases.c3:8:9</p></div>
+<div class="api-item" id="ensure_scalar_classes"><p class="api-sig"><code>fn void ensure_scalar_classes()</code></p><p class="api-src">src/compiler/class_scalar.c3:84:9</p></div>
+<div class="api-item" id="find_cell_candidate"><p class="api-sig"><code>fn int find_cell_candidate(<a href="#CellCandidate">CellCandidate*</a> candidates, uint count, void* key)</code></p><p class="api-src">src/compiler/cells.c3:25:8</p></div>
+<div class="api-item" id="fold_number"><p class="api-sig"><code>fn bool fold_number(<a href="boomkat-ast.html#Ast">Ast*</a> tree, uint n, uint* budget, <a href="boomkat-types.html#TVal">TVal*</a> result)</code></p><p class="api-src">src/compiler/constant_fold.c3:10:9</p></div>
+<div class="api-item" id="format_field_number_key"><p class="api-sig"><code>fn char[] format_field_number_key(double val, char[] buf)</code></p><p class="api-src">src/compiler/class.c3:112:11</p></div>
+<div class="api-item" id="format_private_slot_name"><p class="api-sig"><code>fn char[] format_private_slot_name(char[] buf, uint class_id, char[] name)</code></p><p class="api-src">src/compiler/private_names.c3:32:11</p></div>
+<div class="api-item" id="free_destruct_binds"><p class="api-sig"><code>fn void free_destruct_binds(<a href="#DestructBinds">DestructBinds*</a> binds)</code></p><p class="api-src">src/compiler/functions.c3:159:9</p></div>
+<div class="api-item" id="function_name_key"><p class="api-sig"><code>fn void* function_name_key(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, uint name_idx)</code></p><p class="api-src">src/compiler/cells.c3:15:10</p></div>
+<div class="api-item" id="fuse_getpropc"><p class="api-sig"><code>fn void fuse_getpropc(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, <a href="boomkat-types.html#TVal">TVal*</a> constants)</code></p><p class="api-src">src/compiler/fusion.c3:594:9</p></div>
+<div class="api-item" id="fuse_getthisc"><p class="api-sig"><code>fn void fuse_getthisc(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets)</code></p><p class="api-src">src/compiler/fusion.c3:663:9</p></div>
+<div class="api-item" id="fuse_imm_binop"><p class="api-sig"><code>fn void fuse_imm_binop(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets)</code></p><p class="api-src">src/compiler/fusion.c3:546:9</p></div>
+<div class="api-item" id="fuse_inc_dec_var"><p class="api-sig"><code>fn void fuse_inc_dec_var(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, uint const_count)</code></p><p class="api-src">src/compiler/fusion.c3:772:9</p></div>
+<div class="api-item" id="fuse_lnot_branch"><p class="api-sig"><code>fn void fuse_lnot_branch(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, <a href="#RegSet">RegSet*</a> live_out, bool* in_try, uint i)</code></p><p class="api-src">src/compiler/fusion.c3:918:9 · private</p></div>
+<div class="api-item" id="fuse_null_branch"><p class="api-sig"><code>fn void fuse_null_branch(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets)</code></p><p class="api-src">src/compiler/fusion.c3:1120:9</p></div>
+<div class="api-item" id="fuse_null_operand"><p class="api-sig"><code>fn bool fuse_null_operand(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, bool* jump_targets, <a href="#RegSet">RegSet*</a> live_out, uint i, <a href="boomkat-bytecode.html#Opcode">Opcode</a> fused_op, uint offset)</code></p><p class="api-src">src/compiler/fusion.c3:942:9 · private</p></div>
+<div class="api-item" id="fuse_putpropc"><p class="api-sig"><code>fn void fuse_putpropc(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, <a href="boomkat-types.html#TVal">TVal*</a> constants)</code></p><p class="api-src">src/compiler/fusion.c3:628:9</p></div>
+<div class="api-item" id="fuse_putthisc"><p class="api-sig"><code>fn void fuse_putthisc(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets)</code></p><p class="api-src">src/compiler/fusion.c3:692:9</p></div>
+<div class="api-item" id="fuse_threaded_pairs"><p class="api-sig"><code>fn void fuse_threaded_pairs(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint count, bool* targets)</code></p><p class="api-src">src/compiler/fusion.c3:1126:9</p></div>
+<div class="api-item" id="fusion_abc_reads_reg"><p class="api-sig"><code>fn bool fusion_abc_reads_reg(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, uint reg)</code></p><p class="api-src">src/compiler/fusion.c3:131:9</p></div>
+<div class="api-item" id="fusion_branch_target"><p class="api-sig"><code>fn int fusion_branch_target(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint j)</code></p><p class="api-src">src/compiler/fusion.c3:316:8</p></div>
+<div class="api-item" id="fusion_conditional_branch_target"><p class="api-sig"><code>fn int fusion_conditional_branch_target(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint j)</code></p><p class="api-src">src/compiler/fusion.c3:299:8</p></div>
+<div class="api-item" id="fusion_getpropc_consumer"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_getpropc_consumer(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, <a href="boomkat-bytecode.html#Instruction">Instruction</a> consumer, uint rK, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:574:16</p></div>
+<div class="api-item" id="fusion_getpropc_trigger"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_getpropc_trigger(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:561:16</p></div>
+<div class="api-item" id="fusion_getthisc_consumer"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_getthisc_consumer(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, <a href="boomkat-bytecode.html#Instruction">Instruction</a> consumer, uint rT, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:648:16</p></div>
+<div class="api-item" id="fusion_imm_binop_consumer"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_imm_binop_consumer(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, <a href="boomkat-bytecode.html#Instruction">Instruction</a> consumer, uint rK, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:520:16</p></div>
+<div class="api-item" id="fusion_imm_binop_trigger"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_imm_binop_trigger(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:510:16</p></div>
+<div class="api-item" id="fusion_inc_dec_var_match"><p class="api-sig"><code>fn <a href="#Fusion3Match">Fusion3Match</a> fusion_inc_dec_var_match(<a href="boomkat-bytecode.html#Instruction">Instruction</a> slot0, <a href="boomkat-bytecode.html#Instruction">Instruction</a> slot1, <a href="boomkat-bytecode.html#Instruction">Instruction</a> slot2, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:745:17</p></div>
+<div class="api-item" id="fusion_null_branch_consumer"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_null_branch_consumer(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, <a href="boomkat-bytecode.html#Instruction">Instruction</a> consumer, uint rK, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:1099:16</p></div>
+<div class="api-item" id="fusion_null_branch_trigger"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_null_branch_trigger(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:1091:16</p></div>
+<div class="api-item" id="fusion_putpropc_consumer"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_putpropc_consumer(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, <a href="boomkat-bytecode.html#Instruction">Instruction</a> consumer, uint rK, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:607:16</p></div>
+<div class="api-item" id="fusion_putthisc_consumer"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_putthisc_consumer(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, <a href="boomkat-bytecode.html#Instruction">Instruction</a> consumer, uint rT, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:676:16</p></div>
+<div class="api-item" id="fusion_reg_live_from"><p class="api-sig"><code>fn bool fusion_reg_live_from(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, uint start, uint reg)</code></p><p class="api-src">src/compiler/fusion.c3:251:9</p></div>
+<div class="api-item" id="fusion_reg_read_before_write"><p class="api-sig"><code>fn bool fusion_reg_read_before_write(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint from, uint to, uint reg)</code></p><p class="api-src">src/compiler/fusion.c3:333:9</p></div>
+<div class="api-item" id="fusion_this_trigger"><p class="api-sig"><code>fn <a href="#FusionMatch">FusionMatch</a> fusion_this_trigger(<a href="boomkat-bytecode.html#Instruction">Instruction</a> trigger, void* ctx)</code></p><p class="api-src">src/compiler/fusion.c3:640:16</p></div>
+<div class="api-item" id="fusion_transparent"><p class="api-sig"><code>fn bool fusion_transparent(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, uint reg)</code></p><p class="api-src">src/compiler/fusion.c3:90:9</p></div>
+<div class="api-item" id="has_cmp_branch_pair"><p class="api-sig"><code>fn bool has_cmp_branch_pair(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count)</code></p><p class="api-src">src/compiler/fusion.c3:899:9</p></div>
+<div class="api-item" id="inline_param_expr"><p class="api-sig"><code>fn bool inline_param_expr(<a href="#ParamExprScope">ParamExprScope*</a> ps, <a href="boomkat-ast.html#Ast">Ast*</a> tree, uint n, uint* budget)</code></p><p class="api-src">src/compiler/param_defaults.c3:22:9</p></div>
+<div class="api-item" id="instruction_name"><p class="api-sig"><code>fn bool instruction_name(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, uint* name_idx)</code></p><p class="api-src">src/compiler/cells.c3:33:9</p></div>
+<div class="api-item" id="is_chain_link"><p class="api-sig"><code>fn bool is_chain_link(<a href="boomkat-ast.html#NodeTag">NodeTag</a> t)</code></p><p class="api-src">src/compiler/gen.c3:2218:9</p></div>
+<div class="api-item" id="is_restricted_name"><p class="api-sig"><code>fn bool is_restricted_name(char[] name, bool in_async_or_module = true, bool in_generator_or_blocked_yield = true, bool strict = true) @inline</code></p><p class="api-src">src/compiler/statements.c3:269:9</p></div>
+<div class="api-item" id="lexical_capture_is_value"><p class="api-sig"><code>fn bool lexical_capture_is_value(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, void* key)</code></p><p class="api-src">src/compiler/cells.c3:210:9</p></div>
+<div class="api-item" id="lexical_cell_layout"><p class="api-sig"><code>fn bool lexical_cell_layout(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, void* key, uint* init_pc)</code></p><p class="api-src">src/compiler/cells.c3:173:9</p></div>
+<div class="api-item" id="link_scalar_class"><p class="api-sig"><code>fn void link_scalar_class(uint class_node, uint member, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> function)</code></p><p class="api-src">src/compiler/class_scalar.c3:121:9</p></div>
+<div class="api-item" id="lower_captured_bindings"><p class="api-sig"><code>fn void lower_captured_bindings(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/compiler/cells.c3:268:9</p></div>
+<div class="api-item" id="lower_rest_length"><p class="api-sig"><code>fn void lower_rest_length(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, <a href="boomkat-heap.html#Heap">Heap*</a> heap)</code></p><p class="api-src">src/compiler/rest.c3:8:9</p></div>
+<div class="api-item" id="make_default_constructor"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*?</a> make_default_constructor(<a href="boomkat-heap.html#Heap">Heap*</a> hp, bool has_super, char[] class_name, char[] super_name)</code></p><p class="api-src">src/compiler/class.c3:181:23</p></div>
+<div class="api-item" id="mark_string_constant"><p class="api-sig"><code>fn void mark_string_constant(<a href="#CompilerContext">CompilerContext*</a> ctx, void* key, bool* marks)</code></p><p class="api-src">src/compiler/binding_analysis.c3:19:9</p></div>
+<div class="api-item" id="materialize_function"><p class="api-sig"><code>fn void? materialize_function(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> f, <a href="boomkat-heap.html#Heap">Heap*</a> h, char[] why = {}) @noinline</code></p><p class="api-src">src/compiler/lazy.c3:158:10</p></div>
+<div class="api-item" id="method_name_source_name"><p class="api-sig"><code>fn char[]? method_name_source_name(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-lexer.html#Token">Token</a> method_name, bool is_number, double num_value, bool is_bigint, char[] bigint_src, char[] numbuf, char[] bigbuf)</code></p><p class="api-src">src/compiler/class.c3:139:12</p></div>
+<div class="api-item" id="mod_find_import_by_local"><p class="api-sig"><code>fn <a href="#CompImportEntry">CompImportEntry*</a> mod_find_import_by_local(<a href="#CompModuleDef">CompModuleDef*</a> mod, char[] local_name)</code></p><p class="api-src">src/compiler/statements.c3:239:21</p></div>
+<div class="api-item" id="mod_has_export_name"><p class="api-sig"><code>fn bool mod_has_export_name(<a href="#CompModuleDef">CompModuleDef*</a> mod, char[] export_name)</code></p><p class="api-src">src/compiler/statements.c3:207:9</p></div>
+<div class="api-item" id="mod_register_export"><p class="api-sig"><code>fn void mod_register_export(<a href="#CompModuleDef">CompModuleDef*</a> mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false, bool declares_binding = false)</code></p><p class="api-src">src/compiler/statements.c3:230:9</p></div>
+<div class="api-item" id="mod_register_func_decl"><p class="api-sig"><code>fn void mod_register_func_decl(<a href="#CompModuleDef">CompModuleDef*</a> mod, char[] name, uint inner_func_idx)</code></p><p class="api-src">src/compiler/statements.c3:154:9</p></div>
+<div class="api-item" id="mod_register_import"><p class="api-sig"><code>fn void mod_register_import(<a href="#CompModuleDef">CompModuleDef*</a> mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default, bool is_deferred = false, bool is_source = false)</code></p><p class="api-src">src/compiler/statements.c3:191:9</p></div>
+<div class="api-item" id="mod_register_req_module"><p class="api-sig"><code>fn uint mod_register_req_module(<a href="#CompModuleDef">CompModuleDef*</a> mod, char[] specifier, <a href="#ModuleAttrType">ModuleAttrType</a> attr_type = ModuleAttrType.NONE, bool deferred = false)</code></p><p class="api-src">src/compiler/statements.c3:165:9</p></div>
+<div class="api-item" id="mod_register_star_export"><p class="api-sig"><code>fn void mod_register_star_export(<a href="#CompModuleDef">CompModuleDef*</a> mod, uint req_idx)</code></p><p class="api-src">src/compiler/statements.c3:247:9</p></div>
+<div class="api-item" id="moveelim_a_is_read"><p class="api-sig"><code>fn bool moveelim_a_is_read(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/moveelim.c3:119:9</p></div>
+<div class="api-item" id="moveelim_a_is_write"><p class="api-sig"><code>fn bool moveelim_a_is_write(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/moveelim.c3:130:9</p></div>
+<div class="api-item" id="moveelim_a_is_write_only"><p class="api-sig"><code>fn bool moveelim_a_is_write_only(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/moveelim.c3:101:9</p></div>
+<div class="api-item" id="moveelim_accum_safe"><p class="api-sig"><code>fn bool moveelim_accum_safe(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/moveelim.c3:198:9</p></div>
+<div class="api-item" id="moveelim_add_uses"><p class="api-sig"><code>fn void moveelim_add_uses(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, <a href="#RegSet">RegSet*</a> live, bool mark_call_windows)</code></p><p class="api-src">src/compiler/moveelim.c3:306:9</p></div>
+<div class="api-item" id="moveelim_add_uses_general"><p class="api-sig"><code>fn void moveelim_add_uses_general(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, <a href="#RegSet">RegSet*</a> live, bool mark_call_windows)</code></p><p class="api-src">src/compiler/moveelim.c3:317:9</p></div>
+<div class="api-item" id="moveelim_compute_liveness"><p class="api-sig"><code>fn void moveelim_compute_liveness(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, <a href="#RegSet">RegSet*</a> live_out, <a href="#RegSet">RegSet*</a> live_in, bool mark_call_windows, <a href="#RegSet">RegSet*</a> scratch, <a href="#RegSet">RegSet*</a> pinned = null)</code></p><p class="api-src">src/compiler/moveelim.c3:534:9</p></div>
+<div class="api-item" id="moveelim_fused_load"><p class="api-sig"><code>fn bool moveelim_fused_load(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/moveelim.c3:109:9</p></div>
+<div class="api-item" id="moveelim_get_def"><p class="api-sig"><code>fn bool moveelim_get_def(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, uint* out_reg)</code></p><p class="api-src">src/compiler/moveelim.c3:426:9</p></div>
+<div class="api-item" id="moveelim_init_roles"><p class="api-sig"><code>fn void moveelim_init_roles()</code></p><p class="api-src">src/compiler/moveelim.c3:267:9</p></div>
+<div class="api-item" id="moveelim_live_above"><p class="api-sig"><code>fn bool moveelim_live_above(<a href="#RegSet">RegSet*</a> set, uint floor, uint except)</code></p><p class="api-src">src/compiler/moveelim.c3:60:9</p></div>
+<div class="api-item" id="moveelim_mark_jump_targets_and_try_regions"><p class="api-sig"><code>fn void moveelim_mark_jump_targets_and_try_regions(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, bool* in_try)</code></p><p class="api-src">src/compiler/moveelim.c3:444:9</p></div>
+<div class="api-item" id="moveelim_mark_range"><p class="api-sig"><code>fn void moveelim_mark_range(<a href="#RegSet">RegSet*</a> live, uint first, uint last)</code></p><p class="api-src">src/compiler/moveelim.c3:241:9</p></div>
+<div class="api-item" id="moveelim_producer_allowed"><p class="api-sig"><code>fn bool moveelim_producer_allowed(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/moveelim.c3:141:9</p></div>
+<div class="api-item" id="moveelim_retarget_a"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#Instruction">Instruction</a> moveelim_retarget_a(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, <a href="boomkat-bytecode.html#Opcode">Opcode</a> op, uint new_a)</code></p><p class="api-src">src/compiler/moveelim.c3:227:16</p></div>
+<div class="api-item" id="name_slot"><p class="api-sig"><code>fn uint name_slot(<a href="#CompilerContext">CompilerContext*</a> ctx, uint name_idx)</code></p><p class="api-src">src/compiler/register_bindings.c3:97:9</p></div>
+<div class="api-item" id="op_is_reg_pair"><p class="api-sig"><code>fn bool op_is_reg_pair(<a href="#CompilerContext">CompilerContext*</a> ctx, uint i)</code></p><p class="api-src">src/compiler/binding_analysis.c3:76:9</p></div>
+<div class="api-item" id="outer_may_bind"><p class="api-sig"><code>fn bool outer_may_bind(<a href="boomkat-ast.html#AstIndex">AstIndex*</a> idx, uint atom)</code></p><p class="api-src">src/compiler/lazy.c3:54:9</p></div>
+<div class="api-item" id="own_cell_opcode_supported"><p class="api-sig"><code>fn bool own_cell_opcode_supported(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/cells.c3:129:9</p></div>
+<div class="api-item" id="own_register_name_operand"><p class="api-sig"><code>fn bool own_register_name_operand(<a href="boomkat-bytecode.html#Instruction">Instruction</a> ins, uint* name_idx)</code></p><p class="api-src">src/compiler/register_bindings.c3:50:9</p></div>
+<div class="api-item" id="param_name_set"><p class="api-sig"><code>fn void param_name_set(Vec{uint}* names, uint idx, uint name_idx)</code></p><p class="api-src">src/compiler/functions.c3:20:9</p></div>
+<div class="api-item" id="param_name_view"><p class="api-sig"><code>fn uint[] param_name_view(Vec{uint}* names, uint arg_count)</code></p><p class="api-src">src/compiler/functions.c3:27:11</p></div>
+<div class="api-item" id="promote_uncaptured_var_bindings"><p class="api-sig"><code>fn void promote_uncaptured_var_bindings(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/compiler/register_bindings.c3:121:9</p></div>
+<div class="api-item" id="prune_unobserved_environment_stores"><p class="api-sig"><code>fn bool prune_unobserved_environment_stores(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-heap.html#Heap">Heap*</a> heap, bool can_remove_empty_arrow_scopes)</code></p><p class="api-src">src/compiler/binding_analysis.c3:99:9</p></div>
+<div class="api-item" id="regexp_literal_error"><p class="api-sig"><code>fn String regexp_literal_error(char[] raw)</code></p><p class="api-src">src/compiler/expressions.c3:386:11</p></div>
+<div class="api-item" id="register_name_use_supported"><p class="api-sig"><code>fn bool register_name_use_supported(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/register_bindings.c3:76:9</p></div>
+<div class="api-item" id="register_promotion_eligible"><p class="api-sig"><code>fn bool register_promotion_eligible(<a href="#CompilerContext">CompilerContext*</a> ctx)</code></p><p class="api-src">src/compiler/register_bindings.c3:40:9</p></div>
+<div class="api-item" id="reject_all_cells"><p class="api-sig"><code>fn void reject_all_cells(<a href="#CellCandidate">CellCandidate*</a> candidates, uint count)</code></p><p class="api-src">src/compiler/cells.c3:66:9</p></div>
+<div class="api-item" id="relocate_cell_branch"><p class="api-sig"><code>fn bool relocate_cell_branch(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> ins, uint pc, uint* map)</code></p><p class="api-src">src/compiler/cells.c3:242:9</p></div>
+<div class="api-item" id="require_ast"><p class="api-sig"><code>fn void? require_ast(<a href="boomkat-lexer.html#Lexer">Lexer*</a> lex, <a href="boomkat-ast.html#AstIndex">AstIndex*</a> idx)</code></p><p class="api-src">src/compiler/entry.c3:360:10</p></div>
+<div class="api-item" id="restore_dynamic_capture_names"><p class="api-sig"><code>fn void restore_dynamic_capture_names(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func)</code></p><p class="api-src">src/compiler/capture_slots.c3:207:9</p></div>
+<div class="api-item" id="retain_child_name_producers"><p class="api-sig"><code>fn void retain_child_name_producers(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> inner, bool* referenced)</code></p><p class="api-src">src/compiler/register_bindings.c3:15:9</p></div>
+<div class="api-item" id="retain_child_producer_name"><p class="api-sig"><code>fn void retain_child_producer_name(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> inner, uint name_idx, bool* referenced)</code></p><p class="api-src">src/compiler/register_bindings.c3:7:9</p></div>
+<div class="api-item" id="retain_inner_consumers"><p class="api-sig"><code>fn void retain_inner_consumers(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> inner, bool* retain, bool* retain_all)</code></p><p class="api-src">src/compiler/binding_analysis.c3:26:9</p></div>
+<div class="api-item" id="retain_parent_name"><p class="api-sig"><code>fn void retain_parent_name(<a href="#CompilerContext">CompilerContext*</a> ctx, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> inner, uint inner_name_idx, bool* retain)</code></p><p class="api-src">src/compiler/binding_analysis.c3:10:9</p></div>
+<div class="api-item" id="rewrite_capture_ops"><p class="api-sig"><code>fn void rewrite_capture_ops(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> func, uint* slots)</code></p><p class="api-src">src/compiler/capture_slots.c3:82:9</p></div>
+<div class="api-item" id="rewrite_immediate_guards"><p class="api-sig"><code>fn void rewrite_immediate_guards(<a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> child, <a href="#CellCandidate">CellCandidate*</a> candidates, uint count)</code></p><p class="api-src">src/compiler/cells.c3:145:9</p></div>
+<div class="api-item" id="run_cmp_branch_fusion"><p class="api-sig"><code>fn void run_cmp_branch_fusion(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, <a href="#RegSet">RegSet*</a> live_out, bool* in_try)</code></p><p class="api-src">src/compiler/fusion.c3:974:9</p></div>
+<div class="api-item" id="run_fusion3_rule"><p class="api-sig"><code>fn void run_fusion3_rule(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, <a href="#Fusion3Rule">Fusion3Rule</a> rule, void* ctx = null)</code></p><p class="api-src">src/compiler/fusion.c3:726:9</p></div>
+<div class="api-item" id="run_fusion_rule"><p class="api-sig"><code>fn void run_fusion_rule(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, <a href="#FusionRule">FusionRule</a> rule, void* ctx = null)</code></p><p class="api-src">src/compiler/fusion.c3:463:9</p></div>
+<div class="api-item" id="run_move_elimination"><p class="api-sig"><code>fn void run_move_elimination(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, bool* in_try, <a href="#RegSet">RegSet*</a> live_out, <a href="#RegSet">RegSet*</a> live_in, <a href="#RegSet">RegSet*</a> ret_out, <a href="#RegSet">RegSet*</a> ret_in, <a href="#RegSet">RegSet*</a> scratch, <a href="#RegSet">RegSet*</a> pinned = null)</code></p><p class="api-src">src/compiler/moveelim.c3:669:9</p></div>
+<div class="api-item" id="run_tail_calls"><p class="api-sig"><code>fn void run_tail_calls(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, bool* in_try, uint[] tail_pcs)</code></p><p class="api-src">src/compiler/tailcall.c3:130:9</p></div>
+<div class="api-item" id="scalar_constructor"><p class="api-sig"><code>fn bool scalar_constructor(<a href="boomkat-ast.html#Ast">Ast*</a> tree, uint class_node, <a href="boomkat-ast.html#ScalarClass">ScalarClass*</a> fields)</code></p><p class="api-src">src/compiler/class_scalar.c3:31:9 · private</p></div>
+<div class="api-item" id="scalar_numeric_expr"><p class="api-sig"><code>fn bool scalar_numeric_expr(<a href="boomkat-ast.html#Ast">Ast*</a> tree, uint n, <a href="boomkat-ast.html#ScalarClass">ScalarClass*</a> fields, uint* budget)</code></p><p class="api-src">src/compiler/class_scalar.c3:7:9 · private</p></div>
+<div class="api-item" id="selected_binding_for_name"><p class="api-sig"><code>fn int selected_binding_for_name(<a href="#CompilerContext">CompilerContext*</a> ctx, bool* selected, uint[] by_name, uint name_idx)</code></p><p class="api-src">src/compiler/register_bindings.c3:114:8</p></div>
+<div class="api-item" id="set_disable_optimize"><p class="api-sig"><code>fn void set_disable_optimize(bool v)</code></p><p class="api-src">src/compiler/context.c3:285:9</p></div>
+<div class="api-item" id="source_may_name"><p class="api-sig"><code>fn bool source_may_name(char[] source, uint from, uint to, char[] name)</code></p><p class="api-src">src/compiler/gen.c3:1461:9</p></div>
+<div class="api-item" id="source_word_at"><p class="api-sig"><code>fn bool source_word_at(char[] span, sz i, char[] word) @inline</code></p><p class="api-src">src/compiler/gen.c3:1474:9</p></div>
+<div class="api-item" id="source_word_char"><p class="api-sig"><code>fn bool source_word_char(char c) @inline</code></p><p class="api-src">src/compiler/gen.c3:1472:9</p></div>
+<div class="api-item" id="str_eq"><p class="api-sig"><code>fn bool str_eq(char[] a, char[] b)</code></p><p class="api-src">src/compiler/helpers.c3:11:9</p></div>
+<div class="api-item" id="tailcall_form"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#Opcode">Opcode</a> tailcall_form(<a href="boomkat-bytecode.html#Opcode">Opcode</a> op)</code></p><p class="api-src">src/compiler/tailcall.c3:67:11</p></div>
+<div class="api-item" id="tailcall_unmark_finally_bodies"><p class="api-sig"><code>fn void tailcall_unmark_finally_bodies(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* map)</code></p><p class="api-src">src/compiler/tailcall.c3:83:9 · private</p></div>
+<div class="api-item" id="thread_returns"><p class="api-sig"><code>fn void thread_returns(<a href="boomkat-bytecode.html#Instruction">Instruction*</a> code, uint code_count, bool* jump_targets, bool* in_try)</code></p><p class="api-src">src/compiler/tailcall.c3:241:9</p></div>
+<div class="api-item" id="token_to_binary_opcode"><p class="api-sig"><code>fn <a href="boomkat-bytecode.html#Opcode">Opcode</a> token_to_binary_opcode(<a href="boomkat-lexer.html#TokenType">TokenType</a> tt)</code></p><p class="api-src">src/compiler/helpers.c3:26:11</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="const_hash_home"><p class="api-sig"><code>macro uint const_hash_home(ulong val_bits)</code></p><p class="api-src">src/compiler/constants.c3:19:12</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

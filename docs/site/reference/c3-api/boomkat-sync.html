@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::sync · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html" aria-current="page">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::sync</code></h1>
+      <p class="lede">4 types, 0 functions and macros, 12 methods, 1 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="Cond"><pre><code>struct Cond {
+  ConditionVariable cv;
+}</code></pre><p class="api-src">src/sync.c3:143:8</p></div>
+<div class="api-item" id="Cond.broadcast"><p class="api-sig"><code>fn void Cond.broadcast(<a href="#Cond">Cond*</a> self)</code></p><p class="api-src">src/sync.c3:161:14</p></div>
+<div class="api-item" id="Cond.destroy"><p class="api-sig"><code>fn void Cond.destroy(<a href="#Cond">Cond*</a> self)</code></p><p class="api-src">src/sync.c3:159:14</p></div>
+<div class="api-item" id="Cond.init"><p class="api-sig"><code>fn void Cond.init(<a href="#Cond">Cond*</a> self)</code></p><p class="api-src">src/sync.c3:158:14</p></div>
+<div class="api-item" id="Cond.signal"><p class="api-sig"><code>fn void Cond.signal(<a href="#Cond">Cond*</a> self)</code></p><p class="api-src">src/sync.c3:160:14</p></div>
+<div class="api-item" id="Cond.wait"><p class="api-sig"><code>fn void Cond.wait(<a href="#Cond">Cond*</a> self, <a href="#Lock">Lock*</a> lock)</code></p><p class="api-src">src/sync.c3:162:14</p></div>
+<div class="api-item" id="Cond.wait_ns"><p class="api-sig"><code>fn void Cond.wait_ns(<a href="#Cond">Cond*</a> self, <a href="#Lock">Lock*</a> lock, ulong ns)</code></p><p class="api-src">src/sync.c3:163:14</p></div>
+<div class="api-item" id="Lock"><pre><code>struct Lock {
+  Mutex m;
+}</code></pre><p class="api-src">src/sync.c3:139:8</p></div>
+<div class="api-item" id="Lock.destroy"><p class="api-sig"><code>fn void Lock.destroy(<a href="#Lock">Lock*</a> self)</code></p><p class="api-src">src/sync.c3:154:14</p></div>
+<div class="api-item" id="Lock.init"><p class="api-sig"><code>fn void Lock.init(<a href="#Lock">Lock*</a> self)</code></p><p class="api-src">src/sync.c3:153:14</p></div>
+<div class="api-item" id="Lock.lock"><p class="api-sig"><code>fn void Lock.lock(<a href="#Lock">Lock*</a> self)</code></p><p class="api-src">src/sync.c3:155:14</p></div>
+<div class="api-item" id="Lock.unlock"><p class="api-sig"><code>fn void Lock.unlock(<a href="#Lock">Lock*</a> self)</code></p><p class="api-src">src/sync.c3:156:14</p></div>
+<div class="api-item" id="OsThread"><pre><code>struct OsThread {
+  Thread t;
+}</code></pre><p class="api-src">src/sync.c3:147:8</p></div>
+<div class="api-item" id="OsThread.join"><p class="api-sig"><code>fn void OsThread.join(<a href="#OsThread">OsThread*</a> self)</code></p><p class="api-src">src/sync.c3:172:18</p></div>
+<div class="api-item" id="OsThread.start"><p class="api-sig"><code>fn bool OsThread.start(<a href="#OsThread">OsThread*</a> self, <a href="#ThreadFn">ThreadFn</a> fn_ptr, void* arg, usz stack_size)</code></p><p class="api-src">src/sync.c3:167:18</p></div>
+<div class="api-item" id="ThreadFn"><pre><code>alias ThreadFn = fn int(void*)</code></pre><p class="api-src">src/sync.c3:151:7</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="PTHREAD_STORAGE"><p class="api-sig"><code>const usz PTHREAD_STORAGE = 64;</code></p><p class="api-src">src/sync.c3:13:11</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

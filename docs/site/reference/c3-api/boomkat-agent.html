@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::agent · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat.html">boomkat</a></li>
+        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
+        <li><a href="boomkat-agent.html" aria-current="page">boomkat::agent</a></li>
+        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
+        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
+        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
+        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
+        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
+        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
+        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
+        <li><a href="boomkat-embed.html">boomkat::embed</a></li>
+        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
+        <li><a href="boomkat-env.html">boomkat::env</a></li>
+        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
+        <li><a href="boomkat-features.html">boomkat::features</a></li>
+        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
+        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
+        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
+        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
+        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
+        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
+        <li><a href="boomkat-image.html">boomkat::image</a></li>
+        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
+        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
+        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
+        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
+        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
+        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
+        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
+        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
+        <li><a href="boomkat-types.html">boomkat::types</a></li>
+        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
+        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::agent</code></h1>
+      <p class="lede">6 types, 44 functions and macros, 0 methods, 6 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="BlockHeader"><pre><code>struct BlockHeader {
+  uint refs;
+  uint length;
+  uint capacity;
+  uint growable;
+}</code></pre><p class="api-src">src/agent.c3:34:8</p></div>
+<div class="api-item" id="Bucket"><pre><code>struct Bucket {
+  <a href="#Waiter">Waiter*</a> head;
+  <a href="#Waiter">Waiter*</a> tail;
+}</code></pre><p class="api-src">src/agent.c3:158:8</p></div>
+<div class="api-item" id="Port"><pre><code>struct Port {
+  uint refs;
+  <a href="boomkat-sync.html#Cond">Cond</a> cv;
+  <a href="#Waiter">Waiter*</a> inbox_head;
+  <a href="#Waiter">Waiter*</a> inbox_tail;
+  uint pending;
+  ulong next_deadline;
+  bool host_event;
+  bool stop;
+}</code></pre><p class="api-src">src/agent.c3:207:8</p></div>
+<div class="api-item" id="Waiter"><pre><code>struct Waiter {
+  <a href="#Waiter">Waiter*</a> next;
+  <a href="#Waiter">Waiter*</a> prev;
+  <a href="#Waiter">Waiter*</a> inbox_next;
+  char* addr;
+  <a href="#Port">Port*</a> port;
+  char* block;
+  ulong deadline;
+  uint slot;
+  <a href="#WaitState">WaitState</a> state;
+  bool is_async;
+}</code></pre><p class="api-src">src/agent.c3:145:8</p></div>
+<div class="api-item" id="WaitOutcome"><pre><code>enum WaitOutcome : char {
+  NOT_EQUAL,
+  OK,
+  TIMED_OUT,
+  INTERRUPTED,
+}</code></pre><p class="api-src">src/agent.c3:324:6</p></div>
+<div class="api-item" id="WaitState"><pre><code>enum WaitState : char {
+  QUEUED,
+  NOTIFIED,
+  TIMED_OUT,
+  INTERRUPTED,
+}</code></pre><p class="api-src">src/agent.c3:135:6</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="BLOCK_HEADER_SIZE"><p class="api-sig"><code>const usz BLOCK_HEADER_SIZE = 16;</code></p><p class="api-src">src/agent.c3:41:11</p></div>
+<div class="api-item" id="BUCKET_COUNT"><p class="api-sig"><code>const uint BUCKET_COUNT = 64;</code></p><p class="api-src">src/agent.c3:163:12</p></div>
+<div class="api-item" id="g_buckets"><p class="api-sig"><code><a href="#Bucket">Bucket[64]</a> g_buckets;</code></p><p class="api-src">src/agent.c3:164:22</p></div>
+<div class="api-item" id="g_live_agents"><p class="api-sig"><code>uint g_live_agents;</code></p><p class="api-src">src/agent.c3:554:6</p></div>
+<div class="api-item" id="g_lock"><p class="api-sig"><code><a href="boomkat-sync.html#Lock">Lock</a> g_lock;</code></p><p class="api-src">src/agent.c3:121:12</p></div>
+<div class="api-item" id="g_lock_once"><p class="api-sig"><code>OnceFlag g_lock_once;</code></p><p class="api-src">src/agent.c3:122:10</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="agent_enter"><p class="api-sig"><code>fn void agent_enter()</code></p><p class="api-src">src/agent.c3:556:9</p></div>
+<div class="api-item" id="agent_exit"><p class="api-sig"><code>fn void agent_exit()</code></p><p class="api-src">src/agent.c3:557:9</p></div>
+<div class="api-item" id="async_pending"><p class="api-sig"><code>fn uint async_pending(<a href="boomkat-heap.html#Heap">Heap*</a> heap)</code></p><p class="api-src">src/agent.c3:499:9</p></div>
+<div class="api-item" id="async_slot"><p class="api-sig"><code>fn uint async_slot(<a href="boomkat-heap.html#Heap">Heap*</a> heap)</code></p><p class="api-src">src/agent.c3:428:9 · private</p></div>
+<div class="api-item" id="block_alloc"><p class="api-sig"><code>fn char* block_alloc(uint length, uint capacity, bool growable = false)</code></p><p class="api-src">src/agent.c3:49:10</p></div>
+<div class="api-item" id="block_capacity"><p class="api-sig"><code>fn uint block_capacity(char* data)</code></p><p class="api-src">src/agent.c3:72:9</p></div>
+<div class="api-item" id="block_grow"><p class="api-sig"><code>fn bool block_grow(char* data, uint new_length)</code></p><p class="api-src">src/agent.c3:83:9</p></div>
+<div class="api-item" id="block_growable"><p class="api-sig"><code>fn bool block_growable(char* data)</code></p><p class="api-src">src/agent.c3:76:9</p></div>
+<div class="api-item" id="block_length"><p class="api-sig"><code>fn uint block_length(char* data)</code></p><p class="api-src">src/agent.c3:68:9</p></div>
+<div class="api-item" id="block_release"><p class="api-sig"><code>fn void block_release(char* data)</code></p><p class="api-src">src/agent.c3:63:9</p></div>
+<div class="api-item" id="block_retain"><p class="api-sig"><code>fn void block_retain(char* data)</code></p><p class="api-src">src/agent.c3:59:9</p></div>
+<div class="api-item" id="bucket_of"><p class="api-sig"><code>fn <a href="#Bucket">Bucket*</a> bucket_of(char* addr)</code></p><p class="api-src">src/agent.c3:166:12 · private</p></div>
+<div class="api-item" id="cell_load"><p class="api-sig"><code>fn ulong cell_load(char* p, uint width)</code></p><p class="api-src">src/agent.c3:99:10</p></div>
+<div class="api-item" id="deadline_after"><p class="api-sig"><code>fn ulong deadline_after(double timeout_ms)</code></p><p class="api-src">src/agent.c3:300:10 · private</p></div>
+<div class="api-item" id="heap_release"><p class="api-sig"><code>fn void heap_release(<a href="boomkat-heap.html#Heap">Heap*</a> heap)</code></p><p class="api-src">src/agent.c3:563:9</p></div>
+<div class="api-item" id="init_lock"><p class="api-sig"><code>fn void init_lock()</code></p><p class="api-src">src/agent.c3:124:9 · private</p></div>
+<div class="api-item" id="link_waiter"><p class="api-sig"><code>fn void link_waiter(<a href="#Waiter">Waiter*</a> w)</code></p><p class="api-src">src/agent.c3:171:9 · private</p></div>
+<div class="api-item" id="live_agents"><p class="api-sig"><code>fn uint live_agents()</code></p><p class="api-src">src/agent.c3:558:9</p></div>
+<div class="api-item" id="notify"><p class="api-sig"><code>fn uint notify(char* cell, double count)</code></p><p class="api-src">src/agent.c3:361:9</p></div>
+<div class="api-item" id="now_ns"><p class="api-sig"><code>fn ulong now_ns()</code></p><p class="api-src">src/agent.c3:295:10 · private</p></div>
+<div class="api-item" id="port_create"><p class="api-sig"><code>fn <a href="#Port">Port*</a> port_create()</code></p><p class="api-src">src/agent.c3:218:10</p></div>
+<div class="api-item" id="port_for"><p class="api-sig"><code>fn <a href="#Port">Port*</a> port_for(<a href="boomkat-heap.html#Heap">Heap*</a> heap)</code></p><p class="api-src">src/agent.c3:240:10</p></div>
+<div class="api-item" id="port_post_event"><p class="api-sig"><code>fn void port_post_event(<a href="#Port">Port*</a> port, bool stop = false)</code></p><p class="api-src">src/agent.c3:261:9</p></div>
+<div class="api-item" id="port_ready"><p class="api-sig"><code>fn bool port_ready(<a href="#Port">Port*</a> port)</code></p><p class="api-src">src/agent.c3:458:9</p></div>
+<div class="api-item" id="port_release"><p class="api-sig"><code>fn void port_release(<a href="#Port">Port*</a> port)</code></p><p class="api-src">src/agent.c3:230:9</p></div>
+<div class="api-item" id="port_retain"><p class="api-sig"><code>fn void port_retain(<a href="#Port">Port*</a> port)</code></p><p class="api-src">src/agent.c3:226:9</p></div>
+<div class="api-item" id="port_stopped"><p class="api-sig"><code>fn bool port_stopped(<a href="#Port">Port*</a> port)</code></p><p class="api-src">src/agent.c3:278:9</p></div>
+<div class="api-item" id="port_take_event"><p class="api-sig"><code>fn bool port_take_event(<a href="#Port">Port*</a> port)</code></p><p class="api-src">src/agent.c3:270:9</p></div>
+<div class="api-item" id="port_wake"><p class="api-sig"><code>fn void port_wake(<a href="#Port">Port*</a> port)</code></p><p class="api-src">src/agent.c3:254:9</p></div>
+<div class="api-item" id="refresh_deadline"><p class="api-sig"><code>fn void refresh_deadline(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="#Port">Port*</a> port)</code></p><p class="api-src">src/agent.c3:446:9 · private</p></div>
+<div class="api-item" id="run_event_loop"><p class="api-sig"><code>fn void run_event_loop(<a href="boomkat-heap.html#Heap">Heap*</a> heap, void* vm)</code></p><p class="api-src">src/agent.c3:600:9</p></div>
+<div class="api-item" id="run_ready"><p class="api-sig"><code>fn void run_ready(<a href="boomkat-heap.html#Heap">Heap*</a> heap, void* vm)</code></p><p class="api-src">src/agent.c3:590:9</p></div>
+<div class="api-item" id="sleep_until"><p class="api-sig"><code>fn void sleep_until(<a href="#Port">Port*</a> port, ulong until)</code></p><p class="api-src">src/agent.c3:310:9 · private</p></div>
+<div class="api-item" id="take_ready"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> take_ready(<a href="boomkat-heap.html#Heap">Heap*</a> heap, bool* timed_out)</code></p><p class="api-src">src/agent.c3:468:13</p></div>
+<div class="api-item" id="unlink_waiter"><p class="api-sig"><code>fn void unlink_waiter(<a href="#Waiter">Waiter*</a> w)</code></p><p class="api-src">src/agent.c3:183:9 · private</p></div>
+<div class="api-item" id="wait_async"><p class="api-sig"><code>fn bool wait_async(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="boomkat-hobject.html#HObject">HObject*</a> promise, char* block, char* cell, uint width, ulong expected, double timeout_ms)</code></p><p class="api-src">src/agent.c3:399:9</p></div>
+<div class="api-item" id="wait_events"><p class="api-sig"><code>fn void wait_events(<a href="boomkat-heap.html#Heap">Heap*</a> heap, double limit_ms)</code></p><p class="api-src">src/agent.c3:509:9</p></div>
+<div class="api-item" id="wait_host_events"><p class="api-sig"><code>fn bool wait_host_events(<a href="boomkat-heap.html#Heap">Heap*</a> heap, double timeout_ms)</code></p><p class="api-src">src/agent.c3:529:9</p></div>
+<div class="api-item" id="wait_sync"><p class="api-sig"><code>fn <a href="#WaitOutcome">WaitOutcome</a> wait_sync(<a href="boomkat-heap.html#Heap">Heap*</a> heap, char* cell, uint width, ulong expected, double timeout_ms)</code></p><p class="api-src">src/agent.c3:328:16</p></div>
+<div class="api-item" id="wake_interrupt"><p class="api-sig"><code>fn void wake_interrupt(<a href="boomkat-heap.html#Heap">Heap*</a> heap)</code></p><p class="api-src">src/agent.c3:286:9</p></div>
+<div class="api-item" id="width_mask"><p class="api-sig"><code>fn ulong width_mask(uint width)</code></p><p class="api-src">src/agent.c3:108:10</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="block_header"><p class="api-sig"><code>macro <a href="#BlockHeader">BlockHeader*</a> block_header(char* data)</code></p><p class="api-src">src/agent.c3:43:20 · private</p></div>
+<div class="api-item" id="lock"><p class="api-sig"><code>macro void lock()</code></p><p class="api-src">src/agent.c3:128:12 · private</p></div>
+<div class="api-item" id="unlock"><p class="api-sig"><code>macro void unlock()</code></p><p class="api-src">src/agent.c3:133:12 · private</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
