@@ -82,7 +82,6 @@ fn uint? Parser.ts_enum(&self, uint pos, uint* name) {
         EnumMember* m = &members.data[i];
         self.scratch_push(self.ts_enum_member_value(param, m, computed && m.bindable && m.name != *name, pos));
     }
-    // `return E;` hands the object back, so that the variable can hold it.
     self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, param)));
     uint body = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
     return self.ts_object_var(*name, param, body, pos);

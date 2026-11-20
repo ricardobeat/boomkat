@@ -1,4 +1,4 @@
-// Scope resolution over the flat AST (plan 101, stage 4).
+// Scope resolution over the flat AST.
 //
 // One traversal builds the scope tree, a binding per (scope, name), a site per declaration
 // occurrence in source order, and the identifier references; a second pass resolves each

@@ -166,8 +166,8 @@ fn String Parser.error_message(&self) {
     return (String)self.err_msg[:self.err_len];
 }
 
-// Guards the parser's own recursion against the native stack, as the legacy
-// compiler's check_stack does. `floor` is cached once per unit by parse_program.
+// Guards the parser's recursion against the native stack. `floor` is cached
+// once per unit by parse_program.
 fn bool stack_exhausted(uptr floor) {
     char marker;
     return (uptr)&marker < floor;

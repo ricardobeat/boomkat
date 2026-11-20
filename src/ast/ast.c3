@@ -264,7 +264,6 @@ fn uint Ast.node_count(&self) @inline {
     return (uint)self.tags.len;
 }
 
-// Append a node and return its id.
 fn uint Ast.add(&self, NodeTag tag, char flags, uint tok, uint end, uint lhs, uint rhs) {
     sz id = self.tags.len;
     // The columns grow together, so one check covers them all.

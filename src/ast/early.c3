@@ -1,4 +1,4 @@
-// Early errors over the flat AST (plan 101, stage 6).
+// Early errors over the flat AST.
 //
 // The parser accepts what the grammar allows and the contextual rules it can decide while
 // streaming tokens. This pass walks the finished tree top-down with the context those rules need
@@ -316,7 +316,6 @@ fn void Early.target(&self, uint n) {
 
 // Whether the names collected from `from` on repeat.
 fn bool Early.has_duplicate(&self, uint from) {
-    // A short list is compared in place, a long one through a table by atom.
     if (self.names.len - from <= 16) {
         for (sz i = (sz)from + 1; i < self.names.len; i++) {
             for (sz j = (sz)from; j < i; j++) {
@@ -462,7 +461,6 @@ fn void Early.class_(&self, uint n) {
     uint name = self.ast.lhs.data[n];
     EarlyCtx outer = self.ctx;
     defer self.ctx = outer;
-    // Everything in a class is strict code.
     self.ctx.strict = true;
     if (name != 0) self.check_ident(name, IdRole.BIND);
     uint heritage = self.ast.field(rec, CLS_HERITAGE);
@@ -1173,10 +1171,8 @@ fn bool Early.conflicts(&self, Resolver* r) {
             }
         }
     }
-    // A parameter declared after a lexical binding of the same function scope (parameters come
-    // first in source order, so only the var-like pass below needs the full picture).
-    // Pass 2: var-like declarations against the lexical names of the scopes between them and
-    // their function.
+    // Pass 2: var-like declarations against lexical names of enclosing scopes up to their
+    // function. (Parameters precede body bindings in source order, so Pass 1 already checked them.)
     for (sz i = 1; i < (sz)r.sites.len && !self.failed; i++) {
         Site* s = &r.sites.data[i];
         if (!self.site_is_var_like(r, s)) continue;
