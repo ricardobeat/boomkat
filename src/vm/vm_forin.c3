@@ -227,7 +227,7 @@ fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
 
 // Returns true iff `key` still resolves on `target` (own or inherited). NEXTFOR
 // uses this so a property deleted before its turn is skipped, not yielded as
-// undefined (plan 062 group N). The key snapshot itself is fixed at INITFOR.
+// undefined. The key snapshot itself is fixed at INITFOR.
 //
 // Exotic integer-indexed properties are not in the named-prop table or dense
 // part that `has_prop_proto` checks, so they get their own branch. Proxies
