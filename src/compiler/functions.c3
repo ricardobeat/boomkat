@@ -1253,21 +1253,8 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
         return self.fail("reserved word cannot be used as a binding identifier")~;
     }
 
+    // A duplicate replaces the earlier declaration's entry below: the later declaration wins.
     bool already = !self.add_hoisted_fn(fn_name);
-    if (already) {
-        // A duplicate: the later declaration wins, so only the last one is compiled and instantiated.
-        bool dup_known = false;
-        foreach (d : self.hoisted_defers.array_view()) {
-            if (str_eq(d.name, fn_name)) {
-                dup_known = true;
-                break;
-            }
-        }
-        if (!dup_known) {
-            HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
-            self.hoisted_defers.push({ .name = self.name_text(dup_hstr) });
-        }
-    }
 
     bool saved_gen = self.is_generator;
     bool saved_user_gen = self.is_user_generator;
