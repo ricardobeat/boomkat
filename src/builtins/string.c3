@@ -11,7 +11,6 @@ import boomkat::hobject;
 import boomkat::re_bindings;
 import boomkat::unicode_bindings;
 import boomkat::vm;
-import libc;
 
 // ============================================================================
 // String constructor builtins
@@ -684,12 +683,46 @@ fn uint* string_codepoints(HString* s, uint* out_n) {
 // The string of the code points `cps[0:n]`, interned when short. Null on OOM or
 // when the result would be too long.
 fn HString* codepoints_to_hstring(Heap* heap, uint* cps, uint n) {
-    UnitBuf out;
-    out.init(heap);
-    defer out.free();
-    for (uint i = 0; i < n; i++) out.append_codepoint(cps[i]);
-    if (out.failed) return null;
-    return out.intern(heap);
+    // Count first so the string is allocated once at its final size and width.
+    ulong units = n;
+    bool wide = false;
+    foreach (cp : cps[:n]) {
+        if (cp > 0xFF) wide = true;
+        if (cp > 0xFFFF) units++;
+    }
+    if (hstring::length_exceeds_max(units)) return null;
+    HString* s = hstring::hstring_alloc_storage(heap, (uint)units, wide, hstring::HASH_DEFERRED, (uint)units) ?? null;
+    if (s == null) return null;
+    if (wide) {
+        ushort* out = (ushort*)s.data_ptr();
+        foreach (cp : cps[:n]) {
+            if (cp > 0xFFFF) {
+                uint high;
+                uint low;
+                hstring::codepoint_to_surrogates(cp, &high, &low);
+                *out++ = (ushort)high;
+                *out++ = (ushort)low;
+            } else {
+                *out++ = (ushort)cp;
+            }
+        }
+    } else {
+        char* out = s.data_ptr();
+        foreach (i, cp : cps[:n]) out[i] = (char)cp;
+    }
+    s.finish_data();
+    return heap.intern_fresh(s);
+}
+
+// The `n_type` normalization of the code points of `s`, which the caller frees
+// with mem::free. The source code points are freed as soon as libunicode is done.
+fn uint[]? normalize_codepoints(HString* s, int n_type) {
+    uint n;
+    uint* cps = string_codepoints(s, &n);
+    if (cps == null) return unicode_bindings::NORMALIZE_FAILED~;
+    if (n == 0) return cps[:0];
+    defer mem::free(cps);
+    return unicode_bindings::normalize(mem, cps[:n], n_type);
 }
 
 // GREEK CAPITAL LETTER SIGMA codepoint, has Final_Sigma conditional mapping.
@@ -1046,37 +1079,25 @@ $else
         return;
     }
 
-    uint a_n; uint b_n;
-    uint* a_src = string_codepoints(s_hstr, &a_n);
-    uint* b_src = string_codepoints(that_hstr, &b_n);
-    int a_norm_len = 0;
-    int b_norm_len = 0;
-    uint* a_norm = a_src == null ? null
-        : unicode_bindings::unicode_normalize_simple(a_src, (int)a_n, unicode_bindings::UNICODE_NFC, &a_norm_len);
-    uint* b_norm = b_src == null ? null
-        : unicode_bindings::unicode_normalize_simple(b_src, (int)b_n, unicode_bindings::UNICODE_NFC, &b_norm_len);
+    uint[]? a_norm = normalize_codepoints(s_hstr, unicode_bindings::UNICODE_NFC);
+    uint[]? b_norm = normalize_codepoints(that_hstr, unicode_bindings::UNICODE_NFC);
     defer {
-        if (a_src != null) mem::free(a_src);
-        if (b_src != null) mem::free(b_src);
-        if (a_norm != null) libc::free(a_norm);
-        if (b_norm != null) libc::free(b_norm);
+        if (try a_norm) mem::free(a_norm.ptr);
+        if (try b_norm) mem::free(b_norm.ptr);
     }
-
     // If normalization failed, fall back to comparing the code units.
-    if (a_norm == null || b_norm == null) {
+    if (catch a_norm, b_norm) {
         ctx.result_number((double)hstring::units_compare(s_hstr, that_hstr));
         return;
     }
-
-    // Compare normalized codepoint arrays
-    int min_n = a_norm_len < b_norm_len ? a_norm_len : b_norm_len;
-    for (int i = 0; i < min_n; i++) {
+    sz min_n = min(a_norm.len, b_norm.len);
+    for (sz i = 0; i < min_n; i++) {
         if (a_norm[i] != b_norm[i]) {
             ctx.result_number((double)((int)a_norm[i] - (int)b_norm[i]));
             return;
         }
     }
-    ctx.result_number((double)(a_norm_len - b_norm_len));
+    ctx.result_number((double)((long)a_norm.len - (long)b_norm.len));
 $endif
 }
 
@@ -2391,24 +2412,13 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         return;
     }
 
-    uint num_cps;
-    uint* src_cps = string_codepoints(s_hstr, &num_cps);
-    if (src_cps == null) {
+    uint[]? cps = normalize_codepoints(s_hstr, n_type);
+    if (catch cps) {
         ctx.result_string(s_hstr);
         return;
     }
-    int out_len = 0;
-    uint* result_cps = unicode_bindings::unicode_normalize_simple(src_cps,
-                        (int)num_cps, n_type, &out_len);
-    mem::free(src_cps);
-    defer if (result_cps != null) libc::free(result_cps);
-
-    if (result_cps == null || out_len < 0) {
-        ctx.result_string(s_hstr);
-        return;
-    }
-
-    HString* result_hstr = codepoints_to_hstring(ctx.heap, result_cps, (uint)out_len);
+    defer mem::free(cps.ptr);
+    HString* result_hstr = codepoints_to_hstring(ctx.heap, cps.ptr, (uint)cps.len);
     ctx.result_string(result_hstr != null ? result_hstr : s_hstr);
 }
 
