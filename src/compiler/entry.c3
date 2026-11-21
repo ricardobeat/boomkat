@@ -106,11 +106,16 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
-    char[][] private_names = mem::new_array(char[], (sz)parent_private_name_count);
-    defer mem::free(private_names);
-    for (uint i = 0; i < parent_private_name_count; i++) private_names[i] = ((PrivateNameEntry*)parent_private_names)[i].name;
     ast::AstIndex* cmp = null;
-    {
+    // index_begin consumes private_names synchronously and retains no tmem data.
+    @pool() {
+        char[][] private_names;
+        if (parent_private_name_count > 0) {
+            private_names = alloc::alloc_array(tmem, char[], (sz)parent_private_name_count);
+            for (uint i = 0; i < parent_private_name_count; i++) {
+                private_names[i] = ((PrivateNameEntry*)parent_private_names)[i].name;
+            }
+        }
         cmp = ast::index_begin(lex.source, heap, {
             .strict = features::STRICT_ONLY || (is_direct_eval && caller_is_strict),
             .ts_mode = lex.ts_mode,
@@ -122,7 +127,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             .private_names = private_names,
             .defer_functions = defer_functions_allowed(),
         });
-    }
+    };
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     CompilerContext ctx;

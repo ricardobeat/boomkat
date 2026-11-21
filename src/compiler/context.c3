@@ -1196,16 +1196,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         return COMPILE_ERROR~;
     }
     Heap* h = (Heap*)self.heap;
-    // Allocate the CompiledFunction struct
-    void* raw = h.alloc_func(h.heap_udata, CompiledFunction::size);
-    if (raw == null) {
-        return COMPILE_ERROR~;
-    }
-    mem::clear(raw, (sz)(CompiledFunction::size));
-
-    CompiledFunction* func = (CompiledFunction*)raw;
-    func.flags.htype = HType.OBJECT;
-    func.realm = h.realm;
 
     // --- True register high-water mark ---
     //
@@ -1260,6 +1250,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (gp_jump_targets == null) return COMPILE_ERROR~;
+        defer h.free_func(h.heap_udata, gp_jump_targets);
         build_jump_targets(self.code, self.code_count, gp_jump_targets);
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_putpropc(self.code, self.code_count, gp_jump_targets, self.constants);
@@ -1267,7 +1258,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         if (self.this_cannot_change()) {
             fuse_putthisc(self.code, self.code_count, gp_jump_targets);
         }
-        h.free_func(h.heap_udata, gp_jump_targets);
     }
 
     // --- Peephole: fuse compare (LT/LE/GT/GE/SEQ/SNEQ) + IF_FALSE/IF_TRUE ---
@@ -1291,20 +1281,21 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             bool* in_try = (bool*)h.alloc_func(h.heap_udata, n);
             RegSet* sets = (RegSet*)h.alloc_func(h.heap_udata, nsets * RegSet::size);
             uint* words = (uint*)h.alloc_func(h.heap_udata, nsets * (usz)words_per_set * uint::size);
-            if (jump_targets != null && in_try != null && sets != null && words != null) {
-                for (usz i = 0; i < nsets; i++) {
-                    sets[i] = { .words = &words[i * words_per_set], .word_count = words_per_set };
-                }
-                moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count, jump_targets, in_try);
-                moveelim_compute_liveness(self.code, self.code_count, sets, &sets[n], true, &sets[2 * n]);
-                run_cmp_branch_fusion(self.code, self.code_count, jump_targets, sets, in_try);
+            defer {
+                if (jump_targets != null) h.free_func(h.heap_udata, jump_targets);
+                if (in_try != null) h.free_func(h.heap_udata, in_try);
+                if (sets != null) h.free_func(h.heap_udata, sets);
+                if (words != null) h.free_func(h.heap_udata, words);
             }
-            if (jump_targets != null) { h.free_func(h.heap_udata, jump_targets); }
-            if (in_try != null) { h.free_func(h.heap_udata, in_try); }
-            if (sets != null) { h.free_func(h.heap_udata, sets); }
-            if (words == null) return COMPILE_ERROR~;
-            h.free_func(h.heap_udata, words);
-            if (jump_targets == null || in_try == null || sets == null) return COMPILE_ERROR~;
+            if (jump_targets == null || in_try == null || sets == null || words == null) {
+                return COMPILE_ERROR~;
+            }
+            for (usz i = 0; i < nsets; i++) {
+                sets[i] = { .words = &words[i * words_per_set], .word_count = words_per_set };
+            }
+            moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count, jump_targets, in_try);
+            moveelim_compute_liveness(self.code, self.code_count, sets, &sets[n], true, &sets[2 * n]);
+            run_cmp_branch_fusion(self.code, self.code_count, jump_targets, sets, in_try);
         }
     }
 
@@ -1346,6 +1337,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (cp_jump_targets == null) return COMPILE_ERROR~;
+        defer h.free_func(h.heap_udata, cp_jump_targets);
         build_jump_targets(self.code, self.code_count, cp_jump_targets);
         for (uint i = 0; i + 1 < self.code_count; i++) {
             if (cp_jump_targets[i + 1]) { continue; }
@@ -1469,7 +1461,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             self.code[i + 1] = bytecode::make_abc(cop, (uint)consumer.a, new_b, new_c);
             self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         }
-        h.free_func(h.heap_udata, cp_jump_targets);
     }
 
     // --- Peephole: fuse LDINT rK, imm + rD = …,rK → NOP + <op>I rD = rS, imm ---
@@ -1482,10 +1473,10 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
+        defer h.free_func(h.heap_udata, addi_jump_targets);
         build_jump_targets(self.code, self.code_count, addi_jump_targets);
         fuse_imm_binop(self.code, self.code_count, addi_jump_targets);
         fuse_null_branch(self.code, self.code_count, addi_jump_targets);
-        h.free_func(h.heap_udata, addi_jump_targets);
     }
 
     // --- Liveness-based move elimination: `producer rT=... ; LDREG rDst=rT`
@@ -1515,15 +1506,17 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         // (4 * n) per-instruction sets + 2 scratch sets + 1 pinned set.
         uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 3) * (usz)words_per_set * uint::size);
+        defer {
+            if (me_jump_targets != null) h.free_func(h.heap_udata, me_jump_targets);
+            if (me_in_try != null) h.free_func(h.heap_udata, me_in_try);
+            if (me_live_out != null) h.free_func(h.heap_udata, me_live_out);
+            if (me_live_in != null) h.free_func(h.heap_udata, me_live_in);
+            if (me_ret_out != null) h.free_func(h.heap_udata, me_ret_out);
+            if (me_ret_in != null) h.free_func(h.heap_udata, me_ret_in);
+            if (me_words != null) h.free_func(h.heap_udata, me_words);
+        }
         if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null
             || me_ret_out == null || me_ret_in == null || me_words == null) {
-            if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
-            if (me_in_try != null) { h.free_func(h.heap_udata, me_in_try); }
-            if (me_live_out != null) { h.free_func(h.heap_udata, me_live_out); }
-            if (me_live_in != null) { h.free_func(h.heap_udata, me_live_in); }
-            if (me_ret_out != null) { h.free_func(h.heap_udata, me_ret_out); }
-            if (me_ret_in != null) { h.free_func(h.heap_udata, me_ret_in); }
-            if (me_words != null) { h.free_func(h.heap_udata, me_words); }
             return COMPILE_ERROR~;
         }
         for (usz i = 0; i < n; i++) {
@@ -1582,13 +1575,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
                                                        me_jump_targets, me_in_try);
             run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try, self.tail_call_pcs.array_view());
         }
-        h.free_func(h.heap_udata, me_jump_targets);
-        h.free_func(h.heap_udata, me_in_try);
-        h.free_func(h.heap_udata, me_live_out);
-        h.free_func(h.heap_udata, me_live_in);
-        h.free_func(h.heap_udata, me_ret_out);
-        h.free_func(h.heap_udata, me_ret_in);
-        h.free_func(h.heap_udata, me_words);
     }
 
     // --- NOP Compaction Pass ---
@@ -1598,9 +1584,26 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // TRY is always followed by a NOP whose BC field holds the finally_offset. The VM reads that word
     // unconditionally, so it must survive compaction: mark those slots in keep[] before building pc_map.
     if (self.far_offsets.len > 0) self.widen_far_offsets()!;
+
+    // Allocate the CompiledFunction struct once all code-rewriting passes succeed.
+    void* raw = h.alloc_func(h.heap_udata, CompiledFunction::size);
+    if (raw == null) {
+        return COMPILE_ERROR~;
+    }
+    mem::clear(raw, (sz)(CompiledFunction::size));
+
+    CompiledFunction* func = (CompiledFunction*)raw;
+    defer catch h.free_compiled_func(func);
+    func.flags.htype = HType.OBJECT;
+    func.realm = h.realm;
+
     if (self.code_count > 0) {
         bool* nop_keep = null;
         uint* pc_map = null;
+        defer {
+            if (pc_map != null) h.free_func(h.heap_udata, pc_map);
+            if (nop_keep != null) h.free_func(h.heap_udata, nop_keep);
+        }
         uint new_count = 0;
         if (!self.disable_optimize) {
             // Step 1: mark TRY jump slots as non-removable.
@@ -1623,7 +1626,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             // Step 2: build pc_map[old_pc] → new_pc.
             // NOP slots that are not kept map to the new_pc of the next kept slot.
             pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_count + 1) * (long)uint::size));
-            if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); return COMPILE_ERROR~; }
+            if (pc_map == null) return COMPILE_ERROR~;
             for (uint i = 0; i < self.code_count; i++) {
                 pc_map[i] = new_count;
                 if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
@@ -1696,25 +1699,17 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // just keep every instruction (including the peephole-produced NOPs).
     uint final_count = self.disable_optimize ? self.code_count : new_count;
     usz code_bytes = (usz)final_count * Instruction::size;
-    void* code_raw = h.alloc_func(h.heap_udata, code_bytes);
+    func.code = (Instruction*)h.alloc_func(h.heap_udata, code_bytes);
     // Relocation passes need a position for each surviving instruction;
     // finish() coalesces their PC ranges after captured-binding lowering.
-    void* source_raw = null;
     if (final_count > 0 && self.source_positions != null) {
-        source_raw = h.alloc_func(h.heap_udata, (usz)final_count * SourceEntry::size);
+        func.source_map = (SourceEntry*)h.alloc_func(h.heap_udata, (usz)final_count * SourceEntry::size);
     }
-    if (code_raw == null || (final_count > 0 && self.source_positions != null && source_raw == null)) {
-        if (source_raw != null) { h.free_func(h.heap_udata, source_raw); }
-        if (code_raw != null) { h.free_func(h.heap_udata, code_raw); }
-        if (!self.disable_optimize) {
-            h.free_func(h.heap_udata, pc_map);
-            h.free_func(h.heap_udata, nop_keep);
-        }
-        h.free_func(h.heap_udata, raw);
+    if (func.code == null || (final_count > 0 && self.source_positions != null && func.source_map == null)) {
         return COMPILE_ERROR~;
     }
-    Instruction* dst_code = (Instruction*)code_raw;
-    SourceEntry* dst_source = (SourceEntry*)source_raw;
+    Instruction* dst_code = func.code;
+    SourceEntry* dst_source = func.source_map;
     uint dst_idx = 0;
     if (self.disable_optimize) {
         // Copy everything verbatim, preserves all NOPs introduced by the
@@ -1735,8 +1730,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             }
         }
     }
-    func.code = dst_code;
-    func.source_map = dst_source;
     func.source_map_count = dst_source != null ? final_count : 0;
     func.code_count = final_count;
 
@@ -1763,40 +1756,17 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         // treating every eval from this body as direct, which is what the
         // has_direct_eval flag alone says.
     }
-
-    if (!self.disable_optimize) {
-        h.free_func(h.heap_udata, pc_map);
-        h.free_func(h.heap_udata, nop_keep);
-    }
 }
 
     // Copy the source name (a file path, module specifier, or "<eval>") into a
-    // heap-owned buffer so it outlives the compile. `mem`, like the function
-    // name and retained source text: free_compiled_funcs releases all three
-    // with mem::free and cannot tell the allocators apart. Non-fatal on
-    // allocation failure, matching how the function name is set.
-    {
-        char[] src_name = self.lexer.source_name;
-        if (src_name.len > 0) {
-            char* fname = (char*)alloc::malloc_try(mem, (sz)((usz)src_name.len + 1)) ?? null;
-            if (fname != null) {
-                for (usz i = 0; i < (usz)src_name.len; i++) fname[i] = src_name[i];
-                fname[src_name.len] = 0;
-                func.filename_ptr = fname;
-                func.filename_len = (uint)src_name.len;
-            }
-        }
-    }
+    // heap-owned buffer so it outlives the compile.
+    func.set_filename_owned(self.lexer.source_name);
 
     // Copy constant pool
     if (self.const_count > 0) {
         usz const_bytes = (usz)self.const_count * TVal::size;
         void* const_raw = h.alloc_func(h.heap_udata, const_bytes);
         if (const_raw == null) {
-            if (func.code != null) { h.free_func(h.heap_udata, func.code); }
-            if (func.source_map != null) { h.free_func(h.heap_udata, func.source_map); }
-            if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
-            h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }
         mem::copy(const_raw, &self.constants[0], (sz)(const_bytes));
@@ -1809,11 +1779,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         usz inner_bytes = (usz)self.inner_func_count * CompiledFunction*::size;
         void* inner_raw = h.alloc_func(h.heap_udata, inner_bytes);
         if (inner_raw == null) {
-            if (func.code != null) { h.free_func(h.heap_udata, func.code); }
-            if (func.source_map != null) { h.free_func(h.heap_udata, func.source_map); }
-            if (func.constants != null) { h.free_func(h.heap_udata, func.constants); }
-            if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
-            h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }
         mem::copy(inner_raw, &self.inner_funcs[0], (sz)(inner_bytes));

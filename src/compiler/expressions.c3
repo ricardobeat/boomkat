@@ -430,18 +430,21 @@ fn String regexp_literal_error(char[] raw) {
     // astral characters are surrogate pairs. Validate the same bytes, or astral
     // literals get rejected here that the runtime accepts.
     usz plen = hstring::canonical_cesu8(pattern_data, null);
-    char* buf = (char*)alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
-    if (buf == null) return "";
-    defer mem::free(buf);
-    hstring::canonical_cesu8(pattern_data, buf);
-    buf[plen] = 0;
-    char[128] error_buf;
-    void* compiled = re_bindings::re_compile(buf, plen, flags, &error_buf, 128);
-    if (compiled == null) {
-        return "invalid regular expression";
-    }
-    re_bindings::re_free(compiled);
-    return "";
+    String err = "";
+    @stack_mem(256; Allocator smem) {
+        if (try buf = alloc::alloc_array_try(smem, char, (sz)(plen + 1))) {
+            hstring::canonical_cesu8(pattern_data, buf.ptr);
+            buf[plen] = 0;
+            char[128] error_buf;
+            void* compiled = re_bindings::re_compile(buf.ptr, plen, flags, &error_buf, 128);
+            if (compiled == null) {
+                err = "invalid regular expression";
+            } else {
+                re_bindings::re_free(compiled);
+            }
+        }
+    };
+    return err;
 }
 
 // Emit bytecode for a for-of loop.  The iterable expression has already been

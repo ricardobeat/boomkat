@@ -2370,6 +2370,20 @@ fn char[] CompiledFunction.get_filename(&self) {
     return self.filename_ptr[:self.filename_len];
 }
 
+// Release retained source text, whether it borrows a refcounted SourceBuf or
+// owns a standalone `mem`-allocated copy, and clear the fields.
+fn void CompiledFunction.release_source(&self) {
+    if (self.src_buf != null) {
+        source_buf_release(self.src_buf);
+        self.src_buf = null;
+        self.src_ptr = null;
+    } else if (self.src_ptr != null) {
+        mem::free(self.src_ptr);
+        self.src_ptr = null;
+    }
+    self.src_len = 0;
+}
+
 // Copy `name` into a heap-owned buffer and record it as this function's source
 // filename. No-op when `name` is empty. Non-fatal on allocation failure: the
 // function simply keeps whatever filename it had (usually none). The buffer is

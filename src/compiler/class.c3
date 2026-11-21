@@ -184,6 +184,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     mem::clear(raw, (sz)(CompiledFunction::size));
 
     CompiledFunction* func = (CompiledFunction*)raw;
+    defer catch hp.free_compiled_func(func);
     func.flags.htype = HType.OBJECT;
     func.realm = hp.realm;
     func.flags.is_constructable = true;
@@ -204,10 +205,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
         // `mem`, matching every other name_ptr/src_ptr site: free_compiled_funcs
         // releases these with mem::free and cannot tell the allocators apart.
         char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)class_name.len + 1)) ?? null;
-        if (name_heap == null) {
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (name_heap == null) return COMPILE_ERROR~;
         for (usz i = 0; i < class_name.len; i++) name_heap[i] = class_name[i];
         name_heap[class_name.len] = 0;
         func.name_ptr = name_heap;
@@ -223,10 +221,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
 
         // Create interned string constant for the super binding name
         HString* super_str = hp.str_intern(super_name);
-        if (super_str == null) {
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (super_str == null) return COMPILE_ERROR~;
         // Record it for Object.setPrototypeOf's class sync (object.c3),
         // which keeps the numbered binding in step with the constructor's
         // mutable [[Prototype]].
@@ -234,10 +229,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
         func.const_count = 1;
         usz const_bytes = (usz)func.const_count * TVal::size;
         func.constants = (TVal*)hp.alloc_func(hp.heap_udata, const_bytes);
-        if (func.constants == null) {
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (func.constants == null) return COMPILE_ERROR~;
         TVal super_tv;
         super_tv.set_string(super_str);
         func.constants[0] = super_tv;
@@ -253,11 +245,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
         func.code_count = 7;
         usz code_bytes = (usz)func.code_count * Instruction::size;
         func.code = (Instruction*)hp.alloc_func(hp.heap_udata, code_bytes);
-        if (func.code == null) {
-            hp.free_func(hp.heap_udata, func.constants);
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (func.code == null) return COMPILE_ERROR~;
 
         Instruction* c = func.code;
         c[0] = bytecode::make_abc(Opcode.PUSH_LEX, 0, 0, 0);
@@ -275,7 +263,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
 
         usz code_bytes = 3 * Instruction::size;
         void* code_raw = hp.alloc_func(hp.heap_udata, code_bytes);
-        if (code_raw == null) { hp.free_func(hp.heap_udata, raw); return COMPILE_ERROR~; }
+        if (code_raw == null) return COMPILE_ERROR~;
         func.code = (Instruction*)code_raw;
         func.code_count = 3;
 
@@ -1253,11 +1241,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         if (src_end > (uint)self.lexer.source.len) src_end = (uint)self.lexer.source.len;
         uint slen = src_end > class_src_start ? (src_end - class_src_start) : 0;
         if (slen > 0 && ast::index_state != null && ast::index_state.share_source(self.lexer.source) != null) {
-            if (ctor_cf.src_buf != null) {
-                bytecode::source_buf_release(ctor_cf.src_buf);
-            } else if (ctor_cf.src_ptr != null) {
-                mem::free(ctor_cf.src_ptr);
-            }
+            ctor_cf.release_source();
             ctor_cf.src_buf = ast::index_state.src_buf;
             ctor_cf.src_ptr = ctor_cf.src_buf.data + class_src_start;
             ctor_cf.src_len = slen;
@@ -1266,7 +1250,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             if (src_heap != null) {
                 for (uint i = 0; i < slen; i++) src_heap[i] = self.lexer.source[class_src_start + i];
                 src_heap[slen] = 0;
-                if (ctor_cf.src_ptr != null) mem::free(ctor_cf.src_ptr);
+                ctor_cf.release_source();
                 ctor_cf.src_ptr = src_heap;
                 ctor_cf.src_len = slen;
             }
