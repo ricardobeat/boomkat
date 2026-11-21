@@ -51,7 +51,7 @@ def image_fields(data):
 
     assert text('magic') == b'BKBC', 'Unexpected bytecode magic'
     version = word('version')
-    assert version == 8, f'Update image_fields for BKBC version {version}'
+    assert version == 9, f'Update image_fields for BKBC version {version}'
     word('opcode_signature')
     word('capabilities')
     assert word('function_count') > 0, 'Fixture must contain a function'
