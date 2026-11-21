@@ -442,10 +442,13 @@ fn DefinedModule* find_defined_module(Heap* heap, char[] name) @local {
     return null;
 }
 
-// Make `source` the module named `name`: an import whose specifier resolves to
-// `name` loads it without touching the filesystem. Defining a name again
-// replaces its source for later loads; a module already loaded under that name
-// stays as it is. Returns false when out of memory.
+<*
+ Make `source` the module named `name`: an import whose specifier resolves to
+ `name` loads it without touching the filesystem. Defining a name again
+ replaces its source for later loads; a module already loaded under that name
+ stays as it is. Returns false when out of memory.
+ @param [&inout] heap
+*>
 fn bool define_module(Heap* heap, char[] name, char[] source) {
     DefinedModule* existing = find_defined_module(heap, name);
     if (existing != null) {
@@ -504,9 +507,12 @@ fn bool invalidate_module(Heap* heap, char[] name) {
     return true;
 }
 
-// Makes `name` a module whose exports are `names[i]` bound to `values[i]`,
-// already evaluated. It replaces a module of that name for later imports.
-// Returns false when out of memory.
+<*
+ Makes `name` a module whose exports are `names[i]` bound to `values[i]`,
+ already evaluated. It replaces a module of that name for later imports.
+ Returns false when out of memory.
+ @param [&inout] heap
+*>
 fn bool define_native_module(Heap* heap, char[] name, char[][] names, TVal[] values) {
     invalidate_module(heap, name);
     undefine_module(heap, name);
@@ -560,6 +566,9 @@ fn char[]? defined_module_source(Heap* heap, char[] name) {
     return dm.source;
 }
 
+<*
+ @param [&inout] heap
+*>
 fn void free_defined_modules(Heap* heap) {
     DefinedModule* table = (DefinedModule*)heap.defined_modules;
     for (uint i = 0; i < heap.defined_module_count; i++) {

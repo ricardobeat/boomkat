@@ -1,6 +1,8 @@
 module context_lifecycle;
 
 import boomkat;
+import boomkat::capi;
+import boomkat::embed;
 import std::io;
 
 fn double number(JsContext* context, String source) {
@@ -123,9 +125,118 @@ fn void owned_hooks() {
     assert(number(&context, "done") == 1);
 }
 
+fn void module_lifecycle() {
+    JsContext context;
+    context.create()!!;
+    defer context.destroy();
+    context.define_module("pkg/math.js", "export const x = 20; export function add(a) { return a + x; }")!!;
+    context.define_module("pkg/double.js", "import { add } from './math.js'; export const y = add(22);")!!;
+    // Repeated imports exercise both cache hits and relative path resolution.
+    JsValue ns = context.eval_module(
+        "import { add } from 'pkg/math.js'; import { y } from 'pkg/double.js'; export const total = add(y);",
+        "entry.js"
+    )!!;
+    defer context.release(ns);
+    JsValue total = context.get(ns, "total")!!;
+    defer context.release(total);
+    assert(context.as_number(total)!! == 62);
+}
+
+struct AsyncLoaderState {
+    embed::ModuleRequest* slow_req;
+    uint loads;
+}
+
+fn int async_resolve_cb(void* ctx, char* referrer, char* specifier, void* request, void* opaque) {
+    char[] spec = ((ZString)specifier).str_view();
+    return capi::bk_module_set_name((embed::ModuleRequest*)request, spec.ptr, spec.len);
+}
+
+fn int async_load_cb(void* ctx, char* name, void* request, void* opaque) {
+    AsyncLoaderState* st = (AsyncLoaderState*)opaque;
+    st.loads++;
+    // Hold only app:slow so we can fulfill it later; leave app:pending
+    // unanswered so runtime teardown exercises pending-request cleanup.
+    if (((ZString)name).str_view() == "app:slow") {
+        st.slow_req = (embed::ModuleRequest*)request;
+    }
+    return capi::BK_OK;
+}
+
+fn void async_loader_lifecycle() {
+    void* ctx = capi::bk_create();
+    assert(ctx != null);
+    defer capi::bk_destroy(ctx);
+    void* rt = capi::bk_get_runtime(ctx);
+    AsyncLoaderState state;
+    embed::ModuleLoader loader = {
+        .resolve = &async_resolve_cb,
+        .load = &async_load_cb,
+        .opaque = &state,
+        .flags = capi::BK_LOADER_ASYNC | capi::BK_LOADER_NO_FILESYSTEM_FALLBACK,
+    };
+    int rc = capi::bk_set_module_loader(rt, &loader);
+    assert(rc == capi::BK_OK);
+
+    // Deferred async import that resolves once the host provides source.
+    String slow = "app:slow";
+    ulong p_slow = capi::bk_import(ctx, slow.ptr, slow.len);
+    assert(p_slow != 0);
+    defer capi::bk_free_value(ctx, p_slow);
+    rc = capi::bk_run_jobs(rt);
+    assert(rc == capi::BK_OK);
+    int pstate = -1;
+    rc = capi::bk_promise_state_get(ctx, p_slow, &pstate);
+    if (rc != capi::BK_OK || pstate != capi::BK_PROMISE_PENDING || state.slow_req == null || state.loads != 1) {
+        unreachable("async loader did not suspend app:slow");
+    }
+    String src = "export const v = 99;";
+    rc = capi::bk_module_provide(state.slow_req, src.ptr, src.len);
+    assert(rc == capi::BK_OK);
+    rc = capi::bk_run_jobs(rt);
+    assert(rc == capi::BK_OK);
+    rc = capi::bk_promise_state_get(ctx, p_slow, &pstate);
+    if (rc != capi::BK_OK || pstate != capi::BK_PROMISE_FULFILLED) {
+        unreachable("async loader did not fulfill app:slow");
+    }
+    ulong ns = capi::bk_promise_result(ctx, p_slow);
+    assert(ns != 0);
+    defer capi::bk_free_value(ctx, ns);
+    String key_v = "v";
+    ulong v = capi::bk_get_property(ctx, ns, key_v.ptr, key_v.len);
+    assert(v != 0);
+    defer capi::bk_free_value(ctx, v);
+    if (capi::bk_to_number(ctx, v) != 99.0) {
+        unreachable("async module export v != 99");
+    }
+
+    // Unanswered async import torn down while still pending on Runtime.module_requests.
+    String pending = "app:pending";
+    ulong p_pend = capi::bk_import(ctx, pending.ptr, pending.len);
+    assert(p_pend != 0);
+    defer capi::bk_free_value(ctx, p_pend);
+    rc = capi::bk_run_jobs(rt);
+    assert(rc == capi::BK_OK);
+    rc = capi::bk_promise_state_get(ctx, p_pend, &pstate);
+    if (rc != capi::BK_OK || pstate != capi::BK_PROMISE_PENDING || state.loads != 2) {
+        unreachable("async loader did not leave app:pending pending");
+    }
+}
+
 fn void main() {
-    owned_contexts();
-    shared_contexts();
-    owned_hooks();
+    // Prime one-time engine globals outside the leak scope, then assert that
+    // full runtime/context/module lifecycles release every `mem` allocation.
+    {
+        JsContext warm;
+        warm.create()!!;
+        warm.destroy();
+    }
+    mem::@assert_leak() {
+        owned_contexts();
+        shared_contexts();
+        owned_hooks();
+        module_lifecycle();
+        async_loader_lifecycle();
+    };
     io::printn("C3 context lifecycle: PASS");
 }

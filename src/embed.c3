@@ -128,7 +128,10 @@ fn ulong immediate_of(TVal v) @inline {
     return 0;
 }
 
-// Reads an immediate handle into `out`. False for any other handle.
+<*
+ Reads an immediate handle into `out`. False for any other handle.
+ @param [&out] out
+*>
 fn bool immediate_get(ulong id, TVal* out) @inline {
     switch (id) {
         case IMM_UNDEFINED: out.set_undefined();
@@ -293,6 +296,9 @@ fn Runtime* create(heap::AllocFunc alloc = null, heap::ReallocFunc realloc = nul
     return rt;
 }
 
+<*
+ @param [&inout] ctx
+*>
 fn void select_context(Ctx* ctx) @inline {
     Runtime* rt = ctx.rt;
     if (rt.active != ctx) activate_context(rt, ctx);
@@ -310,9 +316,12 @@ const uint CONTEXT_NO_EVAL = 1;
 const uint CONTEXT_CANNOT_BLOCK = 2;
 const uint CONTEXT_HOST_GLOBAL = 4;
 
-// A context: the runtime's primary realm on first use, a new realm after. A
-// context with options, or with a host global object (`global` and its
-// prototype), always gets a new realm, so the primary realm keeps defaults.
+<*
+ A context: the runtime's primary realm on first use, a new realm after. A
+ context with options, or with a host global object (`global` and its
+ prototype), always gets a new realm, so the primary realm keeps defaults.
+ @param [&inout] rt
+*>
 fn Ctx* new_context(Runtime* rt, uint flags = 0, HObject* global = null, HObject* global_proto = null) {
     if (!rt.root_used && flags == 0 && global == null) { rt.root_used = true; return &rt.root; }
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, Ctx::size);
@@ -338,6 +347,10 @@ fn Ctx* realm_context(Runtime* rt, heap::Realm* realm) {
     return null;
 }
 
+<*
+ Releases a context handle. Safe with null or an already-released context.
+ @param [drop] ctx
+*>
 fn void free_context(Ctx* ctx) {
     if (ctx == null || ctx.bctx != null || ctx.released) return;
     select_context(ctx);
@@ -391,7 +404,11 @@ fn void free_context_state(Heap* hp, ContextState* state) {
     if (state.err_stack != null) hp.free_func(hp.heap_udata, (void*)state.err_stack);
 }
 
-// Unlinks and frees an asynchronous load request, with its failure slot.
+<*
+ Unlinks and frees an asynchronous load request, with its failure slot.
+ @param [&inout] rt
+ @param [drop] req
+*>
 fn void free_module_request(Runtime* rt, ModuleRequest* req) {
     for (ModuleRequest** link = &rt.module_requests; *link != null; link = &(*link).next) {
         if (*link == req) { *link = req.next; break; }
@@ -402,8 +419,11 @@ fn void free_module_request(Runtime* rt, ModuleRequest* req) {
     mem::free(req);
 }
 
-// Destroy the runtime and everything it owns. All outstanding handles become
-// invalid. Safe with null.
+<*
+ Destroy the runtime and everything it owns. All outstanding handles become
+ invalid. Safe with null.
+ @param [drop] rt
+*>
 fn void destroy(Runtime* rt) {
     if (rt == null) return;
     Heap* hp = rt.heap;
@@ -839,6 +859,9 @@ fn SlotEntry* slot_entry(Runtime* rt, ulong id) {
     return e;
 }
 
+<*
+ @param [&out] out
+*>
 fn bool slot_get(Runtime* rt, ulong id, TVal* out) {
     SlotEntry* e = slot_entry(rt, id);
     if (e == null) return false;
@@ -898,6 +921,9 @@ fn ulong scope_handle(Runtime* rt, uint depth, ulong index) @inline {
            (generation << SCOPE_INDEX_BITS) | ((ulong)depth << 32) | index;
 }
 
+<*
+ @param [&out] out
+*>
 fn bool resolve_handle(Runtime* rt, ulong id, TVal* out) {
     if (id <= IMM_FALSE) return immediate_get(id, out);
     if ((id & SCOPE_HANDLE_BIT) == 0) return slot_get(rt, id, out);
