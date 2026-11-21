@@ -1978,8 +1978,8 @@ fn bool OptBuild.cold_field(&self) {
 }
 
 // Whether the call at word `at` of `f` has never run: its entry names no callee of any kind. A tail
-// call (which an inlined body lowers as the call it shadows) records no JS callee, whose entry finds
-// the frame already reused: its empty entry proves nothing.
+// call (which an inlined body lowers as the call it shadows) records only a compiled callee
+// (vm::try_fast_compiled_call) or a builtin: its empty entry proves nothing.
 fn bool cold_call_site(CompiledFunction* f, Opcode op, uint at) {
     if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && op != Opcode.CALL_VAR && op != Opcode.CALL_GLOBAL) return false;
     if (f.ic_entries == null || at >= f.code_count || compiler::tailcall_base(f.code[at].op) != f.code[at].op) return false;

@@ -1674,6 +1674,11 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     target_fast = null;
                 }
                 if (target_fast != null && vm.heap.realm != target_fast.realm) vm.heap.enter_realm(target_fast.realm);
+                // A callee's entry records its call site from the caller's frame, which a tail call
+                // gives away: the site records the callee here, for the optimizer's inliner.
+                if (is_tail && target_fast != null && ds.ic_base != null) {
+                    hobject::ic_note_callee(ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), target_fast.func_index);
+                }
             }
         }
     }
