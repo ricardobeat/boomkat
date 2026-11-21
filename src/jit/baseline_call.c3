@@ -60,10 +60,18 @@ const uint ENTRY_MISSING_MAX = 8;
 // object, as its tests of the count and the receiver kind would: a site that proved its callee
 // and this enters at the entry's direct label, which skips those tests and the realm's.
 fn bool entry_takes(CompiledFunction* f, uint nargs, bool plain) {
-    uint nf = f.num_formals;
-    if (f.call_flags.rest_length_only ? nargs != nf : (nf > ENTRY_MISSING_MAX && nargs < nf)) return false;
-    if (entry_forwards(f) && nargs > nf + bytecode::FORWARD_ARGS_PAD) return false;
+    uint np = entry_params(f);
+    if (np > ENTRY_MISSING_MAX && nargs < np) return false;
+    if (entry_forwards(f) && nargs > np + bytecode::FORWARD_ARGS_PAD) return false;
     return !plain || entry_plain(f);
+}
+
+// The parameters a call entry starts undefined when a call leaves them out, as th_publish_lean
+// starts every register past the arguments: all of them, a default value's included (which
+// Function.length leaves out), or a rest parameter's fixed ones, after which its register takes
+// the count of the rest.
+fn uint entry_params(CompiledFunction* f) @inline {
+    return f.call_flags.rest_length_only ? f.num_formals : f.num_args;
 }
 
 // Whether the call entry of `f` takes a call with an undefined receiver, as a lean call or one
@@ -215,13 +223,13 @@ fn CallLayout* call_layout() {
 // Whether `f` gets a call entry: a lean callee (classify_lean_call), or one that needs only its
 // function scope created (env_call_ok), whose frame the entry can publish with plain stores. An
 // `arguments` register must be the forwarding kind, which holds the count (CallFlags.forward_args).
-// The entry clears the formals a call leaves out by Function.length, so a default value, which
-// makes the parameters outnumber it, leaves the call to vm::jit_call.
+// The entry clears the parameters a call leaves out (entry_params); an `arguments` object, whose
+// makers count the formals by Function.length, needs no default value to outnumber them.
 fn bool call_entry_eligible(CompiledFunction* f) {
     f.classify_lean_call();
     return (f.call_flags.lean_call || f.env_call_ok(false)) && (!f.arguments_in_reg() || entry_forwards(f) || entry_builds_arguments(f)) && f.call_flags.trivial_call == 0
-        && (f.num_args == f.num_formals || f.call_flags.rest_length_only)
-        && f.ic_entries != null && f.var_ic_entries != null && f.num_formals <= f.num_regs
+        && (f.num_args == f.num_formals || f.call_flags.rest_length_only || !f.arguments_in_reg())
+        && f.ic_entries != null && f.var_ic_entries != null && entry_params(f) <= f.num_regs
         && !is_top_level(f);
 }
 
@@ -280,12 +288,12 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     self.mov(R1, 0, m | self.heap, k.heap_realm);
     decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)f.realm));
     // Any argument count, as th_publish_lean takes it: surplus arguments are
-    // ignored, missing formals start undefined (cleared below, unrolled up to
-    // ENTRY_MISSING_MAX formals). A rest parameter's length needs the count.
-    uint nf = f.num_formals;
-    if (f.call_flags.rest_length_only || nf > ENTRY_MISSING_MAX) {
+    // ignored, missing parameters start undefined (cleared below, unrolled up to
+    // ENTRY_MISSING_MAX of them). A rest parameter's length takes the count.
+    uint nf = entry_params(f);
+    if (nf > ENTRY_MISSING_MAX) {
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
-        decline.add(sljit_emit_cmp(c, f.call_flags.rest_length_only ? SLJIT_NOT_EQUAL : SLJIT_LESS, R1, 0, SLJIT_IMM, nf));
+        decline.add(sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, nf));
     }
     // More arguments than the registers reserved for them take the arguments object.
     bool forwards = entry_forwards(f);
@@ -333,7 +341,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     // th_publish_lean; the caller has tested the function's scope (emit_scope_test). Constants
     // the stores share are kept in registers once they are free: U (packed) undefined, C (R2)
     // the code.
-    if (kept != 0 && !f.call_flags.rest_length_only) {
+    if (kept != 0) {
         sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
         void* all_given = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, kept);
         for (uint i = 0; i < kept; i++) {
@@ -369,9 +377,11 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     }
     int undef = packed;
     int code = R2;
-    // The count jit_entry_arguments takes, kept past the reuse of its register.
+    // The count jit_entry_arguments or the rest parameter's length takes, kept past the reuse of
+    // its register.
     bool builds = entry_builds_arguments(f);
-    if (builds) sljit_emit_op2(c, SLJIT_AND, vm, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
+    bool rest = f.call_flags.rest_length_only;
+    if (builds || rest) sljit_emit_op2(c, SLJIT_AND, vm, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
     bool takes_this = !f.call_flags.ignores_this;
     if (takes_this) sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM | CALL_CONSTRUCT);
     self.mov(undef, 0, SLJIT_IMM, K_UNDEF);
@@ -402,7 +412,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     }
     // Locals and the scratch slots start undefined, surplus arguments included
     // unless they are kept for forwarding.
-    uint from = forwards ? f.arguments_reg + 1 : f.num_formals;
+    uint from = forwards ? f.arguments_reg + 1 : nf;
     if (builds) {
         // The surplus arguments wait for jit_entry_arguments: the slots past them, or past the
         // formals, are cleared from a start known at run time. R1 keeps the count for the call.
@@ -421,7 +431,15 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         self.mov(R2, 0, undef, 0);
         self.clear_slots(bottom, from, clear_end, undef, R2, R4, R1);
     }
-    if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, k_int_op(), k_int_w());
+    if (rest) {
+        // The rest parameter's register: the arguments past the fixed ones, counted.
+        void* surplus = sljit_emit_cmp(c, SLJIT_GREATER, vm, 0, SLJIT_IMM, nf);
+        self.mov(vm, 0, SLJIT_IMM, nf);
+        sljit_set_label(surplus, sljit_emit_label(c));
+        sljit_emit_op2(c, SLJIT_SUB, vm, 0, vm, 0, SLJIT_IMM, nf);
+        sljit_emit_op2(c, SLJIT_OR, vm, 0, vm, 0, k_int_op(), k_int_w());
+        self.mov(m | bottom, (long)from * TVal::size, vm, 0);
+    }
     // The VM's frame state, the value stack's top included, waits for vm::jit_sync. The body's record and window
     // registers; the heap and thunk table registers are the caller's.
     self.mov(self.la, 0, la, 0);

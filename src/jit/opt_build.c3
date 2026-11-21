@@ -3154,10 +3154,10 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     Opcode last_op = cfg.nodes[cfg.instruction_count - 1].view.insn.op;
     if (last_op != Opcode.RET && last_op != Opcode.RETUNDEF) return self.reject(OptInlineReject.NO_RET);
     // Nothing but the arguments may be read before it is written: the window slots are not cleared.
-    // Missing formals are stored undefined (OptBuild.enter_args); surplus arguments stay, as a
+    // Missing parameters are stored undefined (OptBuild.enter_args); surplus arguments stay, as a
     // frame's do.
     s.defined = mem::new_array(uint, cfg.instruction_count);
-    uint given = max(nargs, cf.num_formals);
+    uint given = max(nargs, entry_params(cf));
     uint argmask = given >= 32 ? ~0u : (1u << given) - 1;
     s.remap = uint::max;
     if (s.flat) {
@@ -4142,12 +4142,14 @@ fn void OptBuild.store_const(&self, uint reg, long bits) {
     if (reg < self.nregs) self.const_def[reg] = n;
 }
 
-// The callee's registers on entry to its inlined body: the arguments keep their state, missing formals
-// are undefined, as a frame's are, and the locals and temporaries start as nothing known.
+// The callee's registers on entry to its inlined body: the arguments keep their state, missing
+// parameters (entry_params: a default value's included) are undefined, as a frame's are, and the
+// locals and temporaries start as nothing known.
 fn void OptBuild.enter_args(&self, OptInlineSite* s) {
     uint given = min(s.nargs, s.cf.num_regs);
-    for (uint r = given; r < s.cf.num_formals; r++) self.store_const(s.base + r, K_UNDEF);
-    for (uint r = s.base + max(given, (uint)s.cf.num_formals); r < self.nregs; r++) self.kill(r);
+    uint params = entry_params(s.cf);
+    for (uint r = given; r < params; r++) self.store_const(s.base + r, K_UNDEF);
+    for (uint r = s.base + max(given, params); r < self.nregs; r++) self.kill(r);
 }
 
 // The registers of a forwarding call moved as th_apply_args moves them: the function `apply` runs
