@@ -11,22 +11,29 @@
  *   MakeTime: ((h * msPerHour + m * msPerMinute) + s * msPerSecond) + milli
  *   MakeDate: day * msPerDay + time
  * For huge operands (near the double precision limit), FMA contraction or
- * reassociation changes the rounded result. Doing this arithmetic in a
- * separate translation unit, with contraction explicitly disabled and each
- * step materialized in its own statement, keeps it exact without disabling
- * relaxed FP math engine-wide.
+ * reassociation changes the rounded result, so this arithmetic lives in a
+ * separate translation unit instead of disabling relaxed FP math
+ * engine-wide.
+ *
+ * The pragma is not enough on its own: GCC ignores it and contracts with
+ * -ffp-contract=fast by default in GNU mode, even across statements. Each
+ * product is therefore stored to a volatile, which forces it to be rounded
+ * before the addition that follows.
  */
 #pragma STDC FP_CONTRACT OFF
 #include <stdlib.h>
 
 double boomkat_date_make_time(double hour, double minute, double second, double ms) {
-    double hm = hour * 3600000.0 + minute * 60000.0;
-    double hms = hm + second * 1000.0;
+    volatile double h_ms = hour * 3600000.0;
+    volatile double m_ms = minute * 60000.0;
+    volatile double s_ms = second * 1000.0;
+    double hm = h_ms + m_ms;
+    double hms = hm + s_ms;
     return hms + ms;
 }
 
 double boomkat_date_make_date(double day, double time_within_day) {
-    double day_ms = day * 86400000.0;
+    volatile double day_ms = day * 86400000.0;
     return day_ms + time_within_day;
 }
 
