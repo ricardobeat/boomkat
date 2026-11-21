@@ -16,9 +16,7 @@ fn void CompilerContext.add_captured_name(&self, char[] name) {
     } else if (self.captured_names.find(name) != 0) {
         return;
     }
-    char[] owned = mem::new_array(char, name.len);
-    mem::copy(owned.ptr, name.ptr, (sz)name.len);
-    self.captured_names.intern(owned);
+    self.captured_names.intern(self.keep_name(name));
 }
 
 // Is this local name captured by a nested callable (or is everything)?

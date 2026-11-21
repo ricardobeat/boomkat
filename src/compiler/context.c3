@@ -81,9 +81,6 @@ fn void? CompilerContext.check_stack(&self) {
 // Initial capacity of the hoisted-function-name table; grows on the heap from
 // here (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
 const uint INITIAL_HOISTED_FNS = 128;
-// Initial capacity of the deferred-declaration tables, allocated lazily on the
-// first body-scope function declaration (see ensure_hoisted_defer_cap).
-const uint INITIAL_HOISTED_DEFERS = 8;
 // Initial scope-stack capacity; grows on the heap from here (see
 // ensure_scope_cap), so there is no fixed ceiling.
 const uint INITIAL_SCOPE_DEPTH = 256;
@@ -229,6 +226,14 @@ struct DisposeScope {
 struct PatchEntry {
     uint addr;        // instruction index to patch
     uint next;        // index of next in chain, or NO_PATCH
+}
+
+// A body-scope function declaration deferred until after PUSH_LEX/INITTZ.
+struct HoistedDefer {
+    char[] name;
+    ushort reg;
+    uint   inner_idx;
+    uint   name_idx;
 }
 
 // Tracks a parameter with a default value expression.
@@ -650,7 +655,7 @@ int  cur_with_depth;
     // Names referenced inside nested callable bodies, collected by
     // resolution before the body compiles; declare_var marks matching
     // locals is_captured so all their access goes through the environment.
-    // Owned copies; empty until the first name is added.
+    // Slices live in the lexer's arena; empty until the first name is added.
     ast::AtomTable captured_names;
     // Treat every local as captured when static resolution cannot name the
     // affected binding precisely, including direct eval and class fields.
@@ -682,25 +687,9 @@ int  cur_with_depth;
     // function object, so a property set on the binding earlier (`exports.c = c; function c(){}`)
     // would land on an object nothing else references. A repeated name overwrites its entry, leaving
     // the last declaration bound (ECMA-262 FunctionDeclarationInstantiation).
-    char[]* hoisted_defer_names;
-    ushort* hoisted_defer_regs;
-    uint*   hoisted_defer_inner_idxs;
-    uint*   hoisted_defer_name_idxs;
-    uint    hoisted_defer_cap;
-    uint    hoisted_defer_count;
+    Vec{HoistedDefer} hoisted_defers;
     // Set once emit_hoisted_fn_decls has run, so a nested block cannot emit the declarations again.
     bool    hoisted_defer_emitted;
-
-    // Block-nested function names that the sloppy B.3.3 hoist scan put into this scope. block()
-    // checks this on entry, when enclosing lets are visible, to decide the B.3.3.1 step ii
-    // exemption (entry init and publish). The scan creates the var entry unconditionally; when
-    // block() finds the name exempt it erases that entry, leaving no binding. Heap-grown; freed in
-    // cleanup().
-    char[]* b33_hoisted_names;
-    ushort* b33_hoisted_regs;
-    uint*   b33_hoisted_pcs;
-    uint    b33_hoisted_cap;
-    uint    b33_hoisted_count;
 
     // Constant-pool indices of the top-level `var` / `function` names this Script unit declares as
     // globals (the names the check prologue guards with CHKGLOBALVAR/CHKGLOBALFUNC). A strict-mode
@@ -898,13 +887,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.inner_funcs = (CompiledFunction**)h.alloc_func(h.heap_udata, (usz)(INITIAL_INNER_FUNCS * CompiledFunction*::size));
     self.hoisted_fn_cap = INITIAL_HOISTED_FNS;
     self.hoisted_fn_names = (char[]*)h.alloc_func(h.heap_udata, (usz)(INITIAL_HOISTED_FNS * char[]::size));
-    // Unallocated until a body-scope function declaration is actually seen;
-    // ensure_hoisted_defer_cap allocates on the first one.
-    self.hoisted_defer_cap = 0;
-    self.hoisted_defer_names = null;
-    self.hoisted_defer_regs = null;
-    self.hoisted_defer_inner_idxs = null;
-    self.hoisted_defer_name_idxs = null;
     PrivateNameTable* pnt = (PrivateNameTable*)h.alloc_func(h.heap_udata, (usz)PrivateNameTable::size);
     pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     pnt.count = 0;
@@ -937,13 +919,7 @@ fn void CompilerContext.cleanup(&self) {
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
     if (self.hoisted_fn_names != null) { h.free_func(h.heap_udata, self.hoisted_fn_names); self.hoisted_fn_names = null; }
     if (self.eval_var_coll_idxs != null) { h.free_func(h.heap_udata, self.eval_var_coll_idxs); self.eval_var_coll_idxs = null; }
-    if (self.hoisted_defer_names != null) { h.free_func(h.heap_udata, self.hoisted_defer_names); self.hoisted_defer_names = null; }
-    if (self.hoisted_defer_regs != null) { h.free_func(h.heap_udata, self.hoisted_defer_regs); self.hoisted_defer_regs = null; }
-    if (self.hoisted_defer_inner_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_inner_idxs); self.hoisted_defer_inner_idxs = null; }
-    if (self.hoisted_defer_name_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_name_idxs); self.hoisted_defer_name_idxs = null; }
-    if (self.b33_hoisted_names != null) { h.free_func(h.heap_udata, self.b33_hoisted_names); self.b33_hoisted_names = null; }
-    if (self.b33_hoisted_regs != null) { h.free_func(h.heap_udata, self.b33_hoisted_regs); self.b33_hoisted_regs = null; }
-    if (self.b33_hoisted_pcs != null) { h.free_func(h.heap_udata, self.b33_hoisted_pcs); self.b33_hoisted_pcs = null; }
+    self.hoisted_defers.free();
     self.release_private_names();
     if (self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.free();
     if (self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.free();
@@ -953,7 +929,6 @@ fn void CompilerContext.cleanup(&self) {
     self.tail_nodes.free();
     self.tail_call_pcs.free();
     self.bindings.free();
-    for (uint id = 1; id < self.captured_names.count(); id++) mem::free(self.captured_names.get(id).ptr);
     self.captured_names.free();
     self.defaults.free();
     self.destruct_defaults.free();
@@ -1073,70 +1048,6 @@ fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
     }
     self.hoisted_fn_names = (char[]*)pn;
     self.hoisted_fn_cap = new_cap;
-}
-
-// Record a B.3.3 entry init: the hoisted name, the register of the LDUNDEF+DECLVAR_HOIST pair, and
-// the DECLVAR_HOIST index. When block() proves the block exempt it NOPs that DECLVAR_HOIST and erases
-// the scope entry, leaving no var binding. Names are interned: the token borrows lexer scratch that
-// later tokens overwrite.
-fn void CompilerContext.record_b33_hoist(&self, char[] var_name, uint var_reg, uint hoist_pc) {
-    for (uint i = 0; i < self.b33_hoisted_count; i++) {
-        if (str_eq(self.b33_hoisted_names[i], var_name)) return;
-    }
-    if (self.b33_hoisted_count >= self.b33_hoisted_cap) {
-        uint new_cap = self.b33_hoisted_cap == 0 ? 8 : self.b33_hoisted_cap * 2;
-        Heap* h = (Heap*)self.heap;
-        void* pn = h.realloc_func(h.heap_udata, self.b33_hoisted_names, (usz)(new_cap * char[]::size));
-        void* pr = h.realloc_func(h.heap_udata, self.b33_hoisted_regs, (usz)(new_cap * ushort::size));
-        void* pc = h.realloc_func(h.heap_udata, self.b33_hoisted_pcs, (usz)(new_cap * uint::size));
-        if (pn == null || pr == null || pc == null) {
-            if (pn != null) self.b33_hoisted_names = (char[]*)pn;
-            if (pr != null) self.b33_hoisted_regs = (ushort*)pr;
-            if (pc != null) self.b33_hoisted_pcs = (uint*)pc;
-            self.record_error("out of memory growing the B.3.3 table");
-            return;
-        }
-        self.b33_hoisted_names = (char[]*)pn;
-        self.b33_hoisted_regs = (ushort*)pr;
-        self.b33_hoisted_pcs = (uint*)pc;
-        self.b33_hoisted_cap = new_cap;
-    }
-    HString* hs = ((Heap*)self.heap).str_intern(var_name);
-    self.b33_hoisted_names[self.b33_hoisted_count] = self.name_text(hs);
-    self.b33_hoisted_regs[self.b33_hoisted_count] = (ushort)var_reg;
-    self.b33_hoisted_pcs[self.b33_hoisted_count] = hoist_pc;
-    self.b33_hoisted_count++;
-}
-
-// The B.3.3 record index for `name`, or -1 when the scan hoisted nothing
-// under it into this scope (nested boundary skipped it, or a `var`/param
-// entry already covered it).
-
-
-// Grow the deferred-declaration tables, allocating them on the first body-scope
-// function declaration. All four grow together: they are parallel arrays.
-fn void CompilerContext.ensure_hoisted_defer_cap(&self) {    if (self.hoisted_defer_cap != 0 && self.hoisted_defer_count < self.hoisted_defer_cap) return;
-    uint new_cap = self.hoisted_defer_cap == 0 ? INITIAL_HOISTED_DEFERS : self.hoisted_defer_cap * 2;
-    Heap* h = (Heap*)self.heap;
-    void* pn = h.realloc_func(h.heap_udata, self.hoisted_defer_names, (usz)(new_cap * char[]::size));
-    void* pr = h.realloc_func(h.heap_udata, self.hoisted_defer_regs, (usz)(new_cap * ushort::size));
-    void* pi = h.realloc_func(h.heap_udata, self.hoisted_defer_inner_idxs, (usz)(new_cap * uint::size));
-    void* px = h.realloc_func(h.heap_udata, self.hoisted_defer_name_idxs, (usz)(new_cap * uint::size));
-    if (pn == null || pr == null || pi == null || px == null) {
-        // Keep whichever grew: they are only ever read below hoisted_defer_count,
-        // which is not advanced when this fails.
-        if (pn != null) self.hoisted_defer_names = (char[]*)pn;
-        if (pr != null) self.hoisted_defer_regs = (ushort*)pr;
-        if (pi != null) self.hoisted_defer_inner_idxs = (uint*)pi;
-        if (px != null) self.hoisted_defer_name_idxs = (uint*)px;
-        self.record_error("out of memory growing the deferred declaration table");
-        return;
-    }
-    self.hoisted_defer_names = (char[]*)pn;
-    self.hoisted_defer_regs = (ushort*)pr;
-    self.hoisted_defer_inner_idxs = (uint*)pi;
-    self.hoisted_defer_name_idxs = (uint*)px;
-    self.hoisted_defer_cap = new_cap;
 }
 
 // Grow constant pool and hash table.
