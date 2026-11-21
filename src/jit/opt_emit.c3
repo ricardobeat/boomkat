@@ -3032,25 +3032,7 @@ fn void OptCg.emit_math_minmax(&self, uint i, OptNode* n, int x, bool min) {
     if (x != FR0) sljit_emit_fop1(c, SLJIT_MOV_F64, FR0, 0, x, 0);
     int y = self.flt_reg(n.b, FR1);
     if (y != FR1) sljit_emit_fop1(c, SLJIT_MOV_F64, FR1, 0, y, 0);
-    void* nan = sljit_emit_fcmp(c, SLJIT_UNORDERED, FR0, 0, FR1, 0);
-    // The other operand when it is the one on the result's side, the first otherwise.
-    void* keep = sljit_emit_fcmp(c, min ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_GREATER, FR0, 0, FR1, 0);
-    void* other = sljit_emit_fcmp(c, min ? SLJIT_ORDERED_GREATER : SLJIT_ORDERED_LESS, FR0, 0, FR1, 0);
-    // Equal: of +0 and -0 the sign bits decide, the minimum's set when either's is.
-    sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
-    sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR1, R1);
-    sljit_emit_op2(c, min ? SLJIT_OR : SLJIT_AND, R0, 0, R0, 0, R1, 0);
-    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
-    void* done_eq = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(nan, sljit_emit_label(c));
-    sljit_emit_fop2(c, SLJIT_ADD_F64, FR0, 0, FR0, 0, FR1, 0);
-    void* done_nan = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(other, sljit_emit_label(c));
-    sljit_emit_fop1(c, SLJIT_MOV_F64, FR0, 0, FR1, 0);
-    void* end = sljit_emit_label(c);
-    sljit_set_label(keep, end);
-    sljit_set_label(done_eq, end);
-    sljit_set_label(done_nan, end);
+    emit_f64_minmax(c, min);
     self.def_flt(i, FR0);
 }
 

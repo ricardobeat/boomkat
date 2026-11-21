@@ -1466,6 +1466,14 @@ fn bool Asm.emit_call(&self) {
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         miss.bind(sljit_emit_label(c));
     }
+    OptMath math;
+    uint math_builtin;
+    if (self.math_site(&math, &math_builtin)) {
+        Jumps miss;
+        self.emit_math(math, math_builtin, &miss);
+        done.add(sljit_emit_jump(c, SLJIT_JUMP));
+        miss.bind(sljit_emit_label(c));
+    }
     if (self.w.op == Opcode.NEW_OBJ) {
         Jumps miss;
         Jumps generic;
@@ -1683,6 +1691,30 @@ fn void Asm.store_number(&self, uint r) {
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, CANONICAL_NAN);
     sljit_set_label(ok, sljit_emit_label(c));
     self.store(r, R2);
+}
+
+// Store FR0 into register `r` as a builtin's leaf entry stores a number (builtins::leaf_set_number):
+// an integer that a fastint holds, other than -0, as that fastint, and anything else as
+// store_number does. Uses R2, R3 and FR1.
+fn void Asm.store_number_int(&self, uint r) {
+    void* c = self.c;
+    Jumps other;
+    sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, R2, 0, FR0, 0);
+    sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR1, 0, R2, 0);
+    other.add(sljit_emit_fcmp(c, SLJIT_UNORDERED_OR_NOT_EQUAL, FR0, 0, FR1, 0));
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, R2, 0, SLJIT_IMM, 1L << 47);
+    other.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, 1L << 48));
+    void* nonzero = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0);
+    sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R3);
+    other.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_set_label(nonzero, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_SHL, R2, 0, R2, 0, SLJIT_IMM, 16);
+    self.box_shifted(R2);
+    self.store(r, R2);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    other.bind(sljit_emit_label(c));
+    self.store_number(r);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // --- Fast paths ---

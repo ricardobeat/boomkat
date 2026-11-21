@@ -876,19 +876,10 @@ fn bool Asm.charcodeat_site(&self) {
 // `miss` collects every other case, which nothing was written for.
 fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     void* c = self.c;
-    CallLayout* k = call_layout();
     Layout* l = self.lay;
     int m = SLJIT_MEM;
     uint rb = self.w.b;
-    self.load(R0, rb);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, k_obj_op(), k_obj_w());
-    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
-    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    self.mov(R1, 0, m | R0, 0, SLJIT_MOV_U32);
-    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, k.fn_mask);
-    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, k.fn_want));
-    self.mov(R1, 0, m | R0, k.fn_builtin, SLJIT_MOV_S32);
-    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal));
+    self.guard_builtin(rb, builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal, miss);
     self.load(R1, rb + 1);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_STRING_START);
     miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, span_op(), span_w()));
@@ -906,6 +897,136 @@ fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R1, (long)hstring::HSTRING_HDR_SIZE);
     sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, k_int_op(), k_int_w());
     self.store(self.w.a, R0);
+}
+
+// Jump to `miss` unless register `r` holds the builtin function numbered `builtin`: its light
+// function, or a function object running it (OptCg.emit_check_builtin's test). Uses R0 and R1.
+fn void Asm.guard_builtin(&self, uint r, uint builtin, Jumps* miss) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    int m = SLJIT_MEM;
+    self.load(R1, r);
+    // A builtin not yet given an object of its realm is a light function.
+    void* light = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)((types::TAG_LIGHTFUNC << 48) | (ulong)builtin));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, k_obj_op(), k_obj_w());
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, span_op(), span_w()));
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    self.mov(R1, 0, m | R0, 0, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, k.fn_mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, k.fn_want));
+    self.mov(R1, 0, m | R0, k.fn_builtin, SLJIT_MOV_S32);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)builtin));
+    sljit_set_label(light, sljit_emit_label(c));
+}
+
+// Whether the call being emitted is a CALL or CALL_UNDEF_THIS that has only ever called one Math
+// function (opt_math_of), with as many arguments as it takes: its function in `m` and builtin
+// number in `builtin`, for emit_math.
+fn bool Asm.math_site(&self, OptMath* m, uint* builtin) {
+    if (!types::USE_NANBOX || self.wide || self.f.ic_entries == null) return false;
+    if (self.w.op != Opcode.CALL && self.w.op != Opcode.CALL_UNDEF_THIS) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.next - 1];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    *builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
+    if (!opt_math_of(*builtin, m) || self.w.c != m.args) return false;
+    return self.w.b + 1 + m.args < self.f.num_regs && self.w.a < self.f.num_regs;
+}
+
+// A call of the Math function `m` (math_site), numbered `builtin`, computed here rather than by its
+// leaf entry (builtins::leaf_of): fastint arguments of FLOOR, CEIL, ROUND, ABS, MIN and MAX as
+// integers, and otherwise doubles, ABS, MIN and MAX inline, SQRT, FLOOR and CEIL by the machine's
+// instruction where the shim has one, and the rest by the function the builtin computes with.
+// `miss` collects any other callee and an argument that is no number takes the slow path, with
+// nothing written for either.
+fn void Asm.emit_math(&self, OptMath m, uint builtin, Jumps* miss) {
+    void* c = self.c;
+    uint x = self.w.b + 2;
+    uint ra = self.w.a;
+    self.guard_builtin(self.w.b, builtin, miss);
+    Jumps done;
+    Jumps floats;
+    switch (m) {
+        case FLOOR:
+        case CEIL:
+        case ROUND:
+            self.load(R0, x);
+            sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R0, 0, SLJIT_IMM, 48);
+            floats.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT));
+            self.store(ra, R0);
+            done.add(sljit_emit_jump(c, SLJIT_JUMP));
+        case ABS:
+            self.load(R0, x);
+            sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R0, 0, SLJIT_IMM, 48);
+            floats.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT));
+            sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+            void* positive = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R0, 0, SLJIT_IMM, 0);
+            sljit_emit_op2(c, SLJIT_SUB, R0, 0, SLJIT_IMM, 0, R0, 0);
+            // The absolute value of the least fastint is none.
+            floats.add(sljit_emit_cmp(c, SLJIT_SIG_LESS, R0, 0, SLJIT_IMM, 0));
+            sljit_set_label(positive, sljit_emit_label(c));
+            self.box_shifted(R0);
+            self.store(ra, R0);
+            done.add(sljit_emit_jump(c, SLJIT_JUMP));
+        case MIN:
+        case MAX:
+            self.load(R0, x);
+            self.load(R1, x + 1);
+            sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R0, 0, SLJIT_IMM, 48);
+            floats.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT));
+            sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R1, 0, SLJIT_IMM, 48);
+            floats.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT));
+            sljit_emit_op2(c, SLJIT_SHL, R2, 0, R0, 0, SLJIT_IMM, 16);
+            sljit_emit_op2(c, SLJIT_SHL, R3, 0, R1, 0, SLJIT_IMM, 16);
+            void* keep = sljit_emit_cmp(c, m == MIN ? SLJIT_SIG_LESS_EQUAL : SLJIT_SIG_GREATER_EQUAL, R2, 0, R3, 0);
+            sljit_emit_op1(c, SLJIT_MOV, R0, 0, R1, 0);
+            sljit_set_label(keep, sljit_emit_label(c));
+            self.store(ra, R0);
+            done.add(sljit_emit_jump(c, SLJIT_JUMP));
+        default:
+    }
+    floats.bind(sljit_emit_label(c));
+    self.load_number(FR0, x);
+    if (m.args == 2) self.load_number(FR1, x + 1);
+    switch (m) {
+        case ABS:
+            sljit_emit_fop1(c, SLJIT_ABS_F64, FR0, 0, FR0, 0);
+        case MIN:
+        case MAX:
+            emit_f64_minmax(c, m == MIN);
+        case SQRT:
+        case FLOOR:
+        case CEIL:
+            int none = m == SQRT ? sljit_shim_sqrt_f64(c, FR0) : sljit_shim_round_f64(c, FR0, m == FLOOR ? 1 : 0);
+            if (none != 0) self.c_call_frameless(SLJIT_ARGS1_F64, SLJIT_IMM, (long)(usz)opt_math_fn(m));
+        default:
+            self.c_call_frameless(m.args == 2 ? SLJIT_ARGS2_F64 : SLJIT_ARGS1_F64, SLJIT_IMM, (long)(usz)opt_math_fn(m));
+    }
+    self.store_number_int(ra);
+    done.bind(sljit_emit_label(c));
+}
+
+// FR0 = the minimum, or the maximum, of FR0 and FR1, as builtin_math_min and _max decide: NaN when
+// either is, -0 below +0. Uses R0 and R1.
+fn void emit_f64_minmax(void* c, bool min) {
+    void* nan = sljit_emit_fcmp(c, SLJIT_UNORDERED, FR0, 0, FR1, 0);
+    // The first operand when it is the one on the result's side, the other when that one is.
+    void* keep = sljit_emit_fcmp(c, min ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_GREATER, FR0, 0, FR1, 0);
+    void* other = sljit_emit_fcmp(c, min ? SLJIT_ORDERED_GREATER : SLJIT_ORDERED_LESS, FR0, 0, FR1, 0);
+    // Equal: of +0 and -0 the sign bits decide, the minimum's set when either's is.
+    sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+    sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR1, R1);
+    sljit_emit_op2(c, min ? SLJIT_OR : SLJIT_AND, R0, 0, R0, 0, R1, 0);
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
+    void* done_eq = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(nan, sljit_emit_label(c));
+    sljit_emit_fop2(c, SLJIT_ADD_F64, FR0, 0, FR0, 0, FR1, 0);
+    void* done_nan = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(other, sljit_emit_label(c));
+    sljit_emit_fop1(c, SLJIT_MOV_F64, FR0, 0, FR1, 0);
+    void* end = sljit_emit_label(c);
+    sljit_set_label(keep, end);
+    sljit_set_label(done_eq, end);
+    sljit_set_label(done_nan, end);
 }
 
 // Record the callee in R4 (its CompiledFunction) as the call feedback of the

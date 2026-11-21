@@ -571,6 +571,17 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
     }
     if (cold.heap.gc_safepoint_due(true)) { opprof_bail(NATIVE_GATE); return pc; }
 
+    // The builtin the site calls, for baseline code compiled before it ran there (Asm.math_site,
+    // Asm.leaf_site), as vm::jit_leaf_call records it. Function.prototype.call's site records the
+    // function it runs instead (th_call_redispatched), and a getter read's entry is the property's
+    // (vm::jit_call_builtin).
+$if $feat(SLJIT):
+    if (cold.heap.jit_enabled && cold.ic_base != null && fn_idx != builtins::Builtin.FUNCTION_PROTO_CALL.ordinal
+        && pc.op != Opcode.GETTHISC && pc.op != Opcode.GETPROPC && pc.op != Opcode.GETPROPC_CACHED) {
+        hobject::ic_note_callee(th_ic_at(cold, pc), hobject::IC_BUILTIN_TARGET | fn_idx);
+    }
+$endif
+
     // The common case a leaf answers needs no frame and no context.
     builtins::LeafFn leaf = builtins::leaf_of(fn_idx);
     if (leaf != null && leaf(cold.heap, regs[callee_reg + 1], regs + callee_reg + 2, nargs, regs + result_reg)) {
