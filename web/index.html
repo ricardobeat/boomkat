@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat · tomasi.studio</title>
+  <meta name="description" content="boomkat is a tiny, fast JavaScript and TypeScript engine with ES2026 support, written in C3.">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f6f6f6">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="boomkat">
+  <meta property="og:description" content="boomkat is a tiny, fast JavaScript and TypeScript engine with full ES2026 support.">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    main.wrap { padding-bottom: 4em; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 6px 11px;
+      border: 1px solid #3d3d3d; color: #3d3d3d; background: transparent;
+      font-size: 11px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase;
+      text-decoration: none;
+    }
+    .btn:hover, .btn:focus-visible { color: #1a1a1a; border-color: #1a1a1a; }
+    .btn svg { display: block; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <header class="site-head">
+    <a class="brand" href="../">
+      <svg class="mark" viewBox="0 0 7 7" width="14" height="14" shape-rendering="crispEdges" aria-hidden="true"><rect width="7" height="7" fill="#3d3d3d"/><g fill="#f6f6f6"><rect x="1" y="1" width="5" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="3" y="5" width="1" height="1"/></g></svg>
+      <span>tomasi.studio</span>
+    </a>
+  </header>
+
+  <main class="wrap" id="top">
+    <section class="hero">
+      <div class="hero-text">
+        <h1 class="title">boomkat</h1>
+        <p class="lede">A tiny, fast JavaScript engine with modern features. Runs TypeScript and JSX without a build step. Written in C3.</p>
+        <p class="actions">
+          <a class="btn" href="docs/index.html">read the docs</a>
+          <a class="btn" href="https://github.com/ricardobeat/boomkat" target="_blank" rel="noopener">open in github <svg viewBox="0 0 9 9" width="11" height="11" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="0" y="1" width="4" height="1"/><rect x="0" y="1" width="1" height="8"/><rect x="0" y="8" width="8" height="1"/><rect x="7" y="5" width="1" height="4"/><rect x="5" y="0" width="4" height="1"/><rect x="8" y="0" width="1" height="4"/><rect x="7" y="1" width="1" height="1"/><rect x="6" y="2" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="4" y="4" width="1" height="1"/></g></svg><span class="sr-only"> (opens in a new tab)</span></a>
+        </p>
+      </div>
+    </section>
+
+    <div class="band" aria-hidden="true"></div>
+
+    <section class="work">
+      <div class="sec-head"><h2 class="label">features</h2></div>
+      <dl class="facts">
+        <dt>ES2026</dt><dd>native ESM, top-level await, proxies, modern built-ins</dd>
+        <dt>TypeScript</dt><dd>run .ts, .tsx and .jsx files directly</dd>
+        <dt>Intl</dt><dd>Temporal and full internationalization with the full-ICU build</dd>
+        <dt>footprint</dt><dd>2 MB default, tunable down to ~700 KB</dd>
+        <dt>speed</dt><dd>20–40% faster than QuickJS, ~10x Duktape, &lt;2 ms startup</dd>
+        <dt>test262</dt><dd>53,240 / 53,578 passing (99.3%)</dd>
+      </dl>
+    </section>
+
+    <section class="work">
+      <div class="sec-head"><h2 class="label">architecture</h2></div>
+      <dl class="facts">
+        <dt>compiler</dt><dd>flat AST, type stripping, register-based bytecode</dd>
+        <dt>optimizer</dt><dd>constant folding, peephole, fused ops, inlining</dd>
+        <dt>vm</dt><dd>direct-threaded dispatch</dd>
+        <dt>gc</dt><dd>incremental, generational, string refcounting</dd>
+        <dt>jit</dt><dd>sljit backend, in development</dd>
+        <dt>embedding</dt><dd>C ABI, static and shared library</dd>
+      </dl>
+    </section>
+
+    <section class="work">
+      <div class="sec-head"><h2 class="label">build profiles</h2></div>
+      <dl class="facts">
+        <dt>boomkat</dt><dd>default CLI, English Intl</dd>
+        <dt>full-icu</dt><dd>complete Intl and Temporal, 4 MB+</dd>
+        <dt>slim</dt><dd>~1.5 MB, no TS/JSX, Intl, BigInt, Proxy</dd>
+        <dt>tiny</dt><dd>~700 KB, precompiled bytecode only</dd>
+      </dl>
+    </section>
+
+    <section class="work">
+      <div class="sec-head"><h2 class="label">license</h2></div>
+      <dl class="facts">
+        <dt>BSL 1.1</dt><dd><a href="https://github.com/ricardobeat/boomkat/blob/main/LICENSE">Business Source License 1.1</a>, free for production use under $2M annual revenue</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span>&copy; 2026 tomasi.studio</span>
+        <a class="foot-mail" data-u="hi" data-d="tomasi.studio">hi at tomasi dot studio</a>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+  <script>
+    for (const a of document.querySelectorAll("a[data-u]")) {
+      const m = a.dataset.u + "\u0040" + a.dataset.d;
+      a.href = "mailto:" + m;
+      a.textContent = m;
+    }
+  </script>
+</body>
+</html>

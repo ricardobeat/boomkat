@@ -1,5 +1,4 @@
-// WeakRef and FinalizationRegistry constructors and prototype methods
-//.
+// WeakRef and FinalizationRegistry constructors and prototype methods.
 //
 // This engine's weak collections are not truly weak: nothing is ever
 // collected, so a WeakRef target and every FinalizationRegistry entry are
@@ -126,7 +125,7 @@ fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
     held.set_undefined();
     if (ctx.argc >= 2) held = ctx.regs[ctx.base_reg + 1];
 
-    // SameValue(target, heldValue) is disallowed (ECMA-262 §26.2.3.2 step 4).
+    // SameValue(target, heldValue) is disallowed (ES2026 §26.2.3.2 step 4).
     if (same_value(target, held)) {
         builtin_throw(ctx, ctx.heap.type_err_proto,
             "FinalizationRegistry.register: target and held value must not be the same");
@@ -199,15 +198,6 @@ fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
 
     ctx.result_boolean(removed);
 }
-
-// ============================================================================
-// Shared registration helper for the WeakRef / FinalizationRegistry pattern.
-// ============================================================================
-//
-// Builds the prototype (ordinary object, @@toStringTag = tag) and the
-// constructor function (with prototype/length/name descriptors) and binds the
-// constructor as a non-enumerable global. Returns the prototype so the caller
-// can install prototype methods, or null on allocation failure.
 
 // ============================================================================
 // WeakRef registration

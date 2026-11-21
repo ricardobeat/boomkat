@@ -228,7 +228,7 @@ fn OpStatus op_add(Dispatch* ds, DecodedInsn insn) {
     if (concat != ConcatStatus.NOT_APPLICABLE) return NEXT;
     TVal prim_b = *rb;
     TVal prim_c = *rc;
-    // ECMA-262 §11.6.1: + operator uses ToPrimitive with no hint (default "number")
+    // ES2026 §13.8.1.1: + operator uses ToPrimitive with no hint (default "number")
     if (rb.get_tag() == OBJECT) { prim_b = to_primitive_value(vm, rb, 0); }
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
     if (ds.needs_restart) return RESTART;
@@ -265,7 +265,7 @@ fn OpStatus op_add(Dispatch* ds, DecodedInsn insn) {
             vm.heap.set_reg_undefined(ra);
         }
     } else if (prim_b.is_bigint() || prim_c.is_bigint()) {
-        // ECMA-262 §12.8.5: neither primitive is a String → numeric add.
+        // ES2026 §13.8.1.1: neither primitive is a String → numeric add.
         // BigInt operands: both must be BigInt (else TypeError).
         if (vm_bigint_binop(vm, Opcode.ADD, ra, &prim_b, &prim_c) == BigIntOpResult.THREW) {
             if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
@@ -332,7 +332,7 @@ fn OpStatus op_addi(Dispatch* ds, DecodedInsn insn) {
         vm.heap.set_reg_fastint_or_number(ra, sum);
         return NEXT;
     }
-    // ECMA-262 §11.6.1: `+` is string concatenation, not numeric addition,
+    // ES2026 §13.8.1.1: `+` is string concatenation, not numeric addition,
     // when either operand is a string after ToPrimitive. The fusion
     // pass folds LDINT+ADD into ADDI on register and opcode shape
     // alone, so this mirrors ADD's STRING + FASTINT case. The
@@ -353,7 +353,7 @@ fn OpStatus op_addi(Dispatch* ds, DecodedInsn insn) {
         }
     }
     TVal immv; immv.set_fastint(imm);
-    // Object operand: ToPrimitive(rb, hint number) per ECMA-262 §11.6.1
+    // Object operand: ToPrimitive(rb, hint number) per ES2026 §13.8.1.1
     // before choosing string concatenation over numeric addition, mirroring ADD's
     // object handling. The immediate is always a plain number, so
     // (unlike ADD, which must ToPrimitive both sides) only rb can
@@ -427,7 +427,7 @@ fn OpStatus op_strjoin(Dispatch* ds, DecodedInsn insn) {
     // A Symbol is a STRING-tagged HString, so a bare tag test would
     // treat it as an already-converted string and copy its bytes into
     // a plain result instead of running ToString, which must throw
-    // TypeError (ECMA-262 §7.1.12). Route symbols through vm_to_string.
+    // TypeError (ES2026 §7.1.17). Route symbols through vm_to_string.
     bool conversion_threw = false;
     for (uint i = 0; i < count; i++) {
         TValTag tag = parts[i].get_tag();
@@ -620,7 +620,7 @@ fn OpStatus op_mod(Dispatch* ds, DecodedInsn insn) {
     if (types::both_fastint(rb, rc) && rc.get_fastint() != 0) {
         long mod_result = rb.get_fastint() % rc.get_fastint();
         if (mod_result == 0 && rb.get_fastint() < 0) {
-            // -1 % 1 → -0: sign of zero matches dividend per ECMA-262 §11.5.3
+            // -1 % 1 → -0: sign of zero matches dividend per ES2026 §13.7.1
             vm.heap.set_reg_number(ra, -0.0);
         } else {
             vm.heap.set_reg_fastint(ra, mod_result);
@@ -906,7 +906,7 @@ fn OpStatus op_instanceof(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = ds.regs_base + insn.c;
-    // ECMA-262 §11.8.6: RelationalExpression instanceof ShiftExpression
+    // ES2026 §13.10.1: RelationalExpression instanceof ShiftExpression
     // ra may alias rb (compiler optimization), so read rb before writing ra.
     TVal lval = *rb;
     TVal rval = *rc;
@@ -947,7 +947,7 @@ fn OpStatus op_instanceof(Dispatch* ds, DecodedInsn insn) {
     // the threaded handler answer later visits.
     if (lval.is_object() && instanceof_default(vm, rfunc, (HObject*)lval.get_heapptr(), ra)) return NEXT;
 
-    // ECMA-262 §12.9.4 makes GetMethod(C, @@hasInstance) step 2, so it must run
+    // ES2026 §13.10.2 makes GetMethod(C, @@hasInstance) step 2, so it must run
     // BEFORE the IsCallable check (step 5). Get() must invoke any
     // accessor getter and propagate its error (test get-err).
     if (vm.heap.hasinstance_symbol != null) {
@@ -977,7 +977,7 @@ fn OpStatus op_instanceof(Dispatch* ds, DecodedInsn insn) {
                 have_value = true;
             }
         }
-        // ECMA-262 §7.3.9 GetMethod: undefined/null → no method (fall through).
+        // ES2026 §7.3.10 GetMethod: undefined/null → no method (fall through).
         // Anything else must be callable; otherwise TypeError.
         if (have_value && !hasinst_val.is_undefined() && !hasinst_val.is_null()) {
             bool hasinst_callable = hasinst_val.is_lightfunc() ||
@@ -1028,7 +1028,7 @@ fn OpStatus op_instanceof(Dispatch* ds, DecodedInsn insn) {
         return ds.needs_restart ? RESTART : NEXT;
     }
 
-    // ECMA-262 §12.9.4 step 5: If IsCallable(C) is false, throw TypeError.
+    // ES2026 §13.10.2: If IsCallable(C) is false, throw TypeError.
     // (Reached only when @@hasInstance is undefined/missing.)
     if (!rfunc.is_callable()) {
         if (!vm_throw_error(vm, vm.heap.type_err_proto, "Right-hand side of instanceof is not callable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -1042,15 +1042,15 @@ fn OpStatus op_instanceof(Dispatch* ds, DecodedInsn insn) {
         return NEXT;
     }
 
-    // Read rval.prototype, which is ECMA-262 §7.3.19 OrdinaryHasInstance step 4.
-    // Get() must invoke accessor getters (per ECMA-262 §7.3.1), so we first
+    // Read rval.prototype, which is ES2026 §7.3.21 OrdinaryHasInstance.
+    // Get() must invoke accessor getters (per ES2026 §7.3.2), so we first
     // check for an accessor property in the prototype chain and call
     // its getter; otherwise fall back to the raw data-property value.
     HString* proto_key_str = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_val;
     AccessorResult acc = rfunc.find_accessor_proto(proto_key_str, true, vm.heap);
     if (acc.found) {
-        // ECMA-262 §7.3.1 Get(O, P): an accessor's getter is called with
+        // ES2026 §7.3.2 Get(O, P): an accessor's getter is called with
         // `this` bound to the original receiver (rfunc). The getter
         // may throw or return any value.
         TVal this_for_getter;
@@ -1064,7 +1064,7 @@ fn OpStatus op_instanceof(Dispatch* ds, DecodedInsn insn) {
         proto_val = get_prop_with_proto(rfunc, proto_key_str, vm.heap);
     }
     if (!proto_val.is_object()) {
-        // ECMA-262 §7.3.19 OrdinaryHasInstance step 6: If Type(P) is not
+        // ES2026 §7.3.21 OrdinaryHasInstance: If Type(P) is not
         // Object, throw a TypeError exception. The spec does NOT
         // allow the silent-false fallback, since the result must always
         // be defined (or an abrupt completion).
@@ -1087,7 +1087,7 @@ fn OpStatus op_in(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = ds.regs_base + insn.c;
-    // ECMA-262 §11.8.7: RelationalExpression in ShiftExpression
+    // ES2026 §13.10.1: RelationalExpression in ShiftExpression
     // Right side must be an object; TypeError otherwise.
     // Returns true if the object has a property with the given name
     // (own or inherited, checked through [[HasProperty]]).
@@ -1513,7 +1513,7 @@ fn OpStatus op_dyn_import(Dispatch* ds, DecodedInsn insn) {
 fn OpStatus op_import_meta(Dispatch* ds, DecodedInsn insn) {
     Vm* vm = ds.vm;
     if (!Opcode.IMPORT_META.is_enabled()) return op_fail(ds, VM_ERROR);
-    // `import.meta` (ECMA-262 §13.3.12). GetActiveScriptOrModule returns
+    // `import.meta` (ES2026 §13.3.12). GetActiveScriptOrModule returns
     // the defining module of the running function, so a function that
     // returns import.meta yields its own module's object even when called
     // from another module. The active function's filename carries the
@@ -1616,7 +1616,7 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
     Activation* callee_act = &vm.activations[vm.activation_count - 1];
     TVal* callee_result = callee_act.retval;
 
-    // ECMA-262 §9.2.2 step 13.c: derived constructor returning a non-object
+    // ES2026 §10.2.2: derived constructor returning a non-object
     // non-undefined value must throw a TypeError, but the throw must be
     // raised in the caller's context (not catchable inside the constructor),
     // so we set a flag to throw after restoring the caller frame.
@@ -1651,7 +1651,7 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
     // Async function: resolve the promise with the return value and
     // return the promise. This must go through promise_resolve_with_value
     // (not a bare promise_settle) so that a returned thenable/Promise is
-    // adopted per ECMA-262 §25.5.5.4 AsyncFunctionStart and §27.2.1.3.2, so the
+    // adopted per ES2026 §27.7.5.1 AsyncFunctionStart and §27.2.1.3, so the
     // async function's promise takes on the eventual settlement of the
     // returned promise rather than fulfilling with the promise object.
     if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
@@ -1751,7 +1751,7 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
         }
     }
 
-    // ECMA-262 §9.2.2 step 13.c: now in the caller's context, throw TypeError.
+    // ES2026 §10.2.2: now in the caller's context, throw TypeError.
     // The activation has already been popped, so this throw is not catchable
     // inside the constructor's own try-catch handlers.
     if (derived_this_error) {
@@ -1782,7 +1782,7 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
         }
         return ds.needs_restart ? RESTART : NEXT;
     }
-    // Private class fields (ECMA-262 §9.2.2 step 8 InitializeInstanceElements,
+    // Private class fields (ES2026 §10.2.2 InitializeInstanceElements,
     // called for DERIVED constructors right after `this` is bound by super()).
     if (super_bound_act != null) {
         CompiledFunction* super_bound_target = (CompiledFunction*)super_bound_act.func;
@@ -1900,7 +1900,7 @@ fn OpStatus op_resolvevar(Dispatch* ds, DecodedInsn insn) {
             }
             // Encode the resolution outcome in A's TVal so PUTVAR_ASSIGN
             // (and any later reader) can tell *which* env held the binding.
-            // ECMA-262 §6.2.5.6 PutValue step 5 needs the env record itself
+            // ES2026 §6.2.5.6 PutValue needs the env record itself
             // to route the write to the right SetMutableBinding; for
             // with-env specifically, the resolved env is also the one whose
             // SetMutableBinding throws ReferenceError if the RHS later
@@ -1986,7 +1986,7 @@ fn OpStatus op_getvar(Dispatch* ds, DecodedInsn insn) {
     if (catch err = read_raw) return op_fail(ds, err);
     BindingRead read = read_raw;
     if (op == Opcode.TYPEOFIDENT) {
-        // ECMA-262 §13.5.3.1: typeof an unresolvable reference is
+        // ES2026 §13.5.3.1: typeof an unresolvable reference is
         // "undefined" rather than a ReferenceError.
         if (read != BindingRead.THREW) {
             vm.heap.set_reg_string(ra, read == BindingRead.FOUND
@@ -2051,9 +2051,9 @@ fn OpStatus op_putglobal(Dispatch* ds, DecodedInsn insn) {
                 }
                 return ds.needs_restart ? RESTART : NEXT;
             } else if (put_result == 0) {
-                // Not in lex or var env. ECMA-262 §8.1.1.4.7 PutValue step
+                // Not in lex or var env. ES2026 §6.2.5.6 PutValue
                 // 1: throw ReferenceError when unresolvable. Sloppy
-                // bodies fall back to ECMA-262 §15.1.8 step 2.b:
+                // bodies fall back to ES2026 §16.1.7:
                 // create a configurable own property on the global
                 // object (Annex B.3.2). env_put on the global env
                 // chain that walks back to vm.global_env records the
@@ -2113,7 +2113,7 @@ fn OpStatus op_putvar(Dispatch* ds, DecodedInsn insn) {
                 // A strict-immutable binding (const) throws in BOTH
                 // modes: SetMutableBinding promotes strict to true for
                 // a strict binding before the immutable check
-                // (ECMA-262 §9.1.1.1.5 steps 2 and 5.2).
+                // (ES2026 §9.1.1.1.5).
                 HString* name_hstr = (HString*)key;
                 if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return op_fail(ds, VM_ERROR);
@@ -2239,7 +2239,7 @@ fn OpStatus op_putvar_assign(Dispatch* ds, DecodedInsn insn) {
                 // HasProperty in the spec sense) deleted the
                 // binding after RESOLVEVAR found it. Strict
                 // throws ReferenceError; sloppy silently drops.
-                // Per ECMA-262 §9.1.1.2.5 SetMutableBinding step 4,
+                // Per ES2026 §9.1.1.2.5 SetMutableBinding,
                 // never fall through to the parent env when the
                 // resolved env had the binding and now does not.
                 HString* name_hstr = (HString*)key;
@@ -2287,7 +2287,7 @@ fn OpStatus op_putvar_assign(Dispatch* ds, DecodedInsn insn) {
                 }
                 return ds.needs_restart ? RESTART : NEXT;
             } else if (put_result == 0) {
-                // Not in lex env, so check var env. ECMA-262 §8.1.1.4.7
+                // Not in lex env, so check var env. ES2026 §9.1.1.4
                 // step 1 throws ReferenceError for an unresolvable
                 // reference; sloppy bodies fall back to ECMA-262
                 // §15.1.8 step 2.b (implicit global on the global
@@ -2344,7 +2344,7 @@ fn OpStatus op_putvar_snap(Dispatch* ds, DecodedInsn insn) {
     // EnvRecord* in B before the right-hand side ran. SetMutableBinding
     // walks from THAT env, so a binding the RHS introduced more locally
     // (a sloppy direct eval's `var x`) cannot capture the store —
-    // ECMA-262 §13.15.2 PutValue step 5 uses the initially created
+    // ES2026 §6.2.5.6 PutValue uses the initially created
     // Reference. A null probe (unresolvable Reference) falls back to
     // PUTVAR_ASSIGN's implicit-global / ReferenceError handling.
     uint name_idx = insn.c;
@@ -2458,7 +2458,7 @@ fn OpStatus op_declglobalfunc(Dispatch* ds, DecodedInsn insn) {
             void* fdecl_key = fdecl_name.get_heapptr();
             bool is_global_fn_env = ds.act.var_env == vm.global_env;
             bool is_eval_fn = ((CompiledFunction*)ds.act.func).is_eval_fn();
-            // ECMA-262 §18.2.1.2 EvalDeclarationInstantiation step 8 +
+            // ES2026 §19.2.1.3 EvalDeclarationInstantiation +
             // §9.1.1.4.17 CanDeclareGlobalFunction + §9.1.1.4.18
             // CreateGlobalFunctionBinding:
             //   step 8 — CanDeclareGlobalFunction: throws TypeError if the
@@ -2586,7 +2586,7 @@ fn OpStatus op_declvar(Dispatch* ds, DecodedInsn insn) {
     // Declare a `var` binding in the immediate var_env only (no chain walk).
     // WITH_START pushes the with-env onto lex_env only (never var_env:
     // `var` inside `with` binds the enclosing variable environment per
-    // ECMA-262 §13.11), so the immediate var_env is always the right
+    // ES2026 §14.11), so the immediate var_env is always the right
     // target here.
     uint bc = insn.get_bc();
     if (bc < vm.current_func.const_count) {
@@ -2626,7 +2626,7 @@ fn OpStatus op_declvar(Dispatch* ds, DecodedInsn insn) {
             // Global-scope var/function declarations install a
             // non-configurable own property on the global object for
             // Script code, but a configurable one for eval code
-            // (ECMA-262 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
+            // (ES2026 §9.1.1.4, §16.1.7 vs §19.2.1.3).
             declare_scope_var(ds, key, *ra, false);
 
             // Populate VarIC for next time
@@ -2719,7 +2719,7 @@ fn OpStatus op_inittz(Dispatch* ds, DecodedInsn insn) {
 fn OpStatus op_chkglobal(Dispatch* ds, DecodedInsn insn) {
     Vm* vm = ds.vm;
     Opcode op = insn.op;
-    // GlobalDeclarationInstantiation static checks (ECMA-262 §15.1.11),
+    // GlobalDeclarationInstantiation static checks (ES2026 §16.1.7),
     // run before any binding is instantiated so a collision throws
     // with no observable side effects.
     uint bc = insn.get_bc();
@@ -2817,7 +2817,7 @@ fn OpStatus op_delvar(Dispatch* ds, DecodedInsn insn) {
     Vm* vm = ds.vm;
     TVal* ra = ds.regs_base + insn.a;
     if (!Opcode.DELVAR.is_enabled()) return op_fail(ds, VM_ERROR);
-    // `delete x`: ECMA-262 §14.7.5 step 1 + Annex B.3.2.
+    // `delete x`: ES2026 §13.5.1.2 + Annex B.3.2.
     // The compiler emits DELVAR with BC = the operand's name constant
     // in every case (the operand GETVAR/GETGLOBAL, when present, is
     // patched to NOP so it doesn't throw on an unresolved binding).
@@ -2856,7 +2856,7 @@ fn OpStatus op_delvar(Dispatch* ds, DecodedInsn insn) {
     while (cur != null) {
         if (cur.is_with()) {
             if (cur.bindings.has_prop_proto(key, vm.heap)) {
-                // @@unscopables hides the binding (ECMA-262 §9.1.1.2.5
+                // @@unscopables hides the binding (ES2026 §9.1.1.2.1
                 // HasBinding): skip to the enclosing scope instead of
                 // deleting from the with object.
                 if (vm_with_unscopables_blocks(vm, cur, key)) {
@@ -2883,7 +2883,7 @@ fn OpStatus op_delvar(Dispatch* ds, DecodedInsn insn) {
         if (idx >= 0) { found = true; found_idx = idx; break; }
         cur = cur.parent;
     }
-    // var_env walk (Annex B.3.2 + ECMA-262 §10.2.1.2): a var-declared
+    // var_env walk (Annex B.3.2 + ES2026 §9.1.1.2): a var-declared
     // parameter or local of an enclosing function lives in var_env.
     // Sloppy direct evals inherit the caller's var_env for vars, so
     // those land here as well. The deletion still answers false (var
@@ -2952,7 +2952,7 @@ fn OpStatus op_delvar(Dispatch* ds, DecodedInsn insn) {
     // records store var/function/let/const bindings — there is no
     // configurability check to make, the binding simply exists.
     //
-    // For object envs (the global), ECMA-262 §14.7.5 step 4 checks
+    // For object envs (the global), ES2026 §13.5.1.2 checks
     // [[Configurable]]: a configurable global (e.g. a built-in like
     // JSON whose declaration flags include C: true) returns true and
     // the property is removed; a non-configurable one (built-ins like
@@ -2972,7 +2972,7 @@ fn OpStatus op_delvar(Dispatch* ds, DecodedInsn insn) {
     // Found on a declarative env. Annex B.3.2 answers false for
     // var/function bindings (non-configurable), but a binding an
     // eval created is configurable (CreateMutableBinding(N, true),
-    // ECMA-262 §18.2.1.2) and is deleted for real, returning true.
+    // ES2026 §19.2.1.3) and is deleted for real, returning true.
     // Ordinary function var bindings, let/const/class, and function
     // declarations are non-configurable → plain false. The top-level
     // lexical env is a GlobalDeclarationInstantiation §10.2.1.8.
@@ -2998,8 +2998,8 @@ fn OpStatus op_delvar(Dispatch* ds, DecodedInsn insn) {
     return ds.needs_restart ? RESTART : NEXT;
 }
 
-// === WITH STATEMENT (plans/083 phase 4) ===
-// ECMA-262 §13.11.1: WithStatement pushes an Object Environment Record
+// === WITH STATEMENT ===
+// ES2026 §14.11.2: WithStatement pushes an Object Environment Record
 // onto the running execution context's LexicalEnvironment (not
 // VariableEnvironment). This is what makes reads inside `with`
 // intercept lookup-time and assignments to with-object properties
@@ -3068,7 +3068,7 @@ fn OpStatus op_with_start(Dispatch* ds, DecodedInsn insn) {
         ds.act.lex_env = new_env;
         ds.vm.heap.shade_root_env(ds.act.lex_env);
         // `var` declarations inside `with` hoist past the with-env
-        // (ECMA-262 §13.11), so keep var_env BELOW it: DECLVAR walks
+        // (ES2026 §14.11), so keep var_env BELOW it: DECLVAR walks
         // past with-envs anyway, and reads/writes inside the body go
         // through lex_env. Pushing here too would leave stale
         // with-envs on var_env after WITH_END pops only lex_env.
@@ -3099,7 +3099,7 @@ fn OpStatus op_withget(Dispatch* ds, DecodedInsn insn) {
     TVal* rb = ds.regs_base + insn.b;
     if (!Opcode.WITHGET.is_enabled()) return op_fail(ds, VM_ERROR);
     // SnapshotReference read for a read-modify-write on an
-    // identifier inside `with` (ECMA-262 §11.13.2 step 4: PutValue uses
+    // identifier inside `with` (ES2026 §13.15.2: PutValue uses
     // the initially-created Reference even when the value getter
     // deletes the binding). A = value register (the rewritten LHS
     // GETVAR's register), B = base register, C = name constant.
@@ -3172,7 +3172,7 @@ fn OpStatus op_withget(Dispatch* ds, DecodedInsn insn) {
             }
             // Capture the base first: the value getter below may
             // delete the binding, and the paired WTWR must still
-            // write to this object (ECMA-262 §11.13.2 step 4).
+            // write to this object (ES2026 §13.15.2).
             vm.heap.set_reg_object(rb, cur.bindings);
             void* wbase = rb.get_heapptr();
             if (wbase != null) { ((types::HeapHeader*)wbase).incref(); }
@@ -3332,7 +3332,7 @@ fn OpStatus op_withbase(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     if (!Opcode.WITHBASE.is_enabled()) return op_fail(ds, VM_ERROR);
     // SnapshotReference base for a plain assignment inside `with`
-    // (ECMA-262 §9.1.1.2.5 SetMutableBinding steps 1-2: the base is
+    // (ES2026 §9.1.1.2.5 SetMutableBinding: the base is
     // fixed by HasBinding before the RHS runs). Captures only the
     // base per HasBinding, running no value getter: on a with-env
     // hit A holds the bindings object; on a declarative/global hit A
@@ -3414,7 +3414,7 @@ fn OpStatus op_wtwr(Dispatch* ds, DecodedInsn insn) {
     // paired WITHGET captured, C = name constant. On a bindings
     // object base the write goes through [[Set]] on that object
     // (creating the property when the read-side getter deleted it,
-    // per ECMA-262 §11.13.2 step 4). Otherwise B holds the global object
+    // per ES2026 §13.15.2). Otherwise B holds the global object
     // and this behaves as PUTVAR_ASSIGN (TDZ/const throws, sloppy
     // implicit global). A failed strict [[Set]] throws TypeError;
     // sloppy ignores it (§8.7.2 step 5). B's ownership ends here:

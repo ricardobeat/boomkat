@@ -21,11 +21,16 @@ extern "C" {
  *   n_type  - normalization form: 0=NFC, 1=NFD, 2=NFKC, 3=NFKD
  *   out_len - on success, set to the number of codepoints in the result
  *
- * Returns a newly malloc'd uint32_t array (caller must free with free()).
- * Returns NULL on failure (e.g. out of memory).
+ *   opaque, realloc_func - the allocator for the result and its growth;
+ *           realloc_func(opaque, NULL, n) allocates, and size 0 releases
+ *
+ * Returns the result in memory from realloc_func, which the caller releases
+ * through the same allocator. Returns NULL on failure (e.g. out of memory).
  */
-uint32_t* unicode_normalize_simple(const uint32_t* src, int src_len,
-                                   int n_type, int* out_len);
+typedef void* unicode_realloc_fn(void* opaque, void* ptr, size_t size);
+uint32_t* unicode_normalize_with(const uint32_t* src, int src_len,
+                                 int n_type, int* out_len,
+                                 void* opaque, unicode_realloc_fn* realloc_func);
 
 /*
  * Identifier character classification (per Unicode ID_Start / ID_Continue).

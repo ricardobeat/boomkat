@@ -383,7 +383,7 @@ struct PerIterBinding {
 alias PerIterBindings = Vec{PerIterBinding};
 
 // Copy a classic for-loop's lexical head bindings into a fresh environment
-// (ECMA-262 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
+// (ES2026 §14.7.4.4 CreatePerIterationEnvironment).  All values must be read
 // before the old environment is popped: after the pop, later bindings in a
 // multi-declarator head are unreachable.
 fn void CompilerContext.emit_create_per_iteration_env(&self, PerIterBinding[] bindings)
@@ -428,7 +428,7 @@ struct IterRec {
 // works under `for await`. Either way the iterator lands in method_reg (below
 // the callee window) and .next in next_reg, with the callee/this window ABOVE
 // them, so a generator source overlaying the sliding window on resume cannot
-// clobber them (see plan 042/043).
+// clobber them.
 fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await) {
     // The CALL below takes its callee from method_reg and its receiver from
     // the register after it, so method_reg is allocated last.
@@ -542,7 +542,7 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uin
         self.emit_abc(Opcode.LOAD_RESUME, (uint)result_reg, 0, 0);
     }
 
-    // ECMA-262 §14.7.5.6 step 3.b: the .next() result must be an Object.
+    // ES2026 §14.7.5.7: the .next() result must be an Object.
     self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
 
     ushort done_key_reg = self.alloc_reg();
@@ -810,7 +810,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     int back_offset = (int)loop_start - (int)self.code_count - 1;
     self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
 
-    // Exit path (done=true): pop the per-iter env. Per ECMA-262 §14.7.5.7
+    // Exit path (done=true): pop the per-iter env. Per ES2026 §14.7.5.7
     // ForIn/OfBodyEvaluation, a `nextResult.[[Done]]` of true ends the loop
     // with a normal completion directly, IteratorClose/AsyncIteratorClose
     // is only invoked for an abrupt completion out of the loop (break,

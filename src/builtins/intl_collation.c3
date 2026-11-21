@@ -760,34 +760,17 @@ fn void builtin_intl_collator_resolved(BuiltinContext* ctx) @feat(INTL_COLLATOR)
     ctx.result_object(out);
 }
 
-// The NFD code points of `s` in a buffer the caller frees. Canonically
-// equivalent strings collate equal, so each operand is decomposed first.
-fn uint* coll_decode_nfd(HString* s, int* out_len) @feat(INTL_COLLATOR) {
-    uint n = 0;
-    uint* cps = string_codepoints(s, &n);
-    if (cps == null) return null;
-    if (n == 0) {
-        *out_len = 0;
-        return cps;
-    }
-    int nfd_len = 0;
-    uint* nfd = unicode_bindings::unicode_normalize_simple(cps, (int)n, unicode_bindings::UNICODE_NFD, &nfd_len);
-    mem::free(cps);
-    *out_len = nfd_len;
-    return nfd;
-}
-
 // Compares two strings under a collator: -1, 0 or 1, or 2 after throwing for a failed allocation.
 fn int coll_compare_strings(BuiltinContext* ctx, IntlCollatorState* state, HString* a_str, HString* b_str) @feat(INTL_COLLATOR) {
-    int a_len = 0;
-    int b_len = 0;
-    uint* a = coll_decode_nfd(a_str, &a_len);
-    uint* b = coll_decode_nfd(b_str, &b_len);
+    // Canonically equivalent strings collate equal, so each operand is decomposed first.
+    uint[]? a = normalize_codepoints(a_str, unicode_bindings::UNICODE_NFD);
+    uint[]? b = normalize_codepoints(b_str, unicode_bindings::UNICODE_NFD);
     defer {
-        if (a != null) mem::free(a);
-        if (b != null) mem::free(b);
+        if (try a) mem::free(a.ptr);
+        if (try b) mem::free(b.ptr);
     }
-    int result = a == null || b == null ? 2 : coll_compare_cps(state, a, (usz)a_len, b, (usz)b_len);
+    int result = 2;
+    if (try a && try b) result = coll_compare_cps(state, a.ptr, a.len, b.ptr, b.len);
     if (result == 2) builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed");
     return result;
 }

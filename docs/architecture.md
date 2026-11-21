@@ -862,7 +862,7 @@ Three caches sit above property lookup:
   or an existing property's index or flags change. Adding a property does not.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
   `(shape_id, key)` for own properties and `(shape_id, key, prototype)` for
-  inherited ones, since fresh objects of every class share the empty shape. It is a lossy single-slot table, so a collision simply
+  inherited ones, since fresh objects of every class share the empty shape. It is a lossy single-slot table, so a collision
   evicts. It caches own properties and those on the immediate prototype, since
   it cannot detect a change to a deeper one.
 
@@ -1194,7 +1194,7 @@ them and incref and decref against them do nothing.
 The megamorphic property cache maps `(shape_id, key)` (`(shape_id, key,
 prototype)` for an inherited property) to a resolved
 `(proto, prop_idx, value)`, shared across all call sites to skip repeated
-prototype-chain walks. It is a lossy single-slot table, so a collision simply
+prototype-chain walks. It is a lossy single-slot table, so a collision
 evicts. It is allocated apart from the `Heap` struct to keep that struct small.
 
 A read site's inline cache entry describes a data property or an accessor found
@@ -1388,17 +1388,17 @@ about 66 KB of the size, and a switch dispatch build is 1.5-5.5x slower; measure
 both before trading one for the other.
 
 `boomkat_tiny_compile` is the ordinary source CLI built with TINY's capabilities
-and `BYTECODE_GENERATOR`. It exposes `--compile OUTPUT.bkbc INPUT.js`.
+and `BYTECODE_GENERATOR`. It exposes `--compile OUTPUT.bk INPUT.js`.
 `boomkat_tiny` selects `BYTECODE_ONLY` and runs the image directly. The normal
 and SLIM CLIs exclude the image writer and this option.
 
 ```sh
 just build-tiny
-just compile-bytecode program.js out/program.bkbc
-just run-bytecode out/program.bkbc
+just compile-bytecode program.js out/program.bk
+just run-bytecode out/program.bk
 # Equivalent CLI commands:
-out/boomkat_tiny_compile --compile out/program.bkbc program.js
-out/boomkat_tiny out/program.bkbc
+out/boomkat_tiny_compile --compile out/program.bk program.js
+out/boomkat_tiny out/program.bk
 ```
 
 Images use the strict Module goal. Top-level `this` is undefined and declarations
@@ -1507,7 +1507,7 @@ Date time setters share argument coercion and clock updates in one runtime
 worker. Array find methods and string padding share compile-time macros so
 direction and result kind remain constant in their execution loops.
 
-### English Intl services
+### Intl services
 
 Size-focused builds default to `intl=none`, `temporal=false`, and
 `collator=false`. `--intl=small` enables the English services;

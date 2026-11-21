@@ -16,7 +16,7 @@ import boomkat::compiler;
 import boomkat::lexer;
 
 // ============================================================================
-// Function constructor (ES5 §15.3)
+// Function constructor (ES2026 §20.2)
 // ============================================================================
 
 // Dispatch builtin `fn_idx` in place of the builtin (.call, .apply, a bound
@@ -28,7 +28,7 @@ fn void dispatch_retargeted(uint fn_idx, BuiltinContext* inner) {
     builtins::dispatch_builtin(fn_idx, inner);
 }
 
-// CreateDynamicFunction up to the compiled function (ES2024 §20.2.1.1.1) for
+// CreateDynamicFunction up to the compiled function (ES2026 §20.2.1.1.1) for
 // Function, GeneratorFunction, AsyncFunction and AsyncGeneratorFunction. The
 // parameter texts and the body are the arguments' ToString values, parameters
 // first so that a throwing one is the exception that propagates. Returns null
@@ -133,9 +133,9 @@ fn CompiledFunction* dynamic_function_compile(BuiltinContext* ctx, String prefix
 }
 
 // Function(p1, p2, ..., pn, body), creates a new function dynamically.
-// Called as function or constructor, behavior is identical per ES5 §15.3.1.
+// Called as function or constructor, behavior is identical per ES2026 §20.2.1.1.
 fn void builtin_function(BuiltinContext* ctx) {
-    // Per ES5 §15.3.1: Function() called as a plain function and `new Function()`
+    // Per ES2026 §20.2.1.1: Function() called as a plain function and `new Function()`
     // are identical, both create a fresh function object and the thisArg is
     // ignored. Nothing below reads ctx.this_val (the new function's var_env/
     // lex_env come unconditionally from the global env), so there is no thisArg
@@ -155,13 +155,13 @@ fn void builtin_function(BuiltinContext* ctx) {
     (*func_obj.extra_ptr()).func.comp_func = func;
     (*func_obj.extra_ptr()).func.builtin_fn_index = -1;
 
-    // Use the global environment (per ES5 §15.3.2.1 step 5)
+    // Use the global environment (per ES2026 §20.2.1.1.1)
     (*func_obj.extra_ptr()).func.var_env = ctx.global_env;
     (*func_obj.extra_ptr()).func.lex_env = ctx.global_env;
 
     // Set the function's .prototype property (standard for JS functions)
     // and its internal [[Prototype]] to Function.prototype
-    // ES2015 §9.2.2 [[Construct]] step 5/2.a: a base constructor used as super
+    // ES2026 §10.2.2 [[Construct]]: a base constructor used as super
     // must use OrdinaryCreateFromConstructor(newTarget, "%Function.prototype%"),
     // so `class Sub extends Function {}` produces a function whose [[Prototype]]
     // is Sub.prototype, not Function.prototype.
@@ -169,7 +169,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     HObject*? proto_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try proto = proto_raw) {
         ctx.heap.set_prototype(proto, ctx.heap.object_proto);
-        // ES5 §13.2.2 step 17: .constructor is {writable:true, enumerable:false, configurable:true}
+        // ES2026 §10.2.5 MakeConstructor: .constructor is {writable:true, enumerable:false, configurable:true}
         HString* constr_key = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
         TVal constr_tv;
         constr_tv.set_object(func_obj);
@@ -178,7 +178,7 @@ fn void builtin_function(BuiltinContext* ctx) {
         HString* proto_key = ctx.heap.str(heap::BuiltinStr.PROTOTYPE);
         TVal proto_tv;
         proto_tv.set_object(proto);
-        // ES5 §15.3.2.1 step 12: .prototype is {writable:true, enumerable:false, configurable:false}
+        // ES2026 §10.2.5 MakeConstructor: .prototype is {writable:true, enumerable:false, configurable:false}
         func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WENC, ctx.heap);
     }
     func_obj.flags.callable = true;
@@ -191,7 +191,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     len_tv.set_fastint((long)func.num_formals);
     func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
-    // ES2019 §19.2.1.1.1 CreateDynamicFunction step 29: SetFunctionName(F, "anonymous").
+    // ES2026 §20.2.1.1.1 CreateDynamicFunction: SetFunctionName(F, "anonymous").
     // {writable:false, enumerable:false, configurable:true}
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     TVal name_tv;
@@ -226,7 +226,7 @@ fn void builtin_store_result(BuiltinContext* ctx, TVal* src) {
 // Calls `this` (the downstream function) with `thisArg` as `this` and the
 // remaining arguments passed individually.
 //
-// ES5 §15.3.4.4
+// ES2026 §20.2.3.3
 fn void builtin_function_proto_call(BuiltinContext* ctx) {
     TVal downstream = ctx.this_val;
 
@@ -242,7 +242,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
     }
 
     if (!callable) {
-        // Throw TypeError (ES5 §15.3.4.4 step 2)
+        // Throw TypeError (ES2026 §20.2.3.3)
         builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.call called on non-callable");
         return;
     }
@@ -471,7 +471,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         return;
     }
 
-    // argArray must be an object (array-like). Per ES5 §15.3.4.3 step 4
+    // argArray must be an object (array-like). Per ES2026 §20.2.3.1
     // (CreateListFromArrayLike step 2): throw TypeError if Type(argArray) is not Object.
     if (!arg_array.is_object() || arg_array.get_heapptr() == null) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "CreateListFromArrayLike called on non-object");
@@ -684,11 +684,11 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
 // Calls `this` (the downstream function) with `thisArg` as `this` and the
 // elements of `argArray` passed as individual arguments.
 //
-// ES5 §15.3.4.3
+// ES2026 §20.2.3.1
 fn void builtin_function_proto_apply(BuiltinContext* ctx) {
     TVal downstream = ctx.this_val;
 
-    // Validate downstream is callable (ES5 §15.3.4.3 step 2: throw TypeError)
+    // Validate downstream is callable (ES2026 §20.2.3.1: throw TypeError)
     bool callable = false;
     if (downstream.is_lightfunc()) {
         callable = true;
@@ -705,7 +705,7 @@ fn void builtin_function_proto_apply(BuiltinContext* ctx) {
     }
 
     // Get new this value, with ToObject boxing for primitives.
-    // ES5 §15.3.4.3 step 1: let thisArg be ToObject(thisArg).
+    // ES2026 §20.2.3.1 step 1: let thisArg be ToObject(thisArg).
     // undefined/null → global object; primitives → wrapper object.
     // Strict-only engine: thisArg passes through unchanged (see call above).
     TVal new_this;
@@ -731,11 +731,11 @@ fn void builtin_function_proto_apply(BuiltinContext* ctx) {
 // Creates a new function that, when called, has its `this` bound to `thisArg`
 // and prepends any additional arguments.
 //
-// ES5 §15.3.4.5
+// ES2026 §20.2.3.2
 fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     TVal downstream = ctx.this_val;
 
-    // Validate downstream is callable (ES5 §15.3.4.5 step 2: throw TypeError)
+    // Validate downstream is callable (ES2026 §20.2.3.2: throw TypeError)
     bool callable = false;
     if (downstream.is_lightfunc()) {
         callable = true;
@@ -785,7 +785,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
 
     // Set up bound function properties
     bound_obj.flags.callable = true;
-    // ES2022 §10.4.1.3 BoundFunctionCreate step 2: proto = ?
+    // ES2026 §10.4.1.3 BoundFunctionCreate: proto = ?
     // target.[[GetPrototypeOf]](), not the fixed Function.prototype --
     // subclassing Function (`class C extends Function {}`) or setting a
     // custom .prototype relies on a bound instance keeping the SAME chain
@@ -810,9 +810,9 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         HObject* tobj = (HObject*)downstream.get_heapptr();
         if (tobj != null) downstream_constructable = tobj.flags.constructable;
     }
-    // ES6 §19.2.1.3: BoundFunctionCreate produces a function exotic object
+    // ES2026 §10.4.1.3: BoundFunctionCreate produces a function exotic object
     // whose [[Construct]] internally invokes the target [[Construct]], so
-    // the bound function IS constructable iff the target is. (ES5 §15.3.4.5
+    // the bound function IS constructable iff the target is. (ES2026 §20.2.3.2
     // had bound functions as non-constructable; ES6 changed this in 2015.)
     bound_obj.flags.constructable = downstream_constructable;
 
@@ -856,7 +856,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         (*bound_obj.extra_ptr()).func.bound.args = null;
     }
 
-    // Set .length (ES6 §19.2.3.3 SetFunctionLength).
+    // Set .length (ES2026 §20.2.3.2, §10.2.10 SetFunctionLength).
     // Ordering: BoundFunctionCreate's caller (Function.prototype.bind, ES2022
     // §20.2.3.2) computes and sets L (step 5) before it ever reads targetName
     // (step 6), so "length" must land as an own property before "name",
@@ -926,7 +926,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     len_flags.is_accessor = false;
     bound_obj.put_prop(len_key, len_tv, len_flags, ctx.heap);
 
-    // Set .name: "bound " + targetName (ES6 §19.2.3.3).
+    // Set .name: "bound " + targetName (ES2026 §20.2.3.2).
     // Per spec: Get(target, "name"), must invoke accessor getters and
     // propagate any abrupt completion (throw) before creating the bound fn.
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
@@ -963,7 +963,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     }
 
     // Bound function exotic objects have no own "prototype" property
-    // (ES2015 §19.2.3.2 BoundFunctionCreate step 4 only sets length/name).
+    // (ES2026 §10.4.1.3 BoundFunctionCreate only sets length/name).
     // [[Construct]] forwards to the bound target, which resolves its own
     // .prototype at construct time via the re-dispatch path below.
 
@@ -1004,7 +1004,7 @@ fn bool is_native_property_name(char* name, usz len) {
 // Function.prototype.toString()
 //
 // Returns a string representation of the function.
-// ES2019 §19.2.3.5
+// ES2026 §20.2.3.5
 fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     
@@ -1031,7 +1031,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     } else if (this_val.is_object() && this_val.get_heapptr() != null) {
         HObject* obj = (HObject*)this_val.get_heapptr();
         if (obj.is_callable()) {
-            // ES2019 §19.2.3.5: callable Proxy objects have no source text,
+            // ES2026 §20.2.3.5: callable Proxy objects have no source text,
             // return a NativeFunction-style string without touching the proxy's
             // internal slots (which hold proxy data, not function data).
             if (obj.is_proxy()) {
@@ -1129,7 +1129,7 @@ fn bool bound_target_answers(BuiltinContext* ctx, TVal c_val) {
     return true;
 }
 
-// Function.prototype[Symbol.hasInstance](V), ES6 §19.2.3.6
+// Function.prototype[Symbol.hasInstance](V), ES2026 §20.2.3.6
 // Implements OrdinaryHasInstance(this, V): returns true iff V is an object
 // whose prototype chain contains this.prototype. `this` (the constructor C)
 // must be callable; if C is a bound function, its [[BoundTargetFunction]] is
@@ -1137,7 +1137,7 @@ fn bool bound_target_answers(BuiltinContext* ctx, TVal c_val) {
 fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     TVal c_val = ctx.regs[ctx.base_reg - 1];  // this = constructor C
 
-    // ES6 §7.3.19 step 1: If IsCallable(C) is false, return false.
+    // ES2026 §7.3.21 OrdinaryHasInstance: If IsCallable(C) is false, return false.
     bool callable = false;
     if (c_val.is_lightfunc()) {
         callable = true;
@@ -1224,7 +1224,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
 
 // Restricted function property getter, throws TypeError on access. Used as
 // the [[Get]] accessor for `Function.prototype.caller` and
-// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
+// `Function.prototype.arguments` (ES2026 §10.2.4 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_getter(BuiltinContext* ctx) {
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
@@ -1232,7 +1232,7 @@ fn void builtin_function_proto_restricted_getter(BuiltinContext* ctx) {
 
 // Restricted function property setter, throws TypeError on assignment. Used as
 // the [[Set]] accessor for `Function.prototype.caller` and
-// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
+// `Function.prototype.arguments` (ES2026 §10.2.4 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_setter(BuiltinContext* ctx) {
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
@@ -1425,7 +1425,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
     heap.set_prototype(proto, heap.object_proto);
-    // ES5 §15.3.4: Function.prototype accepts any arguments and returns
+    // ES2026 §20.2.3: Function.prototype accepts any arguments and returns
     // undefined when called as a function, and has no [[Construct]],
     // `new Function.prototype` must throw TypeError.
     proto.flags.constructable = false;
@@ -1464,7 +1464,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     tostring_tv.set_builtin(heap, Builtin.FUNCTION_PROTO_TOSTRING.ordinal);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add [Symbol.hasInstance] method (ES6 §19.2.3.6).
+    // Add [Symbol.hasInstance] method (ES2026 §20.2.3.6).
     // Property descriptor: writable:false, enumerable:false, configurable:false.
     HString* hasinst_sym = ensure_hasinstance_symbol(heap);
     if (hasinst_sym != null) {
@@ -1484,14 +1484,14 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     constructor_tv.set_object(func_obj);
     proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // ES5 §15.3.5.1: Function.prototype.length is 0
+    // ES2026 §20.2.3: Function.prototype.length is 0
     // { [[Writable]]: false, [[Enumerable]]: false, [[Configurable]]: true }
     HString* proto_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal proto_len_tv;
     proto_len_tv.set_fastint(0);
     proto.put_prop(proto_len_key, proto_len_tv, hobject::PROP_FLAGS_NWC, heap);
 
-    // ES6 §19.2.3: Function.prototype.name is "", must be defined immediately
+    // ES2026 §20.2.3: Function.prototype.name is "", must be defined immediately
     // after .length (property insertion order matters for property-order.js).
     // { [[Writable]]: false, [[Enumerable]]: false, [[Configurable]]: true }
     HString* proto_name_key = (HString*)heap.strs[heap::BuiltinStr.NAME];
@@ -1499,7 +1499,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     proto_name_tv.set_string_borrowed((HString*)heap.strs[heap::BuiltinStr.EMPTY]);
     proto.put_prop(proto_name_key, proto_name_tv, hobject::PROP_FLAGS_NWC, heap);
 
-    // ES2017 §9.2.7 AddRestrictedFunctionProperties(F): attach `caller` and
+    // ES2026 §10.2.4 AddRestrictedFunctionProperties(F): attach `caller` and
     // `arguments` accessor properties on Function.prototype whose get/set
     // both throw TypeError. Both slots share a single thrower function
     // (matching the spec's %ThrowTypeError% intrinsic), so
@@ -1508,7 +1508,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     // { [[Get]]: thrower, [[Set]]: thrower, [[Enumerable]]: false,
     //   [[Configurable]]: true }
     {
-        // Build ONE shared thrower function. ES2017 §9.2.7 attaches the
+        // Build ONE shared thrower function. ES2026 §10.2.4 attaches the
         // same intrinsic thrower to both `caller` and `arguments`.
         HObject*? get_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
         if (try get_fn = get_raw) {
@@ -1520,7 +1520,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             // Give the getter a real name so toString output is readable.
             // The exact name isn't asserted by the failing tests.
             // %ThrowTypeError% is anonymous: name is the empty string
-            // (ES2017 §9.2.7, asserted by built-ins/ThrowTypeError/name.js).
+            // (ES2026 §10.2.4, asserted by built-ins/ThrowTypeError/name.js).
             // length is defined first: built-ins/ThrowTypeError/property-order.js
             // requires the order "length", "name".
             HString* len_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1536,7 +1536,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             }
 
             // %ThrowTypeError% is frozen: [[Extensible]] false and every own
-            // property non-configurable (ES2017 §9.2.7 step 6, §9.4.4.7).
+            // property non-configurable (ES2026 §10.2.4, §10.4.4.6).
             // Also the only way the Function.prototype and arguments-object
             // poison pills share one intrinsic, which the descriptor-based
             // tests rely on.
@@ -1580,7 +1580,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.is_accessor = false;
     func_obj.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
-    // Set Function.length (ES5 §15.3.3)
+    // Set Function.length (ES2026 §20.2.2)
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_tv;
     len_tv.set_fastint(1);

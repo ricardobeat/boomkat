@@ -28,7 +28,7 @@ fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
 
 // Set up a named-function-expression's name binding environment.
 // Returns a fresh declarative env with `name_hstr` bound immutably to
-// `func_obj`, chained above `parent`. Per ECMA-262 §14.1.20/§9.2.13, the
+// `func_obj`, chained above `parent`. Per ES2026 §15.2.5, the
 // name binding lives in an environment OUTER to the function's own body
 // scope, so a body `var`, `let`, or parameter of the same name shadows it, and
 // callers splice this env onto the body scope's parent chain rather than
@@ -40,7 +40,7 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     if (catch err = name_env_raw) return types::ALLOC_ERROR~;
     EnvRecord* name_env = name_env_raw;
     TVal func_tv; func_tv.set_object(func_obj);
-    // CreateImmutableBinding(N, false) (ECMA-262 §15.2.5 step 5): the fnexpr
+    // CreateImmutableBinding(N, false) (ES2026 §15.2.5): the fnexpr
     // name is immutable with strict=false regardless of the body's mode. The
     // immut_nonstrict bit tells PUTVAR_ASSIGN's -4 branch to consult the
     // ASSIGNING code's strictness: sloppy silently drops, strict throws.
@@ -56,7 +56,7 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
 // in func.lex_env; the frame must enter with it as lex_env so the block's
 // let/const bindings stay visible (GETVAR walks lex_env, then var_env).
 // Named function expressions additionally get a fresh declarative env binding
-// their own name (ECMA-262 §14.1.20), chained above the captured scope.
+// their own name (ES2026 §15.2.5), chained above the captured scope.
 fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
                                    CompiledFunction* target, EnvRecord* var_env) {
     EnvRecord* base = var_env;
@@ -113,7 +113,7 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
     }
     if (target.is_namebinding()) {
         // The name binding must be OUTER to the function's own body scope
-        // (ECMA-262 §14.1.20 NamedEvaluation / §9.2.13), so a body var/let/param
+        // (ES2026 §15.2.5), so a body var/let/param
         // named the same as the function shadows it. `is_namebinding` is only
         // ever set on functions with needs_env()==true (register-resident
         // callees resolve their own name to a register at compile time and
@@ -489,7 +489,7 @@ fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
 enum ConcatStatus : char { DONE, TOO_LONG, NOT_APPLICABLE }
 
 // The string a `+` operand holds when it is a plain one: a symbol shares the
-// STRING tag but must throw instead of concatenating (ECMA-262 §7.1.1).
+// STRING tag but must throw instead of concatenating (ES2026 §7.1.1).
 fn HString* plain_string_of(TVal* v) @inline {
     if (!v.is_string()) return null;
     HString* s = (HString*)v.get_heapptr();
@@ -900,7 +900,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         }
     }
 
-    // Bound function [[Call]] (ECMA-262 §9.4.1.1): unwrap [[BoundTargetFunction]],
+    // Bound function [[Call]] (ES2026 §10.4.1.1): unwrap [[BoundTargetFunction]],
     // [[BoundThis]] and [[BoundArguments]] here and recurse, rather than
     // dispatching BOUND_CALL through the temp_regs windows below.
     // builtin_bound_call rewrites its register window with frame-owned
@@ -1278,7 +1278,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.set_this_borrowed(vm.heap, gs_rb2.this_binding);
                 } else {
                     // The generator was created with an undefined or null `this`,
-                    // so apply ECMA-262 §10.4.3 to non-arrow sloppy functions.
+                    // so apply ES2026 §10.2.1.2 to non-arrow sloppy functions.
                     if (!target.is_arrow() && !target.is_strict()
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         this_val.set_object(vm.global_env.bindings);
@@ -1303,7 +1303,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 act.set_this_borrowed(vm.heap, arrow_this);
             } else {
                 // Not a resume: the same sloppy-receiver rules as the inline
-                // CALL path apply (ECMA-262 §10.4.3 / ECMA-262 §10.4.1.2). An
+                // CALL path apply (ES2026 §10.2.1.2 OrdinaryCallBindThis). An
                 // undefined/null `this` becomes the global object; any other
                 // primitive is ToObject-boxed. Only the substitution was here,
                 // so a callback invoked through heap.call_fn (Array.prototype
@@ -1367,7 +1367,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         cfn_gs.saved_regs = (TVal*)cfn_regs_raw;
                         HObject*? cfn_gen_obj_raw = vm.heap.alloc_object(hobject::ObjClass.GENERATOR);
                         if (try cfn_gen_obj = cfn_gen_obj_raw) {
-                            // ECMA-262 §25.3.3 step 1: OrdinaryCreateFromConstructor(
+                            // ES2026 §27.5.3.1: OrdinaryCreateFromConstructor(
                             // functionObject, "%GeneratorPrototype%"). Deferred to
                             // GEN_START (see vm_calls.c3's matching comment) so a
                             // default-parameter side effect on functionObject.prototype
@@ -1434,12 +1434,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
             // Create arguments object if the function references 'arguments'.
             // Skip on a generator/async resume: the call-time arguments object
-            // was built at the initial call and saved into gs.var_env (restored
-            // into act.var_env above). This re-entrant call_fn path is driven
-            // with argc=0, so rebuilding here would install an empty arguments
-            // object (length 0) that shadows the correct call-time one, and the
-            // async-generator `arguments` bug (async generators resume through
-            // call_fn, unlike sync generators which resume via the CALL opcode).
+            // was built at the initial call and saved in gs.var_env. Rebuilding
+            // here (where argc == 0) would shadow it with an empty object.
             if (target.uses_arguments() && !did_resume) {
                 bind_arguments(vm, act, target, hobj, args, nargs, true);
             }
@@ -1579,7 +1575,7 @@ fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
 fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     TVal undef;
     undef.set_undefined();
-    // Each PromiseReactionJob (ECMA-262 §27.2.2.1) is an independent microtask:
+    // Each PromiseReactionJob (ES2026 §27.2.2.1) is an independent microtask:
     // it takes its input as `arg` and reports a throw via its return value or
     // (for a native handler) heap.has_error, never through a pre-existing entry in
     // the VM's error-propagation channels. A prior job may have left those
@@ -1645,7 +1641,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         new_target_obj = (HObject*)new_target.get_heapptr();
     }
 
-    // Bound function [[Construct]] (ECMA-262 §9.4.1.2):
+    // Bound function [[Construct]] (ES2026 §10.4.1.2):
     //   5. If SameValue(F, newTarget) is true, let newTarget be target.
     //   6. Return ? Construct(target, args, newTarget).
     // Without the unwrap, a plain `new bound()` would pass the bound function
@@ -1658,7 +1654,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         TVal target_tv = (*ctor.extra_ptr()).func.bound.target;
         HObject* args_arr = (*ctor.extra_ptr()).func.bound.args;
 
-        // ECMA-262 §9.4.1.2: prepend the bound arguments.
+        // ES2026 §10.4.1.2: prepend the bound arguments.
         TVal* combined_args;
         uint? bound_count = bound_call_args(heap, args_arr, args, nargs, &combined_args);
         if (catch bound_count) return undef;
@@ -1684,7 +1680,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         ? null : (*ctor.extra_ptr()).func.comp_func;
     if (target != null && !(vm_materialize(vm, target) ?? false)) return undef;
     // Derived class constructors (`class X extends Y`) do NOT create `this`
-    // here, since super() creates it inside the base [[Construct]] (ECMA-262 §9.2.2
+    // here, since super() creates it inside the base [[Construct]] (ES2026 §10.2.2
     // step 5). Start with an uninitialized (TDZ-sentinel) this_binding and mark
     // the activation DERIVED so SUPER_CALL initializes it; otherwise the
     // constructed instance (e.g. a Promise subclass) is lost and combinator
@@ -1693,7 +1689,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
 
     // GetPrototypeFromConstructor(new_target, "%Object.prototype%") is
     // OrdinaryCreateFromConstructor work for an ordinary constructor that
-    // actually creates `this` (ECMA-262 §9.1.14). A built-in or bound
+    // actually creates `this` (ES2026 §10.1.13). A built-in or bound
     // constructor allocates its own instance and a derived constructor gets
     // `this` from super(), so none of them may fire the observable
     // Get(new_target, "prototype") here: the real constructor performs it,
@@ -1793,7 +1789,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 // Bound function whose downstream target is a compiled function
                 // (or another non-directly-dispatchable callable): builtin_bound_call
                 // placed the resolved downstream callee/args in temp_regs and asked
-                // for a re-dispatch. ECMA-262 §9.4.1.2 BoundFunctionExoticObject.[[Construct]]:
+                // for a re-dispatch. ES2026 §10.4.1.2 BoundFunctionExoticObject.[[Construct]]:
                 // Construct(BoundTargetFunction, args, newTarget === F ? BoundTargetFunction : newTarget).
                 TVal downstream_func = temp_regs[0];
                 TVal downstream_new_target = (new_target_obj == ctor) ? downstream_func : new_target;
@@ -1921,7 +1917,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         }
     }
 
-    // ECMA-262 §12.3.5.2: if constructor returns an object, that's the new instance.
+    // ES2026 §10.2.2: if constructor returns an object, that's the new instance.
     // For a derived constructor `this_tv` started as the TDZ sentinel; the real
     // instance was bound by super() into the activation's this_binding, so read
     // it back from there (act still points at vm.activations[0], pre-restore).
@@ -1997,7 +1993,7 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
         entry_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
 
-    // ECMA-262 §10.4.1: global `this` is the global object for non-strict scripts.
+    // ES2026 §9.1.1.4.11: global `this` is the global object for non-strict scripts.
     TVal this_val;
     if (vm.global_env != null && vm.global_env.bindings != null) {
         this_val.set_object(vm.global_env.bindings);
@@ -2090,7 +2086,7 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     }
 
     // A Module Environment Record's HasThisBinding() is true but
-    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4), so this
+    // GetThisBinding() always returns undefined (ES2026 §9.1.1.5.4), so this
     // entry point is module-execution only, so `this` at module top level is
     // unconditionally undefined, never globalThis.
     TVal this_val;
@@ -2191,7 +2187,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     entry_act.tv_func.set_undefined();
 
     // A Module Environment Record's HasThisBinding() is true but
-    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4), so this
+    // GetThisBinding() always returns undefined (ES2026 §9.1.1.5.4), so this
     // entry point is module-execution only, so `this` at module top level is
     // unconditionally undefined, never globalThis.
     TVal this_val;
@@ -2228,7 +2224,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     vm.heap.has_error = false;
 
     // Never pump the microtask queue here to wait for settlement. Per
-    // ECMA-262 §16.2.1.5.2/§16.2.1.5.5, an async/TLA module's evaluation
+    // ES2026 §16.2.1.5.2/§16.2.1.5.5, an async/TLA module's evaluation
     // does not block: the caller (a sibling static import in the same DFS,
     // or a dynamic import job) must move on and let mod_promise settle later
     // via its own reactions. Polling to completion was both wrong per spec
@@ -2280,7 +2276,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
 // can chain onto it instead; `true` is returned in that case too (not yet
 // known to have failed).
 // `out_completion`, when non-null, receives the body's completion value: the
-// Script completion $262.evalScript must return (ECMA-262 §18.2.1
+// Script completion $262.evalScript must return (ES2026 §19.2.1
 // ScriptEvaluation). Module callers pass null, since a module body evaluates
 // to undefined and has no completion to observe.
 fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending, TVal* out_completion = null) {
@@ -2397,7 +2393,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         act.async_promise = null;
     }
 
-    // A global Script's `this` is the global object (ECMA-262 §9.4.4.4). A
+    // A global Script's `this` is the global object (ES2026 §9.1.1.4.11). A
     // Module Environment Record's GetThisBinding() returns undefined
     // (§9.1.1.5.4), so `this` at module top level is undefined. The binding
     // is not owned (no ACT_FLAG_THIS_OWNED): the global object outlives it.
@@ -2610,7 +2606,7 @@ macro int @bitop_apply($op, int b, int c) {
     $endswitch
 }
 
-// Shared skeleton for BAND/BOR/BXOR/SHL/SHR (ECMA-262 §12.12.3 / §12.9.3):
+// Shared skeleton for BAND/BOR/BXOR/SHL/SHR (ES2026 §13.12.1 / §13.9):
 // a fastint fast path, otherwise ToNumeric both operands, dispatch on BigInt,
 // then apply the operator via the general ToInt32 path. Right-operand masking
 // (`& 0x1F`) for the shift ops is baked into @bitop_apply's SHL/SHR cases
@@ -2690,7 +2686,7 @@ fn bool? vm_write_with_binding(Dispatch* ds, HObject* base, HString* key, TVal v
         // deleted the binding. A strict reference throws a
         // ReferenceError and writes nothing. A sloppy one falls
         // through to [[Set]], which re-creates the property with the
-        // new value (ECMA-262 §10.2.1.2.4's create-when-absent step).
+        // new value (ES2026 §9.1.1.2.5's create-when-absent step).
         HString* name_hstr = (HString*)key;
         if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
                 "%s is not defined", name_hstr,
@@ -2743,7 +2739,7 @@ fn BindingRead? vm_read_accessor(Dispatch* ds, TVal accessor, HObject* this_obj,
     return BindingRead.THREW;
 }
 
-// Read `key` from a with-scope's object environment (ECMA-262 §9.1.1.2.1
+// Read `key` from a with-scope's object environment (ES2026 §9.1.1.2.1
 // HasBinding, §9.1.1.2.6 GetBindingValue). UNRESOLVABLE means the scope does
 // not bind the name and the walk continues past it.
 fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TVal* out) {
@@ -2791,7 +2787,7 @@ fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TV
     return BindingRead.FOUND;
 }
 
-// Resolve `key` from the current scope and read it (ECMA-262 §9.4.2
+// Resolve `key` from the current scope and read it (ES2026 §9.4.2
 // ResolveBinding, §6.2.5.5 GetValue): the lexical chain, then the variable
 // chain when a with scope separates them, then the global object's
 // prototype chain, whose properties the global record also binds. On FOUND
@@ -3378,7 +3374,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     return (TVal){};
 }
 
-// ECMA-262 §9.1.1.2.1 HasBinding step 6-9: a `with` binding is hidden by an
+// ES2026 §9.1.1.2.1 HasBinding: a `with` binding is hidden by an
 // @@unscopables entry whose value is true. Returns true when `name` is
 // blocked; on a getter throw, heap.has_error is left pending so the caller
 // can surface it. Used by the with-env branches of RESOLVEVAR, GETVAR,

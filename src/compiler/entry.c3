@@ -78,54 +78,16 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     $endif
 }
 
-// Compile source as eval code (Program, returns last expression value).
-// Eval code differs from a regular program in that the value of the last
-// expression statement is returned (not undefined).
+// Compile source as eval code (returns the last expression's value).
 //
-// `allow_super`: true for a direct eval whose calling context may have a
-// super binding (§12.3.5 MakeSuperPropertyReference / §13.3.7.1
-// MakeSuperPropertyReference read `env.HasSuperBinding()` off the *running*
-// execution context, which for direct eval is the caller's). The eval code
-// is compiled as an independent unit and has no static knowledge of the
-// caller's class/method context, so this just permits the `super.x`/
-// `super[x]` syntax to compile; the `__super__` hidden binding lookup it
-// emits (GETVAR) still walks the real environment chain at runtime, for
-// direct eval that chain IS the caller's, so a genuinely absent binding
-// still throws ReferenceError there, same as the spec's HasSuperBinding
-// check would.
-//
-// `parent_super_name`/`parent_static_super_name`: when the caller is inside
-// a class body with a numbered __super__ binding (e.g. "__super__0"), these
-// pass the binding name so the eval context re-interns it into its own
-// constant pool. Without this, eval("super.x") would GETVAR the literal
-// "__super__" instead of the numbered name in the environment chain.
-//
-// `parent_private_names`/`parent_private_name_count`: ECMA-262 §8.7.1 says
-// direct eval inherits the calling execution context's PrivateEnvironment.
-// `parent_private_names` is a heap-tracked snapshot of the caller's
-// CompilerContext's private-names table (populated when the caller's
-// CompiledFunction was finished and stashed in `eval_private_names`). When
-// non-null, the eval CompilerContext adopts this table, so subsequent
-// `#name` references resolve through it (so `this.#m` inside a class
-// method's eval body finds the class's `#m`). Indirect eval (no caller
-// activation or `ACT_FLAG_DIRECT_EVAL` not set on the caller) leaves the
-// parameter null; `#name` references then correctly throw SyntaxError
-// (no enclosing PrivateEnvironment).
-//
-// `direct_in_function`: true iff this eval source is being compiled
-// inside a direct-eval call from a non-ArrowFunction's FunctionBody, so
-// the ONLY context that legally permits `new.target` per ECMA-262 Annex
-// B / §14.2.1 (ScriptedTasks: "It is a Syntax Error if StatementList
-// Contains NewTarget unless the source code containing NewTarget is
-// eval code that is being processed by a direct eval that is contained
-// in function code that is not the function code of an ArrowFunction").
-// Pass false (the default) for indirect eval, eval from script top
-// level, or eval from an arrow function, `new_expr()` then rejects
-// new.target as a SyntaxError.  `allow_super` and
-// `direct_in_function` track the same call-site conditions, so the two
-// are usually equal; they're kept as separate parameters to avoid
-// silently coupling super-reference permission to new.target permission
-// (either can be added independently in the future).
+// `allow_super`: permits `super.x`/`super[x]` in direct eval; the runtime
+//   environment chain still enforces HasSuperBinding.
+// `parent_super_name` / `parent_static_super_name` / `parent_home_object_name`:
+//   caller's numbered super/home binding names, re-interned into this pool.
+// `parent_private_names`: snapshot of the caller's PrivateEnvironment (ES2026 §9.2),
+//   copied into a table owned by this context for direct eval (null for indirect).
+// `direct_in_function`: true for direct eval inside a non-arrow function,
+//   permitting `new.target` (ES2026 §15.3).
 fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = false,
                                     bool direct_in_function = false,
                                     void* parent_private_names = null,
@@ -144,11 +106,16 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
-    char[][] private_names = mem::new_array(char[], (sz)parent_private_name_count);
-    defer mem::free(private_names);
-    for (uint i = 0; i < parent_private_name_count; i++) private_names[i] = ((PrivateNameEntry*)parent_private_names)[i].name;
     ast::AstIndex* cmp = null;
-    {
+    // index_begin consumes private_names synchronously and retains no tmem data.
+    @pool() {
+        char[][] private_names;
+        if (parent_private_name_count > 0) {
+            private_names = alloc::alloc_array(tmem, char[], (sz)parent_private_name_count);
+            for (uint i = 0; i < parent_private_name_count; i++) {
+                private_names[i] = ((PrivateNameEntry*)parent_private_names)[i].name;
+            }
+        }
         cmp = ast::index_begin(lex.source, heap, {
             .strict = features::STRICT_ONLY || (is_direct_eval && caller_is_strict),
             .ts_mode = lex.ts_mode,
@@ -160,7 +127,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             .private_names = private_names,
             .defer_functions = defer_functions_allowed(),
         });
-    }
+    };
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     CompilerContext ctx;
@@ -173,7 +140,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // eval's completion bookkeeping but is not eval code, so leaves it false.
     ctx.in_eval_derived = true;
     // Eval inherits the caller's strictness only when the call is direct
-    // (ECMA-262 §19.2.1.1 step 12: "Eval code is strict mode code if it
+    // (ES2026 §19.2.1.1 step 12: "Eval code is strict mode code if it
     // begins with a Directive Prologue that contains a Use Strict Directive
     // or if the call to eval is a direct eval that is contained in strict
     // mode code"). An indirect eval always defaults to sloppy; its own
@@ -200,7 +167,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         ctx.home_object_name_idx = ctx.add_string_constant(parent_home_object_name);
     }
     // A direct eval inside a derived-class constructor may contain a `super()`
-    // call (ECMA-262 §15.7.3 PerformEval: the eval inherits the caller's
+    // call (ES2026 §19.2.1.1 PerformEval: the eval inherits the caller's
     // GetThisEnvironment, whose FunctionEnvironmentRecord has [[ThisBinding
     // status]] "uninitialized" and a non-null [[FunctionObject]] with a
     // [[ConstructorKind]] of "derived").  is_constructable gates the `super()`
@@ -209,7 +176,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.is_constructable = allow_super_call;
     ctx.in_derived_ctor = allow_super_call;
     ctx.eval_direct_in_function = direct_in_function;
-    // Inherit the caller's ContainsArguments restriction (ECMA-262 §15.7.10
+    // Inherit the caller's ContainsArguments restriction (ES2026 §19.2.1.1
     // step 14 / §PerformEval): a direct eval called from inside a class
     // field/static initializer or static block must reject a bare
     // `arguments` reference in the eval SOURCE at eval-call time, not just
@@ -217,31 +184,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.forbid_arguments = is_direct_eval && caller_forbids_arguments;
     ctx.eval_acc_reg = ctx.alloc_reg();
 
-    // Adopt caller's private-name snapshot (ECMA-262 §8.7.1). When the caller
-    // has none (top-level eval or an indirect eval), the fresh empty table
-    // from init() stays in place, `#name` then resolves to nothing, which
-    // fails compile_private_name with SyntaxError exactly as the spec
-    // requires for eval without an enclosing PrivateEnvironment.
+    // Copy the caller's private-name snapshot (ES2026 §9.2) into a table owned by
+    // this context so new private names declared inside eval do not reallocate
+    // or mutate the caller's snapshot.
     if (parent_private_names != null && parent_private_name_count > 0) {
-        // The caller stashed a snapshot whose `name`/`slot_name`/
-        // `brand_slot_name` slices point into the snapshot itself.
-        //
-        // We COPY the inherited entries into a freshly-allocated table that
-        // this context OWNS. Borrowing the snapshot's buffer directly (à la
-        // compile_inner_function's adopt_private_names) would corrupt the
-        // caller's snapshot if eval declared any new private name, the
-        // inherited entries sit at indices [0..parent_count) and a new
-        // class body's #x would land at index parent_count via
-        // declare_private_name → ensure_private_name_cap → realloc_func,
-        // which would move/extend the snapshot's buffer while the caller
-        // still references the old address through CompiledFunction.
-        // Copy + own avoids that and matches the per-eval PrivateEnvironment
-        // of the spec (the eval body's PrivateEnvironment is logically a
-        // fresh env chained to the caller's, not literally the same array).
         usz inherited_bytes = (usz)parent_private_name_count * PrivateNameEntry::size;
-        // Size for growable: start at INITIAL_PRIVATE_NAMES to leave room for
-        // any new private names the eval body might declare (e.g. `class D {
-        // #x }` inside eval).
         uint new_cap = INITIAL_PRIVATE_NAMES;
         if ((uint)parent_private_name_count >= new_cap) {
             new_cap = parent_private_name_count * 2;
@@ -251,14 +198,10 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         PrivateNameEntry* new_table = (PrivateNameEntry*)h2.alloc_func(h2.heap_udata, new_bytes);
         if (new_table != null) {
             mem::copy(new_table, parent_private_names, (sz)(inherited_bytes));
-            // Zero the rest so uninitialised entries don't carry garbage.
             if ((usz)new_cap * PrivateNameEntry::size > inherited_bytes) {
                 mem::clear((char*)new_table + inherited_bytes,
                               (sz)((usz)new_cap * PrivateNameEntry::size - inherited_bytes));
             }
-            // Reuse ctx's own (init-allocated) PrivateNameTable, swapping in the
-            // inherited entries. The table is already owned by ctx, so only the
-            // inner entries buffer changes.
             PrivateNameTable* t = ctx.private_name_table;
             if (t.entries != null) h2.free_func(h2.heap_udata, t.entries);
             t.entries = new_table;
@@ -266,15 +209,6 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             t.cap = new_cap;
             ctx.owns_private_names = true;
         }
-        // On OOM private_names stays null, so every #x reference is a SyntaxError.
-        // has_lexical_bindings must propagate too: each inherited private
-        // name was declared via declare_priv_slot in the class-enclosing
-        // context, and the class's PUSH_LEX is what keeps the runtime env
-        // alive so PUTLEX/GETVAR can find the binding. Direct eval inherits
-        // the env chain, but our compiler emits GETVAR-by-name anyway; the
-        // flag's only effect here is on needs_env elision in finish(), and
-        // eval always needs its env anyway (var declarations must reach the
-        // caller's var_env).
     }
 
     // Initialize eval result accumulator to undefined (for empty eval)
@@ -288,27 +222,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // tables) for the §18.2.1.2 step 3.4 intermediate-binding collision
     // check in builtin_eval. Dedup against the collected list (the hoisted
     // tables were not hooked).
-    uint eval_var_count = ctx.eval_var_coll_count;
-    for (uint i = 0; i < ctx.hoisted_fn_count; i++) {
-        uint ni = ctx.add_string_constant(ctx.hoisted_fn_names[i]);
-        bool dup = false;
-        for (uint k = 0; k < eval_var_count; k++) {
-            if (ctx.eval_var_coll_idxs[k] == ni) { dup = true; break; }
-        }
-        if (!dup) {
-            if (eval_var_count >= ctx.eval_var_coll_cap) {
-                uint new_cap = ctx.eval_var_coll_cap == 0 ? 16 : ctx.eval_var_coll_cap * 2;
-                void* pn = ((Heap*)heap).realloc_func(((Heap*)heap).heap_udata,
-                    ctx.eval_var_coll_idxs, (usz)(new_cap * 4));
-                if (pn != null) {
-                    ctx.eval_var_coll_idxs = (uint*)pn;
-                    ctx.eval_var_coll_cap = new_cap;
-                }
-            }
-            if (eval_var_count < ctx.eval_var_coll_cap) {
-                ctx.eval_var_coll_idxs[eval_var_count++] = ni;
-            }
-        }
+    foreach (name : ctx.hoisted_fn_names.array_view()) {
+        uint ni = ctx.add_string_constant(name);
+        if (!ctx.eval_var_coll_idxs.contains(ni)) ctx.eval_var_coll_idxs.push(ni);
     }
 
     // Free any remaining scope_stack entries (top-level lexical declarations)
@@ -323,14 +239,15 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Eval code must NOT get its own scope, var declarations must go
     // to the enclosing scope (global env), not a fresh function scope.
     func.flags.needs_env = false;
-    if (eval_var_count > 0) {
+    uint[] eval_vars = ctx.eval_var_coll_idxs.array_view();
+    if (eval_vars.len > 0) {
         // The function outlives this context, so it takes its own copy.
         Heap* h = (Heap*)heap;
-        uint* idxs = (uint*)h.alloc_func(h.heap_udata, (usz)eval_var_count * 4);
+        uint* idxs = (uint*)h.alloc_func(h.heap_udata, eval_vars.len * uint::size);
         if (idxs != null) {
-            for (uint i = 0; i < eval_var_count; i++) idxs[i] = ctx.eval_var_coll_idxs[i];
+            mem::copy(idxs, eval_vars.ptr, eval_vars.len * uint::size);
             func.eval_var_idxs = idxs;
-            func.eval_var_count = eval_var_count;
+            func.eval_var_count = (uint)eval_vars.len;
         }
     }
     return func;

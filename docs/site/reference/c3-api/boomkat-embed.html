@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boomkat::embed · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body class="has-sidebar">
+  <header class="site-head">
+    <a class="brand" href="../../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../../tutorials/first-script.html">tutorials</a>
+      <a href="../../how-to/build-profiles.html">how-to</a>
+      <a href="../../reference/c-api.html" aria-current="page">reference</a>
+      <a href="../../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <div class="ref-layout">
+    <aside class="ref-sidebar" aria-label="C3 modules">
+      <p class="label">On this page</p>
+      <ul>
+        <li><a href="#sec-types">Types</a></li>
+        <li><a href="#sec-variables">Constants &amp; globals</a></li>
+        <li><a href="#sec-functions">Functions</a></li>
+        <li><a href="#sec-macros">Macros</a></li>
+      </ul>
+      <p class="label">Modules</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="boomkat-embed.html" aria-current="page">boomkat::embed</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
+      </ul>
+      <p class="label">Other Reference</p>
+      <ul>
+        <li><a href="../c-api.html">C Embedding API</a></li>
+        <li><a href="../cli-and-flags.html">CLI &amp; Build Flags</a></li>
+      </ul>
+    </aside>
+
+    <main class="ref-content">
+      <p class="label">reference · c3 internal api</p>
+      <h1><code>module boomkat::embed</code></h1>
+      <p class="lede">14 types, 83 functions and macros, 2 methods, 48 constants and globals.</p>
+      <div class="band" aria-hidden="true"></div>
+      <h2 id="sec-types">Types</h2>
+<div class="api-item" id="AtomEntry"><pre><code>struct AtomEntry {
+  HString* key;
+  uint refs;
+  uint next_free;
+}</code></pre><p class="api-src">src/embed.c3:454:8</p></div>
+<div class="api-item" id="BkCFunction"><pre><code>alias BkCFunction = fn ulong(void*, ulong, uint, ulong*, void*)</code></pre><p class="api-src">src/embed.c3:1141:7</p></div>
+<div class="api-item" id="BkFinalizer"><pre><code>alias BkFinalizer = fn void(void* data, void* opaque)</code></pre><p class="api-src">src/embed.c3:1158:7</p></div>
+<div class="api-item" id="BkRootTracer"><pre><code>alias BkRootTracer = fn void(void* tracer, void* opaque)</code></pre><p class="api-src">src/embed.c3:1184:7</p></div>
+<div class="api-item" id="CFnData"><pre><code>struct CFnData {
+  void* data;
+  <a href="#BkFinalizer">BkFinalizer</a> finalize;
+  void* finalize_opaque;
+}</code></pre><p class="api-src">src/embed.c3:1188:8</p></div>
+<div class="api-item" id="ContextState"><pre><code>struct ContextState {
+  char[512] errmsg;
+  int errcode;
+  int err_line;
+  int err_col;
+  char[512] err_name;
+  char* jsx_buf;
+  char* err_stack;
+  usz err_stack_cap;
+  ulong exception;
+  int pending_code;
+  char[512] pending_message;
+  void*[4] context_data;
+}</code></pre><p class="api-src">src/embed.c3:156:8</p></div>
+<div class="api-item" id="Ctx"><pre><code>struct Ctx {
+  <a href="#Runtime">Runtime*</a> rt;
+  void* bctx;
+  Realm* realm;
+  <a href="#Ctx">Ctx*</a> next;
+  <a href="#ContextState">ContextState</a> saved;
+  bool released;
+}</code></pre><p class="api-src">src/embed.c3:229:8</p></div>
+<div class="api-item" id="HostPayload"><pre><code>struct HostPayload {
+  <a href="#HostPayload">HostPayload*</a> next;
+}</code></pre><p class="api-src">src/embed.c3:1143:8</p></div>
+<div class="api-item" id="HostReg"><pre><code>struct HostReg {
+  <a href="#HostPayload">HostPayload</a> lifetime;
+  void* cfn;
+  long slot;
+  bool constructable;
+  uint class_plus1;
+  <a href="#HostReg">HostReg*</a> next_reg;
+}</code></pre><p class="api-src">src/embed.c3:1149:8</p></div>
+<div class="api-item" id="ModuleLoader"><pre><code>struct ModuleLoader {
+  void* resolve;
+  void* load;
+  void* opaque;
+  uint flags;
+}</code></pre><p class="api-src">src/embed.c3:1161:8</p></div>
+<div class="api-item" id="ModuleRequest"><pre><code>struct ModuleRequest {
+  <a href="#Runtime">Runtime*</a> rt;
+  char[] name;
+  char[] source;
+  char[] for_name;
+  bool answered;
+  bool failed;
+  bool deferred;
+  bool in_call;
+  ulong error;
+  <a href="#ModuleRequest">ModuleRequest*</a> next;
+}</code></pre><p class="api-src">src/embed.c3:1170:8</p></div>
+<div class="api-item" id="Runtime"><pre><code>struct Runtime {
+  <a href="#ContextState">ContextState</a> state;
+  Heap* heap;
+  Vm* vm;
+  uint rt_id;
+  <a href="#SlotEntry">SlotEntry*</a> slots;
+  uint slot_cap;
+  uint slot_count;
+  uint free_head;
+  uint live;
+  uint retired;
+  void* promise_rejection_fn;
+  void* promise_rejection_udata;
+  <a href="#Ctx">Ctx</a> root;
+  <a href="#Ctx">Ctx*</a> contexts;
+  <a href="#Ctx">Ctx*</a> active;
+  bool root_used;
+  void*[4] data;
+  <a href="#HostPayload">HostPayload*</a> host_payloads;
+  bool owned_by_context;
+  char*[4] cstr_buf;
+  usz[4] cstr_cap;
+  uint cstr_next;
+  <a href="#BkRootTracer">BkRootTracer</a> root_tracer;
+  void* root_tracer_opaque;
+  <a href="#HostReg">HostReg*</a> cfn_regs;
+  uint cfn_data_class;
+  uint script_class;
+  uint pending_global_class;
+  <a href="#ModuleLoader">ModuleLoader</a> module_loader;
+  ModuleHostHooks module_hooks;
+  <a href="#ModuleRequest">ModuleRequest*</a> module_requests;
+  <a href="#AtomEntry">AtomEntry*</a> atoms;
+  uint atom_cap;
+  uint atom_count;
+  uint atom_free;
+  uint* atom_index;
+  uint atom_index_cap;
+  uint atom_live;
+}</code></pre><p class="api-src">src/embed.c3:176:8</p></div>
+<div class="api-item" id="SlotEntry"><pre><code>struct SlotEntry {
+  TVal v;
+  uint gen;
+  uint next_free;
+  bool used;
+}</code></pre><p class="api-src">src/embed.c3:144:8</p></div>
+<div class="api-item" id="TextOut"><pre><code>struct TextOut {
+  char* buf;
+  usz cap;
+  usz len;
+  usz need;
+  bool full;
+}</code></pre><p class="api-src">src/embed.c3:658:8</p></div>
+<div class="api-item" id="TextOut.bytes"><p class="api-sig"><code>fn void TextOut.bytes(<a href="#TextOut">TextOut*</a> self, char[] s)</code></p><p class="api-src">src/embed.c3:666:17</p></div>
+<div class="api-item" id="TextOut.str"><p class="api-sig"><code>fn void TextOut.str(<a href="#TextOut">TextOut*</a> self, HString* s)</code></p><p class="api-src">src/embed.c3:674:17</p></div>
+      <h2 id="sec-variables">Constants & globals</h2>
+<div class="api-item" id="ATOM_FREE_END"><p class="api-sig"><code>const uint ATOM_FREE_END = 4294967295;</code></p><p class="api-src">src/embed.c3:450:12</p></div>
+<div class="api-item" id="BK_ERR_ENCODING"><p class="api-sig"><code>const int BK_ERR_ENCODING = -9;</code></p><p class="api-src">src/embed.c3:36:11</p></div>
+<div class="api-item" id="BK_ERR_FULL"><p class="api-sig"><code>const int BK_ERR_FULL = -7;</code></p><p class="api-src">src/embed.c3:34:11</p></div>
+<div class="api-item" id="BK_ERR_INTERNAL"><p class="api-sig"><code>const int BK_ERR_INTERNAL = -4;</code></p><p class="api-src">src/embed.c3:31:11</p></div>
+<div class="api-item" id="BK_ERR_INTERRUPT"><p class="api-sig"><code>const int BK_ERR_INTERRUPT = -8;</code></p><p class="api-src">src/embed.c3:35:11</p></div>
+<div class="api-item" id="BK_ERR_INVALID"><p class="api-sig"><code>const int BK_ERR_INVALID = -5;</code></p><p class="api-src">src/embed.c3:32:11</p></div>
+<div class="api-item" id="BK_ERR_NOMEM"><p class="api-sig"><code>const int BK_ERR_NOMEM = -1;</code></p><p class="api-src">src/embed.c3:28:11</p></div>
+<div class="api-item" id="BK_ERR_SYNTAX"><p class="api-sig"><code>const int BK_ERR_SYNTAX = -2;</code></p><p class="api-src">src/embed.c3:29:11</p></div>
+<div class="api-item" id="BK_ERR_THROW"><p class="api-sig"><code>const int BK_ERR_THROW = -3;</code></p><p class="api-src">src/embed.c3:30:11</p></div>
+<div class="api-item" id="BK_ERR_TYPE"><p class="api-sig"><code>const int BK_ERR_TYPE = -6;</code></p><p class="api-src">src/embed.c3:33:11</p></div>
+<div class="api-item" id="BK_ERR_UNSUPPORTED"><p class="api-sig"><code>const int BK_ERR_UNSUPPORTED = -10;</code></p><p class="api-src">src/embed.c3:37:11</p></div>
+<div class="api-item" id="BK_OK"><p class="api-sig"><code>const int BK_OK = 0;</code></p><p class="api-src">src/embed.c3:27:11</p></div>
+<div class="api-item" id="BK_TYPE_BIGINT"><p class="api-sig"><code>const int BK_TYPE_BIGINT = 8;</code></p><p class="api-src">src/embed.c3:50:11</p></div>
+<div class="api-item" id="BK_TYPE_BOOLEAN"><p class="api-sig"><code>const int BK_TYPE_BOOLEAN = 2;</code></p><p class="api-src">src/embed.c3:44:11</p></div>
+<div class="api-item" id="BK_TYPE_FUNCTION"><p class="api-sig"><code>const int BK_TYPE_FUNCTION = 6;</code></p><p class="api-src">src/embed.c3:48:11</p></div>
+<div class="api-item" id="BK_TYPE_NULL"><p class="api-sig"><code>const int BK_TYPE_NULL = 1;</code></p><p class="api-src">src/embed.c3:43:11</p></div>
+<div class="api-item" id="BK_TYPE_NUMBER"><p class="api-sig"><code>const int BK_TYPE_NUMBER = 3;</code></p><p class="api-src">src/embed.c3:45:11</p></div>
+<div class="api-item" id="BK_TYPE_OBJECT"><p class="api-sig"><code>const int BK_TYPE_OBJECT = 5;</code></p><p class="api-src">src/embed.c3:47:11</p></div>
+<div class="api-item" id="BK_TYPE_STRING"><p class="api-sig"><code>const int BK_TYPE_STRING = 4;</code></p><p class="api-src">src/embed.c3:46:11</p></div>
+<div class="api-item" id="BK_TYPE_SYMBOL"><p class="api-sig"><code>const int BK_TYPE_SYMBOL = 7;</code></p><p class="api-src">src/embed.c3:49:11</p></div>
+<div class="api-item" id="BK_TYPE_UNDEFINED"><p class="api-sig"><code>const int BK_TYPE_UNDEFINED = 0;</code></p><p class="api-src">src/embed.c3:42:11</p></div>
+<div class="api-item" id="BK_UTF8_REPLACE"><p class="api-sig"><code>const int BK_UTF8_REPLACE = 0;</code></p><p class="api-src">src/embed.c3:39:11</p></div>
+<div class="api-item" id="BK_UTF8_STRICT"><p class="api-sig"><code>const int BK_UTF8_STRICT = 1;</code></p><p class="api-src">src/embed.c3:40:11</p></div>
+<div class="api-item" id="CONTEXT_CANNOT_BLOCK"><p class="api-sig"><code>const uint CONTEXT_CANNOT_BLOCK = 2;</code></p><p class="api-src">src/embed.c3:310:12</p></div>
+<div class="api-item" id="CONTEXT_HOST_GLOBAL"><p class="api-sig"><code>const uint CONTEXT_HOST_GLOBAL = 4;</code></p><p class="api-src">src/embed.c3:311:12</p></div>
+<div class="api-item" id="CONTEXT_NO_EVAL"><p class="api-sig"><code>const uint CONTEXT_NO_EVAL = 1;</code></p><p class="api-src">src/embed.c3:309:12</p></div>
+<div class="api-item" id="CSTR_RING"><p class="api-sig"><code>const usz CSTR_RING = 4;</code></p><p class="api-src">src/embed.c3:56:11</p></div>
+<div class="api-item" id="DATA_SLOTS"><p class="api-sig"><code>const uint DATA_SLOTS = 4;</code></p><p class="api-src">src/embed.c3:54:12</p></div>
+<div class="api-item" id="ERRBUF"><p class="api-sig"><code>const usz ERRBUF = 512;</code></p><p class="api-src">src/embed.c3:52:11</p></div>
+<div class="api-item" id="g_engine_once"><p class="api-sig"><code>OnceFlag g_engine_once;</code></p><p class="api-src">src/embed.c3:239:10</p></div>
+<div class="api-item" id="g_next_rt_id"><p class="api-sig"><code>uint g_next_rt_id = 1;</code></p><p class="api-src">src/embed.c3:114:6</p></div>
+<div class="api-item" id="IMM_FALSE"><p class="api-sig"><code>const ulong IMM_FALSE = 4;</code></p><p class="api-src">src/embed.c3:121:13</p></div>
+<div class="api-item" id="IMM_NULL"><p class="api-sig"><code>const ulong IMM_NULL = 2;</code></p><p class="api-src">src/embed.c3:119:13</p></div>
+<div class="api-item" id="IMM_TRUE"><p class="api-sig"><code>const ulong IMM_TRUE = 3;</code></p><p class="api-src">src/embed.c3:120:13</p></div>
+<div class="api-item" id="IMM_UNDEFINED"><p class="api-sig"><code>const ulong IMM_UNDEFINED = 1;</code></p><p class="api-src">src/embed.c3:118:13</p></div>
+<div class="api-item" id="RT_ID_MASK"><p class="api-sig"><code>const ulong RT_ID_MASK = 65535;</code></p><p class="api-src">src/embed.c3:111:13</p></div>
+<div class="api-item" id="RT_ID_SHIFT"><p class="api-sig"><code>const ulong RT_ID_SHIFT = 48;</code></p><p class="api-src">src/embed.c3:110:13</p></div>
+<div class="api-item" id="SCOPE_HANDLE_BIT"><p class="api-sig"><code>const ulong SCOPE_HANDLE_BIT = 140737488355328;</code></p><p class="api-src">src/embed.c3:108:13</p></div>
+<div class="api-item" id="SCOPE_INDEX_BITS"><p class="api-sig"><code>const uint SCOPE_INDEX_BITS = 17;</code></p><p class="api-src">src/embed.c3:890:12</p></div>
+<div class="api-item" id="SCOPE_INDEX_MASK"><p class="api-sig"><code>const ulong SCOPE_INDEX_MASK = 131071;</code></p><p class="api-src">src/embed.c3:891:13</p></div>
+<div class="api-item" id="SLOT_FREE_END"><p class="api-sig"><code>const uint SLOT_FREE_END = 4294967295;</code></p><p class="api-src">src/embed.c3:101:13</p></div>
+<div class="api-item" id="SLOT_GEN_BITS"><p class="api-sig"><code>const ulong SLOT_GEN_BITS = 15;</code></p><p class="api-src">src/embed.c3:98:13</p></div>
+<div class="api-item" id="SLOT_GEN_MASK"><p class="api-sig"><code>const ulong SLOT_GEN_MASK = 32767;</code></p><p class="api-src">src/embed.c3:99:13</p></div>
+<div class="api-item" id="SLOT_GEN_MAX"><p class="api-sig"><code>const uint SLOT_GEN_MAX = 32767;</code></p><p class="api-src">src/embed.c3:100:13</p></div>
+<div class="api-item" id="SLOT_INDEX_BITS"><p class="api-sig"><code>const ulong SLOT_INDEX_BITS = 32;</code></p><p class="api-src">src/embed.c3:96:13</p></div>
+<div class="api-item" id="SLOT_INDEX_LIMIT"><p class="api-sig"><code>const uint SLOT_INDEX_LIMIT = 4294967295;</code></p><p class="api-src">src/embed.c3:105:12</p></div>
+<div class="api-item" id="SLOT_INDEX_MASK"><p class="api-sig"><code>const ulong SLOT_INDEX_MASK = 4294967295;</code></p><p class="api-src">src/embed.c3:97:13</p></div>
+<div class="api-item" id="SLOT_INITIAL_CAP"><p class="api-sig"><code>const uint SLOT_INITIAL_CAP = 64;</code></p><p class="api-src">src/embed.c3:102:13</p></div>
+      <h2 id="sec-functions">Functions</h2>
+<div class="api-item" id="activate_context"><p class="api-sig"><code>fn void activate_context(<a href="#Runtime">Runtime*</a> rt, <a href="#Ctx">Ctx*</a> ctx) @noinline</code></p><p class="api-src">src/embed.c3:302:9</p></div>
+<div class="api-item" id="atom_dup"><p class="api-sig"><code>fn bool atom_dup(<a href="#Runtime">Runtime*</a> rt, uint atom)</code></p><p class="api-src">src/embed.c3:527:9</p></div>
+<div class="api-item" id="atom_hash"><p class="api-sig"><code>fn uint atom_hash(HString* key) @inline</code></p><p class="api-src">src/embed.c3:460:9</p></div>
+<div class="api-item" id="atom_index_grow"><p class="api-sig"><code>fn bool atom_index_grow(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:473:9</p></div>
+<div class="api-item" id="atom_intern"><p class="api-sig"><code>fn uint atom_intern(<a href="#Runtime">Runtime*</a> rt, HString* key)</code></p><p class="api-src">src/embed.c3:490:9</p></div>
+<div class="api-item" id="atom_key"><p class="api-sig"><code>fn HString* atom_key(<a href="#Runtime">Runtime*</a> rt, uint atom) @inline</code></p><p class="api-src">src/embed.c3:522:13</p></div>
+<div class="api-item" id="atom_probe"><p class="api-sig"><code>fn uint atom_probe(<a href="#Runtime">Runtime*</a> rt, HString* key)</code></p><p class="api-src">src/embed.c3:466:9</p></div>
+<div class="api-item" id="atom_release"><p class="api-sig"><code>fn void atom_release(<a href="#Runtime">Runtime*</a> rt, uint atom)</code></p><p class="api-src">src/embed.c3:534:9</p></div>
+<div class="api-item" id="atoms_destroy"><p class="api-sig"><code>fn void atoms_destroy(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:563:9</p></div>
+<div class="api-item" id="call_c_function"><p class="api-sig"><code>fn ulong call_c_function(<a href="#Runtime">Runtime*</a> rt, <a href="#Ctx">Ctx*</a> ctx, BuiltinContext* bctx, <a href="#HostReg">HostReg*</a> reg)</code></p><p class="api-src">src/embed.c3:1268:10</p></div>
+<div class="api-item" id="cfn_data_finalize"><p class="api-sig"><code>fn void cfn_data_finalize(void* payload, void* udata)</code></p><p class="api-src">src/embed.c3:1195:9</p></div>
+<div class="api-item" id="cfn_data_of"><p class="api-sig"><code>fn void* cfn_data_of(BuiltinContext* bctx)</code></p><p class="api-src">src/embed.c3:1203:10</p></div>
+<div class="api-item" id="cfn_reg"><p class="api-sig"><code>fn <a href="#HostReg">HostReg*</a> cfn_reg(<a href="#Runtime">Runtime*</a> rt, void* cfn, bool constructable, uint class_plus1)</code></p><p class="api-src">src/embed.c3:1300:13</p></div>
+<div class="api-item" id="classify"><p class="api-sig"><code>fn int classify(TVal v)</code></p><p class="api-src">src/embed.c3:984:8</p></div>
+<div class="api-item" id="clear_err"><p class="api-sig"><code>fn void clear_err(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:618:9</p></div>
+<div class="api-item" id="clear_exception"><p class="api-sig"><code>fn void clear_exception(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:580:9</p></div>
+<div class="api-item" id="compile_script"><p class="api-sig"><code>fn int compile_script(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, bool strict, CompiledFunction** out)</code></p><p class="api-src">src/embed.c3:1388:8</p></div>
+<div class="api-item" id="create"><p class="api-sig"><code>fn <a href="#Runtime">Runtime*</a> create(AllocFunc alloc = null, ReallocFunc realloc = null, FreeFunc free = null, void* udata = null, FatalFunc fatal = null, ulong heap_limit = 0)</code></p><p class="api-src">src/embed.c3:250:13</p></div>
+<div class="api-item" id="cstr_slot"><p class="api-sig"><code>fn char* cstr_slot(<a href="#Runtime">Runtime*</a> rt, usz need)</code></p><p class="api-src">src/embed.c3:1284:10</p></div>
+<div class="api-item" id="ctx_runtime"><p class="api-sig"><code>fn <a href="#Runtime">Runtime*</a> ctx_runtime(void* ctxp) @inline</code></p><p class="api-src">src/embed.c3:971:13</p></div>
+<div class="api-item" id="declare_global"><p class="api-sig"><code>fn int declare_global(<a href="#Runtime">Runtime*</a> rt, char[] name, TVal v)</code></p><p class="api-src">src/embed.c3:1619:8</p></div>
+<div class="api-item" id="describe_error"><p class="api-sig"><code>fn void describe_error(<a href="#Runtime">Runtime*</a> rt, TVal* ev)</code></p><p class="api-src">src/embed.c3:767:9</p></div>
+<div class="api-item" id="describe_value"><p class="api-sig"><code>fn void describe_value(<a href="#Runtime">Runtime*</a> rt, TVal* v, <a href="#TextOut">TextOut*</a> out)</code></p><p class="api-src">src/embed.c3:691:9</p></div>
+<div class="api-item" id="destroy"><p class="api-sig"><code>fn void destroy(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:407:9</p></div>
+<div class="api-item" id="drain_microtasks"><p class="api-sig"><code>fn int drain_microtasks(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1527:8</p></div>
+<div class="api-item" id="ensure_engine_init"><p class="api-sig"><code>fn void ensure_engine_init()</code></p><p class="api-src">src/embed.c3:243:9</p></div>
+<div class="api-item" id="err_slice"><p class="api-sig"><code>fn char[] err_slice(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:628:11</p></div>
+<div class="api-item" id="eval_module"><p class="api-sig"><code>fn int eval_module(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, TVal* out)</code></p><p class="api-src">src/embed.c3:1480:8</p></div>
+<div class="api-item" id="eval_source"><p class="api-sig"><code>fn int eval_source(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, TVal* out, bool* out_owned, bool strict = false)</code></p><p class="api-src">src/embed.c3:1468:8</p></div>
+<div class="api-item" id="finish_interrupt"><p class="api-sig"><code>fn void finish_interrupt(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1667:9</p></div>
+<div class="api-item" id="free_context"><p class="api-sig"><code>fn void free_context(<a href="#Ctx">Ctx*</a> ctx)</code></p><p class="api-src">src/embed.c3:341:9</p></div>
+<div class="api-item" id="free_context_state"><p class="api-sig"><code>fn void free_context_state(Heap* hp, <a href="#ContextState">ContextState*</a> state)</code></p><p class="api-src">src/embed.c3:389:9</p></div>
+<div class="api-item" id="free_module_request"><p class="api-sig"><code>fn void free_module_request(<a href="#Runtime">Runtime*</a> rt, <a href="#ModuleRequest">ModuleRequest*</a> req)</code></p><p class="api-src">src/embed.c3:395:9</p></div>
+<div class="api-item" id="host_trampoline"><p class="api-sig"><code>fn void host_trampoline(BuiltinContext* bctx, void* udata)</code></p><p class="api-src">src/embed.c3:1217:9</p></div>
+<div class="api-item" id="immediate_get"><p class="api-sig"><code>fn bool immediate_get(ulong id, TVal* out) @inline</code></p><p class="api-src">src/embed.c3:132:9</p></div>
+<div class="api-item" id="immediate_of"><p class="api-sig"><code>fn ulong immediate_of(TVal v) @inline</code></p><p class="api-src">src/embed.c3:124:10</p></div>
+<div class="api-item" id="install_fn"><p class="api-sig"><code>fn int install_fn(<a href="#Runtime">Runtime*</a> rt, char[] name, void* trampoline, void* payload, int arity, bool constructable)</code></p><p class="api-src">src/embed.c3:1612:8</p></div>
+<div class="api-item" id="intern_builder"><p class="api-sig"><code>fn HString* intern_builder(<a href="#Runtime">Runtime*</a> rt, StrBuf* sb)</code></p><p class="api-src">src/embed.c3:1132:13</p></div>
+<div class="api-item" id="intern_or_fail"><p class="api-sig"><code>fn HString* intern_or_fail(<a href="#Runtime">Runtime*</a> rt, char[] text)</code></p><p class="api-src">src/embed.c3:1126:13</p></div>
+<div class="api-item" id="interrupt_status"><p class="api-sig"><code>fn int interrupt_status(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1687:8</p></div>
+<div class="api-item" id="local_scope"><p class="api-sig"><code>fn HostScope* local_scope(<a href="#Runtime">Runtime*</a> rt) @inline</code></p><p class="api-src">src/embed.c3:912:21</p></div>
+<div class="api-item" id="make_c_function"><p class="api-sig"><code>fn int make_c_function(<a href="#Runtime">Runtime*</a> rt, char[] name, void* cfn, void* data, <a href="#BkFinalizer">BkFinalizer</a> finalize, void* finalize_opaque, int arity, bool constructable, TVal* out, uint class_plus1 = 0)</code></p><p class="api-src">src/embed.c3:1322:8</p></div>
+<div class="api-item" id="make_fn_value"><p class="api-sig"><code>fn int make_fn_value(<a href="#Runtime">Runtime*</a> rt, char[] name, void* trampoline, void* reg_udata, int arity, bool constructable, TVal* out)</code></p><p class="api-src">src/embed.c3:1591:8</p></div>
+<div class="api-item" id="mark_slots"><p class="api-sig"><code>fn void mark_slots(void* rtp)</code></p><p class="api-src">src/embed.c3:349:9</p></div>
+<div class="api-item" id="mark_slots_slice"><p class="api-sig"><code>fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget)</code></p><p class="api-src">src/embed.c3:368:9</p></div>
+<div class="api-item" id="module_failure"><p class="api-sig"><code>fn int module_failure(<a href="#Runtime">Runtime*</a> rt, int code)</code></p><p class="api-src">src/embed.c3:1510:8 · private</p></div>
+<div class="api-item" id="new_context"><p class="api-sig"><code>fn <a href="#Ctx">Ctx*</a> new_context(<a href="#Runtime">Runtime*</a> rt, uint flags = 0, HObject* global = null, HObject* global_proto = null)</code></p><p class="api-src">src/embed.c3:316:9</p></div>
+<div class="api-item" id="read_utf16"><p class="api-sig"><code>fn int read_utf16(<a href="#Runtime">Runtime*</a> rt, HString* s, ushort* buf, usz cap, usz* length)</code></p><p class="api-src">src/embed.c3:1048:8</p></div>
+<div class="api-item" id="read_utf8"><p class="api-sig"><code>fn int read_utf8(<a href="#Runtime">Runtime*</a> rt, HString* s, bool strict, char* buf, usz cap, usz* length)</code></p><p class="api-src">src/embed.c3:1030:8</p></div>
+<div class="api-item" id="realm_context"><p class="api-sig"><code>fn <a href="#Ctx">Ctx*</a> realm_context(<a href="#Runtime">Runtime*</a> rt, Realm* realm)</code></p><p class="api-src">src/embed.c3:333:9</p></div>
+<div class="api-item" id="record_stack"><p class="api-sig"><code>fn void record_stack(<a href="#Runtime">Runtime*</a> rt, TVal* ev)</code></p><p class="api-src">src/embed.c3:747:9</p></div>
+<div class="api-item" id="release_parked_result"><p class="api-sig"><code>fn void release_parked_result(<a href="#Runtime">Runtime*</a> rt, TVal v) @inline</code></p><p class="api-src">src/embed.c3:922:9</p></div>
+<div class="api-item" id="resolve_handle"><p class="api-sig"><code>fn bool resolve_handle(<a href="#Runtime">Runtime*</a> rt, ulong id, TVal* out)</code></p><p class="api-src">src/embed.c3:901:9</p></div>
+<div class="api-item" id="run_script"><p class="api-sig"><code>fn int run_script(<a href="#Runtime">Runtime*</a> rt, CompiledFunction* f, TVal* out, bool* out_owned)</code></p><p class="api-src">src/embed.c3:1420:8</p></div>
+<div class="api-item" id="scope_close"><p class="api-sig"><code>fn bool scope_close(<a href="#Runtime">Runtime*</a> rt, uint id)</code></p><p class="api-src">src/embed.c3:957:9</p></div>
+<div class="api-item" id="scope_handle"><p class="api-sig"><code>fn ulong scope_handle(<a href="#Runtime">Runtime*</a> rt, uint depth, ulong index) @inline</code></p><p class="api-src">src/embed.c3:894:10</p></div>
+<div class="api-item" id="scope_open"><p class="api-sig"><code>fn uint scope_open(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:945:9</p></div>
+<div class="api-item" id="select_context"><p class="api-sig"><code>fn void select_context(<a href="#Ctx">Ctx*</a> ctx) @inline</code></p><p class="api-src">src/embed.c3:296:9</p></div>
+<div class="api-item" id="set_err"><p class="api-sig"><code>fn void set_err(<a href="#Runtime">Runtime*</a> rt, int code, char[] msg)</code></p><p class="api-src">src/embed.c3:593:9</p></div>
+<div class="api-item" id="set_err_at"><p class="api-sig"><code>fn void set_err_at(<a href="#Runtime">Runtime*</a> rt, int code, char[] msg, int line, int col)</code></p><p class="api-src">src/embed.c3:606:9</p></div>
+<div class="api-item" id="set_exception"><p class="api-sig"><code>fn void set_exception(<a href="#Runtime">Runtime*</a> rt, TVal value)</code></p><p class="api-src">src/embed.c3:587:9</p></div>
+<div class="api-item" id="set_script_name"><p class="api-sig"><code>fn void set_script_name(<a href="#Runtime">Runtime*</a> rt, char* name, usz len)</code></p><p class="api-src">src/embed.c3:612:9</p></div>
+<div class="api-item" id="settle_stale_limit"><p class="api-sig"><code>fn void settle_stale_limit(<a href="#Runtime">Runtime*</a> rt) @inline</code></p><p class="api-src">src/embed.c3:1681:9</p></div>
+<div class="api-item" id="slot_alloc"><p class="api-sig"><code>fn ulong slot_alloc(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/embed.c3:800:10</p></div>
+<div class="api-item" id="slot_entry"><p class="api-sig"><code>fn <a href="#SlotEntry">SlotEntry*</a> slot_entry(<a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/embed.c3:828:15</p></div>
+<div class="api-item" id="slot_get"><p class="api-sig"><code>fn bool slot_get(<a href="#Runtime">Runtime*</a> rt, ulong id, TVal* out)</code></p><p class="api-src">src/embed.c3:842:9</p></div>
+<div class="api-item" id="slot_grow"><p class="api-sig"><code>fn bool slot_grow(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:785:9</p></div>
+<div class="api-item" id="slot_release"><p class="api-sig"><code>fn void slot_release(<a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/embed.c3:850:9</p></div>
+<div class="api-item" id="status_name"><p class="api-sig"><code>fn char* status_name(int status)</code></p><p class="api-src">src/embed.c3:1633:10</p></div>
+<div class="api-item" id="store_value"><p class="api-sig"><code>fn ulong store_value(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/embed.c3:931:10</p></div>
+<div class="api-item" id="str_prop"><p class="api-sig"><code>fn HString* str_prop(HObject* o, HString* key, Heap* h)</code></p><p class="api-src">src/embed.c3:637:13</p></div>
+<div class="api-item" id="string_external"><p class="api-sig"><code>fn HString* string_external(<a href="#Runtime">Runtime*</a> rt, Units data, ExtRelease release, void* udata)</code></p><p class="api-src">src/embed.c3:1107:13</p></div>
+<div class="api-item" id="string_from_latin1"><p class="api-sig"><code>fn HString* string_from_latin1(<a href="#Runtime">Runtime*</a> rt, char[] chars)</code></p><p class="api-src">src/embed.c3:1089:13</p></div>
+<div class="api-item" id="string_from_utf16"><p class="api-sig"><code>fn HString* string_from_utf16(<a href="#Runtime">Runtime*</a> rt, ushort[] units)</code></p><p class="api-src">src/embed.c3:1096:13</p></div>
+<div class="api-item" id="string_from_utf8"><p class="api-sig"><code>fn HString* string_from_utf8(<a href="#Runtime">Runtime*</a> rt, char[] utf8)</code></p><p class="api-src">src/embed.c3:1062:13</p></div>
+<div class="api-item" id="take_exception"><p class="api-sig"><code>fn ulong take_exception(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:58:10</p></div>
+<div class="api-item" id="take_pending_throw"><p class="api-sig"><code>fn int take_pending_throw(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1576:8</p></div>
+<div class="api-item" id="throw_status"><p class="api-sig"><code>fn int throw_status(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1699:8 · private</p></div>
+<div class="api-item" id="to_string"><p class="api-sig"><code>fn int to_string(<a href="#Runtime">Runtime*</a> rt, TVal v, HString** out)</code></p><p class="api-src">src/embed.c3:1548:8</p></div>
+<div class="api-item" id="type_name"><p class="api-sig"><code>fn char* type_name(int type)</code></p><p class="api-src">src/embed.c3:1650:10</p></div>
+<div class="api-item" id="utf8_len"><p class="api-sig"><code>fn usz utf8_len(HString* s)</code></p><p class="api-src">src/embed.c3:1008:8</p></div>
+<div class="api-item" id="utf8_write"><p class="api-sig"><code>fn usz utf8_write(HString* s, char* buf, usz cap)</code></p><p class="api-src">src/embed.c3:1015:8</p></div>
+      <h2 id="sec-macros">Macros</h2>
+<div class="api-item" id="handle_rt_id"><p class="api-sig"><code>macro ulong handle_rt_id(ulong h)</code></p><p class="api-src">src/embed.c3:116:13</p></div>
+    </main>
+  </div>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="https://tomasi.studio/">&copy; 2026 tomasi.studio</a></span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

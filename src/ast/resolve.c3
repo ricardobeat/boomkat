@@ -1,4 +1,4 @@
-// Scope resolution over the flat AST (plan 101, stage 4).
+// Scope resolution over the flat AST.
 //
 // One traversal builds the scope tree, a binding per (scope, name), a site per declaration
 // occurrence in source order, and the identifier references; a second pass resolves each
@@ -875,14 +875,15 @@ fn void Resolver.index_inner(&self) {
     }
     for (uint i = 1; i < nscopes + 2; i++) self.func_start.data[i] += self.func_start.data[i - 1];
     self.func_items.init_zero(self.bindings.len + 1);
-    Vec{uint} fill;
-    fill.init((sz)nscopes + 2);
-    for (uint i = 0; i < nscopes + 2; i++) fill.push(self.func_start.data[i]);
-    for (uint b = 1; b < (uint)self.bindings.len; b++) {
-        uint f = self.scopes.data[self.bindings.data[b].scope].func;
-        self.func_items.data[fill.data[f]++] = b;
-    }
-    fill.free();
+    @pool() {
+        sz n = (sz)nscopes + 2;
+        uint[] fill = alloc::alloc_array(tmem, uint, n);
+        fill[..] = self.func_start.data[:n];
+        for (uint b = 1; b < (uint)self.bindings.len; b++) {
+            uint f = self.scopes.data[self.bindings.data[b].scope].func;
+            self.func_items.data[fill[f]++] = b;
+        }
+    };
 
     sz cap = 16;
     while (cap < self.scopes.len * 2) cap *= 2;
@@ -949,25 +950,26 @@ fn bool decl_is_lexical(DeclKind k) @inline {
 fn void Resolver.erase_type_exports(&self, uint root) {
     uint statements = self.ast.lhs.data[root];
     sz count = self.ast.atoms.entries.len;
-    bool[] types = mem::new_array(bool, count)[:count];
-    defer mem::free(types.ptr);
-    for (uint i = 0; i < self.ast.list_len(statements); i++) {
-        uint n = self.ast.list_item(statements, i);
-        if (self.ast.tags.data[n] == NodeTag.EMPTY_STMT) types[self.ast.lhs.data[n]] = true;
-    }
-    for (uint i = 0; i < self.ast.list_len(statements); i++) {
-        uint n = self.ast.list_item(statements, i);
-        if (self.ast.tags.data[n] != NodeTag.EXPORT_NAMED || self.ast.rhs.data[n] != 0) continue;
-        uint list = self.ast.lhs.data[n];
-        uint keep = 0;
-        for (uint j = 0; j < self.ast.list_len(list); j++) {
-            uint spec = self.ast.list_item(list, j);
-            uint name = self.ast.lhs.data[spec];
-            if (types[name] && self.lookup(1, name) == 0) continue;
-            self.ast.extra.data[list + 1 + keep++] = spec;
+    @pool() {
+        bool[] types = mem::temp_array(bool, count);
+        for (uint i = 0; i < self.ast.list_len(statements); i++) {
+            uint n = self.ast.list_item(statements, i);
+            if (self.ast.tags.data[n] == NodeTag.EMPTY_STMT) types[self.ast.lhs.data[n]] = true;
         }
-        self.ast.extra.data[list] = keep;
-    }
+        for (uint i = 0; i < self.ast.list_len(statements); i++) {
+            uint n = self.ast.list_item(statements, i);
+            if (self.ast.tags.data[n] != NodeTag.EXPORT_NAMED || self.ast.rhs.data[n] != 0) continue;
+            uint list = self.ast.lhs.data[n];
+            uint keep = 0;
+            for (uint j = 0; j < self.ast.list_len(list); j++) {
+                uint spec = self.ast.list_item(list, j);
+                uint name = self.ast.lhs.data[spec];
+                if (types[name] && self.lookup(1, name) == 0) continue;
+                self.ast.extra.data[list + 1 + keep++] = spec;
+            }
+            self.ast.extra.data[list] = keep;
+        }
+    };
 }
 
 fn void Resolver.binary_chain(&self, uint n) {

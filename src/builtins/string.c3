@@ -320,7 +320,7 @@ fn void builtin_string_proto_toString(BuiltinContext* ctx) {
         ctx.result_string(this_val.get_heapptr());
         return;
     }
-    // Per ECMA-262 §21.1.3.27 step 1-3: thisStringValue throws TypeError for non-String values
+    // Per ES2026 §22.1.3.29: thisStringValue throws TypeError for non-String values
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "String.prototype.toString requires that 'this' be a String");
 }
@@ -346,7 +346,7 @@ fn void builtin_string_proto_valueOf(BuiltinContext* ctx) {
         ctx.result_string(this_val.get_heapptr());
         return;
     }
-    // Per ECMA-262 §21.1.3.28 step 1-3: thisStringValue throws TypeError for non-String values
+    // Per ES2026 §22.1.3.35: thisStringValue throws TypeError for non-String values
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "String.prototype.valueOf requires that 'this' be a String");
 }
@@ -518,7 +518,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
-    // Per ECMA-262 §15.5.4.13 step 6: if end is undefined, let end be len.
+    // Per ES2026 §22.1.3.22 step 6: if end is undefined, let end be len.
     double end_d;
     if (ctx.argc > 1) {
         TVal* end_arg = &ctx.regs[ctx.base_reg + 1];
@@ -532,7 +532,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
     }
     if (ctx.should_throw) { ctx.result_undefined(); return; }
 
-    // ECMA-262 §15.5.4.13 steps 7-8: clamp to [0, len]. NaN→0; ±∞ resolve to the
+    // ES2026 §22.1.3.22 steps 7-8: clamp to [0, len]. NaN→0; ±∞ resolve to the
     // clamped extreme (cast to int after clamping so Infinity doesn't wrap).
     int start_i;
     if (math::is_nan(start_d) || start_d == 0.0) {
@@ -573,7 +573,7 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
-    // Per ECMA-262 §15.5.4.15 step 6: if end is undefined, let end be len.
+    // Per ES2026 §22.1.3.25 step 6: if end is undefined, let end be len.
     double end_d;
     if (ctx.argc > 1) {
         TVal* end_arg = &ctx.regs[ctx.base_reg + 1];
@@ -694,12 +694,46 @@ fn uint* string_codepoints(HString* s, uint* out_n) {
 // The string of the code points `cps[0:n]`, interned when short. Null on OOM or
 // when the result would be too long.
 fn HString* codepoints_to_hstring(Heap* heap, uint* cps, uint n) {
-    UnitBuf out;
-    out.init(heap);
-    defer out.free();
-    for (uint i = 0; i < n; i++) out.append_codepoint(cps[i]);
-    if (out.failed) return null;
-    return out.intern(heap);
+    // Count first so the string is allocated once at its final size and width.
+    ulong units = n;
+    bool wide = false;
+    foreach (cp : cps[:n]) {
+        if (cp > 0xFF) wide = true;
+        if (cp > 0xFFFF) units++;
+    }
+    if (hstring::length_exceeds_max(units)) return null;
+    HString* s = hstring::hstring_alloc_storage(heap, (uint)units, wide, hstring::HASH_DEFERRED, (uint)units) ?? null;
+    if (s == null) return null;
+    if (wide) {
+        ushort* out = (ushort*)s.data_ptr();
+        foreach (cp : cps[:n]) {
+            if (cp > 0xFFFF) {
+                uint high;
+                uint low;
+                hstring::codepoint_to_surrogates(cp, &high, &low);
+                *out++ = (ushort)high;
+                *out++ = (ushort)low;
+            } else {
+                *out++ = (ushort)cp;
+            }
+        }
+    } else {
+        char* out = s.data_ptr();
+        foreach (i, cp : cps[:n]) out[i] = (char)cp;
+    }
+    s.finish_data();
+    return heap.intern_fresh(s);
+}
+
+// The `n_type` normalization of the code points of `s`, which the caller frees
+// with mem::free. The source code points are freed as soon as libunicode is done.
+fn uint[]? normalize_codepoints(HString* s, int n_type) {
+    uint n;
+    uint* cps = string_codepoints(s, &n);
+    if (cps == null) return unicode_bindings::NORMALIZE_FAILED~;
+    if (n == 0) return cps[:0];
+    defer mem::free(cps);
+    return unicode_bindings::normalize(mem, cps[:n], n_type);
 }
 
 // GREEK CAPITAL LETTER SIGMA codepoint, has Final_Sigma conditional mapping.
@@ -866,61 +900,71 @@ fn HString* unicode_case_convert_str(Heap* heap, HString* s, int conv_type, Case
     // Fast path: ASCII-only string. Turkic maps the ASCII i and I differently.
     if (lang != TURKIC && s.is_ascii()) {
         char[] data = s.ascii_bytes();
-        char* out_buf = (char*)alloc::malloc_try(mem, (sz)data.len) ?? null;
-        if (out_buf == null) return null;
-        for (usz ai = 0; ai < data.len; ai++) {
-            char c = data[ai];
-            if (conv_type == 1) { // lowercase
-                if (c >= 'A' && c <= 'Z') c = (char)((uint)c + 32);
-            } else { // uppercase
-                if (c >= 'a' && c <= 'z') c = (char)((uint)c - 32);
-            }
-            out_buf[ai] = c;
+        usz first = 0;
+        if (conv_type == 1) { // lowercase
+            while (first < data.len && !(data[first] >= 'A' && data[first] <= 'Z')) first++;
+        } else { // uppercase
+            while (first < data.len && !(data[first] >= 'a' && data[first] <= 'z')) first++;
         }
-        HString* result = builtin_intern_string(heap, out_buf[:data.len]);
-        mem::free(out_buf);
-        return result;
+        if (first == data.len) return s;
+
+        @stack_mem(256; Allocator smem) {
+            char[]? out_opt = alloc::alloc_array_try(smem, char, (sz)data.len);
+            if (catch out_opt) return null;
+            char[] out = out_opt;
+            if (first > 0) mem::copy(out.ptr, data.ptr, (sz)first);
+            for (usz ai = first; ai < data.len; ai++) {
+                char c = data[ai];
+                if (conv_type == 1) {
+                    if (c >= 'A' && c <= 'Z') c = (char)((uint)c + 32);
+                } else {
+                    if (c >= 'a' && c <= 'z') c = (char)((uint)c - 32);
+                }
+                out[ai] = c;
+            }
+            return builtin_intern_string(heap, out);
+        };
     }
 
-    uint num_cps;
-    uint* cps = string_codepoints(s, &num_cps);
-    if (cps == null) return null;
-
-    // Apply case mapping: each input codepoint can expand to up to 3 output codepoints
-    uint out_max = num_cps * 3 + 1;
-    uint* out_cps = (uint*)alloc::malloc_try(mem, (sz)((usz)out_max * 4)) ?? null;
-    if (out_cps == null) {
-        mem::free(cps);
-        return null;
-    }
-
+    // The source codepoints are freed when the mapping block ends, before the
+    // result string is built, to keep peak memory down on long strings.
+    uint* out_cps;
     uint out_n = 0;
-    uint[3] mapped;
-    for (uint i = 0; i < num_cps; i++) {
-        uint cp = cps[i];
-        int n_mapped = lang == ROOT ? -1 : case_language_map(lang, conv_type, cps, num_cps, i, &mapped[0]);
-        if (n_mapped >= 0) {
-            for (int m = 0; m < n_mapped; m++) {
-                out_cps[out_n] = mapped[m];
+    {
+        uint num_cps;
+        uint* cps = string_codepoints(s, &num_cps);
+        if (cps == null) return null;
+        defer mem::free(cps);
+
+        // Each input codepoint can expand to up to 3 output codepoints.
+        uint out_max = num_cps * 3 + 1;
+        out_cps = (uint*)alloc::malloc_try(mem, (sz)((usz)out_max * 4)) ?? null;
+        if (out_cps == null) return null;
+
+        uint[3] mapped;
+        for (uint i = 0; i < num_cps; i++) {
+            uint cp = cps[i];
+            int n_mapped = lang == ROOT ? -1 : case_language_map(lang, conv_type, cps, num_cps, i, &mapped[0]);
+            if (n_mapped >= 0) {
+                for (int m = 0; m < n_mapped; m++) {
+                    out_cps[out_n] = mapped[m];
+                    out_n++;
+                }
+            } else if (conv_type == 1 && cp == CP_SIGMA) {
+                // Greek capital sigma: context-sensitive lowercase
+                out_cps[out_n] = sigma_lower_form(cps, num_cps, i);
                 out_n++;
-            }
-        } else if (conv_type == 1 && cp == CP_SIGMA) {
-            // Greek capital sigma: context-sensitive lowercase
-            out_cps[out_n] = sigma_lower_form(cps, num_cps, i);
-            out_n++;
-        } else {
-            n_mapped = unicode_bindings::unicode_case_conv(cp, conv_type, &mapped[0]);
-            for (int m = 0; m < n_mapped; m++) {
-                out_cps[out_n] = mapped[m];
-                out_n++;
+            } else {
+                n_mapped = unicode_bindings::unicode_case_conv(cp, conv_type, &mapped[0]);
+                for (int m = 0; m < n_mapped; m++) {
+                    out_cps[out_n] = mapped[m];
+                    out_n++;
+                }
             }
         }
     }
-    mem::free(cps);
-
-    HString* result = codepoints_to_hstring(heap, out_cps, out_n);
-    mem::free(out_cps);
-    return result;
+    defer mem::free(out_cps);
+    return codepoints_to_hstring(heap, out_cps, out_n);
 }
 
 // String.prototype.toLowerCase(), full Unicode case mapping
@@ -1046,37 +1090,25 @@ $else
         return;
     }
 
-    uint a_n; uint b_n;
-    uint* a_src = string_codepoints(s_hstr, &a_n);
-    uint* b_src = string_codepoints(that_hstr, &b_n);
-    int a_norm_len = 0;
-    int b_norm_len = 0;
-    uint* a_norm = a_src == null ? null
-        : unicode_bindings::unicode_normalize_simple(a_src, (int)a_n, unicode_bindings::UNICODE_NFC, &a_norm_len);
-    uint* b_norm = b_src == null ? null
-        : unicode_bindings::unicode_normalize_simple(b_src, (int)b_n, unicode_bindings::UNICODE_NFC, &b_norm_len);
+    uint[]? a_norm = normalize_codepoints(s_hstr, unicode_bindings::UNICODE_NFC);
+    uint[]? b_norm = normalize_codepoints(that_hstr, unicode_bindings::UNICODE_NFC);
     defer {
-        if (a_src != null) mem::free(a_src);
-        if (b_src != null) mem::free(b_src);
-        if (a_norm != null) mem::free(a_norm);
-        if (b_norm != null) mem::free(b_norm);
+        if (try a_norm) mem::free(a_norm.ptr);
+        if (try b_norm) mem::free(b_norm.ptr);
     }
-
     // If normalization failed, fall back to comparing the code units.
-    if (a_norm == null || b_norm == null) {
+    if (catch a_norm, b_norm) {
         ctx.result_number((double)hstring::units_compare(s_hstr, that_hstr));
         return;
     }
-
-    // Compare normalized codepoint arrays
-    int min_n = a_norm_len < b_norm_len ? a_norm_len : b_norm_len;
-    for (int i = 0; i < min_n; i++) {
+    sz min_n = min(a_norm.len, b_norm.len);
+    for (sz i = 0; i < min_n; i++) {
         if (a_norm[i] != b_norm[i]) {
             ctx.result_number((double)((int)a_norm[i] - (int)b_norm[i]));
             return;
         }
     }
-    ctx.result_number((double)(a_norm_len - b_norm_len));
+    ctx.result_number((double)((long)a_norm.len - (long)b_norm.len));
 $endif
 }
 
@@ -1255,7 +1287,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
 
     uint sep_len = sep_hstr.unit_len();
 
-    // Empty separator: split by UTF-16 code unit (ECMA-262 §15.5.4.14 step 11,
+    // Empty separator: split by UTF-16 code unit (ES2026 §22.1.3.23,
     // T is a String of length 1 containing element q of S, where S is
     // indexed by UTF-16 code unit, not Unicode codepoint or byte).
     if (sep_len == 0) {
@@ -1377,7 +1409,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
 
     TVal* search_val = &ctx.regs[ctx.base_reg];
 
-    // Check for @@replace protocol (ECMA-262 §21.1.3.14 step 2).
+    // Check for @@replace protocol (ES2026 §22.1.3.19 step 2).
     // Step 2: If searchValue is neither undefined nor null, GetMethod(searchValue, @@replace).
     // Use builtins_generic_get so accessor/getter properties are invoked (propagating throws).
     if (ctx.argc >= 1 && !search_val.is_null() && !search_val.is_undefined()) {
@@ -1721,7 +1753,7 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
 
     HString* search_hstr;
     if (ctx.argc > 0) {
-        // ECMA-262 §21.1.3.7 step 3-6: IsRegExp(searchString) → throw TypeError
+        // ES2026 §22.1.3.8: IsRegExp(searchString) → throw TypeError
         int regexp_check = is_regexp_check_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (regexp_check < 0) { ctx.result_undefined(); return; }
         if (regexp_check == 1) {
@@ -1759,7 +1791,7 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
 
     HString* search_hstr;
     if (ctx.argc > 0) {
-        // ECMA-262 §21.1.3.18 step 3-6: IsRegExp(searchString) → throw TypeError
+        // ES2026 §22.1.3.24: IsRegExp(searchString) → throw TypeError
         int regexp_check = is_regexp_check_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (regexp_check < 0) { ctx.result_undefined(); return; }
         if (regexp_check == 1) {
@@ -1797,7 +1829,7 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
 
     HString* search_hstr;
     if (ctx.argc > 0) {
-        // ECMA-262 §21.1.3.6 step 3-6: IsRegExp(searchString) → throw TypeError
+        // ES2026 §22.1.3.7: IsRegExp(searchString) → throw TypeError
         int regexp_check = is_regexp_check_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (regexp_check < 0) { ctx.result_undefined(); return; }
         if (regexp_check == 1) {
@@ -1841,7 +1873,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     // Step 4: RangeError if count < 0 or count is +∞ (NaN already clamped to 0).
     if (count_d < 0 || math::is_inf(count_d)) {
-        // Throw RangeError per ECMA-262 §21.1.3.14 step 4.
+        // Throw RangeError per ES2026 §22.1.3.18 step 4.
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid count value");
         return;
     }
@@ -2359,7 +2391,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     // Default form: NFC
     int n_type = unicode_bindings::UNICODE_NFC;
 
-    // Process form argument (ECMA-262 §21.1.3.12 steps 3-5)
+    // Process form argument (ES2026 §22.1.3.15 steps 3-5)
     // If form is not provided or is undefined, default to NFC.
     if (ctx.argc > 0 && !ctx.regs[ctx.base_reg].is_undefined()) {
         HString* form = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
@@ -2392,26 +2424,13 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         return;
     }
 
-    uint num_cps;
-    uint* src_cps = string_codepoints(s_hstr, &num_cps);
-    if (src_cps == null) {
+    uint[]? cps = normalize_codepoints(s_hstr, n_type);
+    if (catch cps) {
         ctx.result_string(s_hstr);
         return;
     }
-
-    int out_len = 0;
-    uint* result_cps = unicode_bindings::unicode_normalize_simple(src_cps,
-                        (int)num_cps, n_type, &out_len);
-    mem::free(src_cps);
-
-    if (result_cps == null || out_len < 0) {
-        if (result_cps != null) mem::free(result_cps);
-        ctx.result_string(s_hstr);
-        return;
-    }
-
-    HString* result_hstr = codepoints_to_hstring(ctx.heap, result_cps, (uint)out_len);
-    mem::free(result_cps);
+    defer mem::free(cps.ptr);
+    HString* result_hstr = codepoints_to_hstring(ctx.heap, cps.ptr, (uint)cps.len);
     ctx.result_string(result_hstr != null ? result_hstr : s_hstr);
 }
 

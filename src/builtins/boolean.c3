@@ -62,7 +62,7 @@ fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
     ctx.result_string(s);
 }
 
-// Boolean.prototype.valueOf, ECMA-262 §15.6.4.3: throws TypeError if `this`
+// Boolean.prototype.valueOf, ES2026 §20.3.3.3: throws TypeError if `this`
 // is not a Boolean or Boolean wrapper object.
 fn void builtin_boolean_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -84,7 +84,7 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
     heap.set_prototype(proto, heap.object_proto);
-    // ECMA-262 §15.6.4: Boolean.prototype has [[PrimitiveValue]] = false
+    // ES2026 §20.3.3: Boolean.prototype has [[BooleanData]] = false
     (*proto.extra_ptr()).prim.primitive_value.set_boolean(false);
     heap.bool_proto = proto;
 

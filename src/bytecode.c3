@@ -1709,9 +1709,8 @@ bitstruct FuncFlags : uint {
 
     // ---- Function-specific flags (bits 7+) ----
 
-    // Per-function strict mode. Set from CompilerContext.is_strict at
-    // finish() time. Initial compiler default for top-level scripts is
-    // sloppy under plans/083; modules stay strict; "use strict" raises it.
+    // Per-function strict mode, set from CompilerContext.is_strict at finish().
+    // Top-level scripts default to sloppy; modules and "use strict" are strict.
     bool  is_strict    : 7;
     // Function is a named function expression.
     bool  is_namebinding: 8;
@@ -1897,7 +1896,10 @@ fn SourceBuf* source_buf_new(char[] text) {
     return b;
 }
 
-// Takes ownership of `text`, which must have been allocated with `mem`.
+<*
+ Takes ownership of `text`, which must have been allocated with `mem`.
+ @param [own] text
+*>
 fn SourceBuf* source_buf_adopt(char[] text) {
     SourceBuf* b = (SourceBuf*)alloc::malloc_try(mem, (sz)SourceBuf::size) ?? null;
     if (b == null) return null;
@@ -1909,6 +1911,10 @@ fn SourceBuf* source_buf_adopt(char[] text) {
     return b;
 }
 
+<*
+ Decrements the reference count and frees `b` (and its owned buffer) on 0.
+ @param [drop] b
+*>
 fn void source_buf_release(SourceBuf* b) {
     if (b == null) return;
     b.refs--;
@@ -2491,6 +2497,20 @@ fn char[] CompiledFunction.get_filename(&self) {
     return self.filename_ptr[:self.filename_len];
 }
 
+// Release retained source text, whether it borrows a refcounted SourceBuf or
+// owns a standalone `mem`-allocated copy, and clear the fields.
+fn void CompiledFunction.release_source(&self) {
+    if (self.src_buf != null) {
+        source_buf_release(self.src_buf);
+        self.src_buf = null;
+        self.src_ptr = null;
+    } else if (self.src_ptr != null) {
+        mem::free(self.src_ptr);
+        self.src_ptr = null;
+    }
+    self.src_len = 0;
+}
+
 // Copy `name` into a heap-owned buffer and record it as this function's source
 // filename. No-op when `name` is empty. Non-fatal on allocation failure: the
 // function simply keeps whatever filename it had (usually none). The buffer is
@@ -2498,10 +2518,11 @@ fn char[] CompiledFunction.get_filename(&self) {
 // releases it with mem::free.
 fn void CompiledFunction.set_filename_owned(&self, char[] name) {
     if (name.len == 0) return;
-    char* fname = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
+    char* fname = (char*)alloc::malloc_try(mem, (sz)name.len + 1) ?? null;
     if (fname == null) return;
-    for (usz i = 0; i < (usz)name.len; i++) fname[i] = name[i];
+    mem::copy(fname, name.ptr, (sz)name.len);
     fname[name.len] = 0;
+    if (self.filename_ptr != null) mem::free(self.filename_ptr);
     self.filename_ptr = fname;
     self.filename_len = (uint)name.len;
 }

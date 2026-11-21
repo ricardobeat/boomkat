@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Engine architecture · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="site-head">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../tutorials/first-script.html">tutorials</a>
+      <a href="../how-to/build-profiles.html">how-to</a>
+      <a href="../reference/c-api.html">reference</a>
+      <a href="architecture.html" aria-current="page">architecture</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <p class="label">architecture</p>
+    <h1>Engine architecture</h1>
+    <p class="lede">
+      How Boomkat compiles and executes JavaScript and TypeScript while keeping binary size small and startup under 2 ms.
+    </p>
+
+    <div class="band" aria-hidden="true"></div>
+
+    <h2>Front end: flat AST and register bytecode</h2>
+    <p>
+      Source code is lexed and parsed into a flat AST rather than a pointer-heavy tree of heap-allocated nodes.
+      TypeScript type annotations are stripped during compilation so <code>.ts</code> and <code>.tsx</code> files run without an external transpiler.
+      The compiler emits register-based bytecode and applies constant folding, peephole optimization, fused operations, and inlining.
+    </p>
+
+    <h2>Virtual machine and value representation</h2>
+    <p>
+      The default interpreter uses direct-threaded VM dispatch (<code>THREADED_DISPATCH</code>). Size-focused builds can switch to a smaller switch-based loop (<code>SMALL_VM</code>).
+    </p>
+    <p>
+      Values use 64-bit NaN-boxing by default, packing primitives and pointers into IEEE 754 NaN payloads.
+      Building with <code>-D NONANBOX</code> switches to a 16-byte tagged union (<code>TVal</code>), which is useful for platforms or debugging scenarios where NaN-boxing assumptions do not hold.
+    </p>
+
+    <h2>Memory management</h2>
+    <p>
+      Boomkat uses an incremental, generational tracing garbage collector to keep pause times low, paired with reference counting for strings.
+      Because a host can link Boomkat into long-lived or memory-constrained processes, the C API lets embedders supply a custom allocator via <code>bk_runtime_options</code> and enforce memory limits per runtime.
+    </p>
+
+    <h2>Profiles and precompiled bytecode</h2>
+    <p>
+      Optional language subsystems (Intl, Temporal, TypeScript, JSX, BigInt, Proxy, RegExp) are gated by compile-time flags.
+      At the smallest end, <code>boomkat-tiny</code> compiles out the parser and compiler completely (~700 KB) and executes precompiled <code>.bk</code> bytecode images emitted by <code>boomkat_tiny_compile</code>.
+    </p>
+
+    <h2>Further reading</h2>
+    <ul>
+      <li><a href="scope-and-modes.html">Execution modes and engine scope</a></li>
+      <li><a href="../reference/c3-api/index.html">C3 embedding API (<code>boomkat::embed</code>, <code>boomkat::capi</code>)</a></li>
+    </ul>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="https://tomasi.studio/">&copy; 2026 tomasi.studio</a></span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

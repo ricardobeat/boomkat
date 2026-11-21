@@ -78,12 +78,6 @@ fn void? CompilerContext.check_stack(&self) {
     char marker;
     if ((uptr)&marker < self.stack_floor) return self.fail("code nested too deeply")~;
 }
-// Initial capacity of the hoisted-function-name table; grows on the heap from
-// here (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
-const uint INITIAL_HOISTED_FNS = 128;
-// Initial capacity of the deferred-declaration tables, allocated lazily on the
-// first body-scope function declaration (see ensure_hoisted_defer_cap).
-const uint INITIAL_HOISTED_DEFERS = 8;
 // Initial scope-stack capacity; grows on the heap from here (see
 // ensure_scope_cap), so there is no fixed ceiling.
 const uint INITIAL_SCOPE_DEPTH = 256;
@@ -195,7 +189,7 @@ struct LoopInfo {
     int  saved_lex_depth;     ///< cur_lex_depth at loop entry, break/continue POP_LEX back to this
 int  saved_with_depth;   ///< cur_with_depth at loop entry, break/continue WITH_END back to this
     int  iter_close_reg;      ///< >= 0: for-of iterator reg, emit ITER_CLOSE on break/return; -1 = none
-    bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC (plan 057)
+    bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC
     // A `using` head's iterator close waits for the iteration's release in the
     // loop's own close boundary; every other loop closes at the jump site.
     bool deferred_close;
@@ -229,6 +223,14 @@ struct DisposeScope {
 struct PatchEntry {
     uint addr;        // instruction index to patch
     uint next;        // index of next in chain, or NO_PATCH
+}
+
+// A body-scope function declaration deferred until after PUSH_LEX/INITTZ.
+struct HoistedDefer {
+    char[] name;
+    ushort reg;
+    uint   inner_idx;
+    uint   name_idx;
 }
 
 // Tracks a parameter with a default value expression.
@@ -663,7 +665,7 @@ int  cur_with_depth;
     // Names referenced inside nested callable bodies, collected by
     // resolution before the body compiles; declare_var marks matching
     // locals is_captured so all their access goes through the environment.
-    // Owned copies; empty until the first name is added.
+    // Slices live in the lexer's arena; empty until the first name is added.
     ast::AtomTable captured_names;
     // Treat every local as captured when static resolution cannot name the
     // affected binding precisely, including direct eval and class fields.
@@ -673,20 +675,16 @@ int  cur_with_depth;
     bool captures_exact;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
-    // Top-level function declarations seen by the hoisting pre-pass. Heap-grown: one scope can
-    // declare tens of thousands of functions.
-    char[]* hoisted_fn_names;
-    uint    hoisted_fn_cap;
-    uint    hoisted_fn_count;
+    // Top-level function declarations seen by the hoisting pre-pass. One scope can declare tens
+    // of thousands of functions; empty, and unallocated, until the first one.
+    Vec{char[]} hoisted_fn_names;
     // The same names, for lookup. Initialized with the first name.
     HashSet{String} hoisted_fn_set;
     // Eval code only: the source's var-declared names as constant-pool indices, collected by
     // hoist_one_var_name. Global-scope var entries never reach scope_stack, so this is the only
     // collection point. builtin_eval checks it for the ECMA-262 PerformEval intermediate-binding
     // collision.
-    uint*   eval_var_coll_idxs;
-    uint    eval_var_coll_cap;
-    uint    eval_var_coll_count;
+    Vec{uint} eval_var_coll_idxs;
 
     // Every function declaration a body-scope hoist pass saw at the scope's top level: register,
     // inner function index, and name constant index. block() emits CLOSURE+DECLVAR from these once,
@@ -695,25 +693,9 @@ int  cur_with_depth;
     // function object, so a property set on the binding earlier (`exports.c = c; function c(){}`)
     // would land on an object nothing else references. A repeated name overwrites its entry, leaving
     // the last declaration bound (ECMA-262 FunctionDeclarationInstantiation).
-    char[]* hoisted_defer_names;
-    ushort* hoisted_defer_regs;
-    uint*   hoisted_defer_inner_idxs;
-    uint*   hoisted_defer_name_idxs;
-    uint    hoisted_defer_cap;
-    uint    hoisted_defer_count;
+    Vec{HoistedDefer} hoisted_defers;
     // Set once emit_hoisted_fn_decls has run, so a nested block cannot emit the declarations again.
     bool    hoisted_defer_emitted;
-
-    // Block-nested function names that the sloppy B.3.3 hoist scan put into this scope. block()
-    // checks this on entry, when enclosing lets are visible, to decide the B.3.3.1 step ii
-    // exemption (entry init and publish). The scan creates the var entry unconditionally; when
-    // block() finds the name exempt it erases that entry, leaving no binding. Heap-grown; freed in
-    // cleanup().
-    char[]* b33_hoisted_names;
-    ushort* b33_hoisted_regs;
-    uint*   b33_hoisted_pcs;
-    uint    b33_hoisted_cap;
-    uint    b33_hoisted_count;
 
     // Constant-pool indices of the top-level `var` / `function` names this Script unit declares as
     // globals (the names the check prologue guards with CHKGLOBALVAR/CHKGLOBALFUNC). A strict-mode
@@ -909,15 +891,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     }
     self.inner_func_cap = INITIAL_INNER_FUNCS;
     self.inner_funcs = (CompiledFunction**)h.alloc_func(h.heap_udata, (usz)(INITIAL_INNER_FUNCS * CompiledFunction*::size));
-    self.hoisted_fn_cap = INITIAL_HOISTED_FNS;
-    self.hoisted_fn_names = (char[]*)h.alloc_func(h.heap_udata, (usz)(INITIAL_HOISTED_FNS * char[]::size));
-    // Unallocated until a body-scope function declaration is actually seen;
-    // ensure_hoisted_defer_cap allocates on the first one.
-    self.hoisted_defer_cap = 0;
-    self.hoisted_defer_names = null;
-    self.hoisted_defer_regs = null;
-    self.hoisted_defer_inner_idxs = null;
-    self.hoisted_defer_name_idxs = null;
     PrivateNameTable* pnt = (PrivateNameTable*)h.alloc_func(h.heap_udata, (usz)PrivateNameTable::size);
     pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     pnt.count = 0;
@@ -932,45 +905,42 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
 
-    // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
-    // compilation entry point (compile/compile_eval/compile_function/etc.) is
-    // responsible for setting the lexer's strict_mode to match ctx.is_strict
-    // after init. init() runs before ctx.is_strict is meaningful, so trying to
-    // mirror it here would either default to the wrong value (false, since
-    // mem::clear zeros is_strict) or get clobbered anyway by every caller.
+    // Each compilation entry point sets the lexer's strict_mode to match
+    // ctx.is_strict after init().
+}
+
+// Return a buffer from the heap's allocator and clear the field that held it.
+macro @heap_release(Heap* h, #buf) @local {
+    if (#buf != null) h.free_func(h.heap_udata, #buf);
+    #buf = null;
 }
 
 // Free the compiler's scratch buffers; the CompiledFunction from finish() owns
 // its own copies. The context's owner defers this where it declares the
-// context, so an error unwinding past it frees them too.
+// context, so an error unwinding past it frees them too. The code, constant,
+// scope and inner-function buffers come from the heap's allocator, which an
+// embedder can account; the bookkeeping lists are Vecs on the thread allocator.
 fn void CompilerContext.cleanup(&self) {
     Heap* h = (Heap*)self.heap;
-    if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
-    if (self.source_positions != null) { h.free_func(h.heap_udata, self.source_positions); self.source_positions = null; }
-    if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
-    if (self.name_top != null) { h.free_func(h.heap_udata, self.name_top); self.name_top = null; }
-    if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
-    if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
-    if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
-    if (self.hoisted_fn_names != null) { h.free_func(h.heap_udata, self.hoisted_fn_names); self.hoisted_fn_names = null; }
-    if (self.eval_var_coll_idxs != null) { h.free_func(h.heap_udata, self.eval_var_coll_idxs); self.eval_var_coll_idxs = null; }
-    if (self.hoisted_defer_names != null) { h.free_func(h.heap_udata, self.hoisted_defer_names); self.hoisted_defer_names = null; }
-    if (self.hoisted_defer_regs != null) { h.free_func(h.heap_udata, self.hoisted_defer_regs); self.hoisted_defer_regs = null; }
-    if (self.hoisted_defer_inner_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_inner_idxs); self.hoisted_defer_inner_idxs = null; }
-    if (self.hoisted_defer_name_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_name_idxs); self.hoisted_defer_name_idxs = null; }
-    if (self.b33_hoisted_names != null) { h.free_func(h.heap_udata, self.b33_hoisted_names); self.b33_hoisted_names = null; }
-    if (self.b33_hoisted_regs != null) { h.free_func(h.heap_udata, self.b33_hoisted_regs); self.b33_hoisted_regs = null; }
-    if (self.b33_hoisted_pcs != null) { h.free_func(h.heap_udata, self.b33_hoisted_pcs); self.b33_hoisted_pcs = null; }
+    @heap_release(h, self.code);
+    @heap_release(h, self.source_positions);
+    @heap_release(h, self.scope_stack);
+    @heap_release(h, self.name_top);
+    @heap_release(h, self.constants);
+    @heap_release(h, self.const_hash);
+    @heap_release(h, self.inner_funcs);
     self.release_private_names();
     if (self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.free();
     if (self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.free();
+    self.hoisted_fn_names.free();
+    self.hoisted_defers.free();
+    self.eval_var_coll_idxs.free();
     self.slot_global_name_idxs.free();
     self.direct_eval_offsets.free();
     self.far_offsets.free();
     self.tail_nodes.free();
     self.tail_call_pcs.free();
     self.bindings.free();
-    for (uint id = 1; id < self.captured_names.count(); id++) mem::free(self.captured_names.get(id).ptr);
     self.captured_names.free();
     self.defaults.free();
     self.destruct_defaults.free();
@@ -1063,97 +1033,16 @@ fn void CompilerContext.ensure_scope_cap(&self) {
 
 // Whether a function declaration hoisted into this scope is named `name`.
 fn bool CompilerContext.is_hoisted_fn(&self, char[] name) {
-    return self.hoisted_fn_count > 0 && self.hoisted_fn_set.contains((String)name);
+    return self.hoisted_fn_names.len > 0 && self.hoisted_fn_set.contains((String)name);
 }
 
 // Record a hoisted function declaration's name; false when it is already there.
 fn bool CompilerContext.add_hoisted_fn(&self, char[] name) {
     if (self.is_hoisted_fn(name)) return false;
-    self.ensure_hoisted_fn_cap();
-    if (self.hoisted_fn_count >= self.hoisted_fn_cap) return true;
     if (!self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.init(mem);
     self.hoisted_fn_set.add((String)name);
-    self.hoisted_fn_names[self.hoisted_fn_count] = name;
-    self.hoisted_fn_count++;
+    self.hoisted_fn_names.push(name);
     return true;
-}
-
-// Grow the hoisted-function-name table.
-fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
-    if (self.hoisted_fn_count < self.hoisted_fn_cap) return;
-    uint new_cap = self.hoisted_fn_cap * 2;
-    Heap* h = (Heap*)self.heap;
-    void* pn = h.realloc_func(h.heap_udata, self.hoisted_fn_names, (usz)(new_cap * char[]::size));
-    if (pn == null) {
-        self.record_error("out of memory growing the hoisted function table");
-        return;
-    }
-    self.hoisted_fn_names = (char[]*)pn;
-    self.hoisted_fn_cap = new_cap;
-}
-
-// Record a B.3.3 entry init: the hoisted name, the register of the LDUNDEF+DECLVAR_HOIST pair, and
-// the DECLVAR_HOIST index. When block() proves the block exempt it NOPs that DECLVAR_HOIST and erases
-// the scope entry, leaving no var binding. Names are interned: the token borrows lexer scratch that
-// later tokens overwrite.
-fn void CompilerContext.record_b33_hoist(&self, char[] var_name, uint var_reg, uint hoist_pc) {
-    for (uint i = 0; i < self.b33_hoisted_count; i++) {
-        if (str_eq(self.b33_hoisted_names[i], var_name)) return;
-    }
-    if (self.b33_hoisted_count >= self.b33_hoisted_cap) {
-        uint new_cap = self.b33_hoisted_cap == 0 ? 8 : self.b33_hoisted_cap * 2;
-        Heap* h = (Heap*)self.heap;
-        void* pn = h.realloc_func(h.heap_udata, self.b33_hoisted_names, (usz)(new_cap * char[]::size));
-        void* pr = h.realloc_func(h.heap_udata, self.b33_hoisted_regs, (usz)(new_cap * ushort::size));
-        void* pc = h.realloc_func(h.heap_udata, self.b33_hoisted_pcs, (usz)(new_cap * uint::size));
-        if (pn == null || pr == null || pc == null) {
-            if (pn != null) self.b33_hoisted_names = (char[]*)pn;
-            if (pr != null) self.b33_hoisted_regs = (ushort*)pr;
-            if (pc != null) self.b33_hoisted_pcs = (uint*)pc;
-            self.record_error("out of memory growing the B.3.3 table");
-            return;
-        }
-        self.b33_hoisted_names = (char[]*)pn;
-        self.b33_hoisted_regs = (ushort*)pr;
-        self.b33_hoisted_pcs = (uint*)pc;
-        self.b33_hoisted_cap = new_cap;
-    }
-    HString* hs = ((Heap*)self.heap).str_intern(var_name);
-    self.b33_hoisted_names[self.b33_hoisted_count] = self.name_text(hs);
-    self.b33_hoisted_regs[self.b33_hoisted_count] = (ushort)var_reg;
-    self.b33_hoisted_pcs[self.b33_hoisted_count] = hoist_pc;
-    self.b33_hoisted_count++;
-}
-
-// The B.3.3 record index for `name`, or -1 when the scan hoisted nothing
-// under it into this scope (nested boundary skipped it, or a `var`/param
-// entry already covered it).
-
-
-// Grow the deferred-declaration tables, allocating them on the first body-scope
-// function declaration. All four grow together: they are parallel arrays.
-fn void CompilerContext.ensure_hoisted_defer_cap(&self) {    if (self.hoisted_defer_cap != 0 && self.hoisted_defer_count < self.hoisted_defer_cap) return;
-    uint new_cap = self.hoisted_defer_cap == 0 ? INITIAL_HOISTED_DEFERS : self.hoisted_defer_cap * 2;
-    Heap* h = (Heap*)self.heap;
-    void* pn = h.realloc_func(h.heap_udata, self.hoisted_defer_names, (usz)(new_cap * char[]::size));
-    void* pr = h.realloc_func(h.heap_udata, self.hoisted_defer_regs, (usz)(new_cap * ushort::size));
-    void* pi = h.realloc_func(h.heap_udata, self.hoisted_defer_inner_idxs, (usz)(new_cap * uint::size));
-    void* px = h.realloc_func(h.heap_udata, self.hoisted_defer_name_idxs, (usz)(new_cap * uint::size));
-    if (pn == null || pr == null || pi == null || px == null) {
-        // Keep whichever grew: they are only ever read below hoisted_defer_count,
-        // which is not advanced when this fails.
-        if (pn != null) self.hoisted_defer_names = (char[]*)pn;
-        if (pr != null) self.hoisted_defer_regs = (ushort*)pr;
-        if (pi != null) self.hoisted_defer_inner_idxs = (uint*)pi;
-        if (px != null) self.hoisted_defer_name_idxs = (uint*)px;
-        self.record_error("out of memory growing the deferred declaration table");
-        return;
-    }
-    self.hoisted_defer_names = (char[]*)pn;
-    self.hoisted_defer_regs = (ushort*)pr;
-    self.hoisted_defer_inner_idxs = (uint*)pi;
-    self.hoisted_defer_name_idxs = (uint*)px;
-    self.hoisted_defer_cap = new_cap;
 }
 
 // Grow constant pool and hash table.
@@ -1320,16 +1209,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         return COMPILE_ERROR~;
     }
     Heap* h = (Heap*)self.heap;
-    // Allocate the CompiledFunction struct
-    void* raw = h.alloc_func(h.heap_udata, CompiledFunction::size);
-    if (raw == null) {
-        return COMPILE_ERROR~;
-    }
-    mem::clear(raw, (sz)(CompiledFunction::size));
-
-    CompiledFunction* func = (CompiledFunction*)raw;
-    func.flags.htype = HType.OBJECT;
-    func.realm = h.realm;
 
     // --- True register high-water mark ---
     //
@@ -1384,6 +1263,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (gp_jump_targets == null) return COMPILE_ERROR~;
+        defer h.free_func(h.heap_udata, gp_jump_targets);
         build_jump_targets(self.code, self.code_count, gp_jump_targets);
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_putpropc(self.code, self.code_count, gp_jump_targets, self.constants);
@@ -1391,7 +1271,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         if (self.this_cannot_change()) {
             fuse_putthisc(self.code, self.code_count, gp_jump_targets);
         }
-        h.free_func(h.heap_udata, gp_jump_targets);
     }
 
     // --- Peephole: fuse compare (LT/LE/GT/GE/SEQ/SNEQ) + IF_FALSE/IF_TRUE ---
@@ -1415,20 +1294,21 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             bool* in_try = (bool*)h.alloc_func(h.heap_udata, n);
             RegSet* sets = (RegSet*)h.alloc_func(h.heap_udata, nsets * RegSet::size);
             uint* words = (uint*)h.alloc_func(h.heap_udata, nsets * (usz)words_per_set * uint::size);
-            if (jump_targets != null && in_try != null && sets != null && words != null) {
-                for (usz i = 0; i < nsets; i++) {
-                    sets[i] = { .words = &words[i * words_per_set], .word_count = words_per_set };
-                }
-                moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count, jump_targets, in_try);
-                moveelim_compute_liveness(self.code, self.code_count, sets, &sets[n], true, &sets[2 * n]);
-                run_cmp_branch_fusion(self.code, self.code_count, jump_targets, sets, in_try);
+            defer {
+                if (jump_targets != null) h.free_func(h.heap_udata, jump_targets);
+                if (in_try != null) h.free_func(h.heap_udata, in_try);
+                if (sets != null) h.free_func(h.heap_udata, sets);
+                if (words != null) h.free_func(h.heap_udata, words);
             }
-            if (jump_targets != null) { h.free_func(h.heap_udata, jump_targets); }
-            if (in_try != null) { h.free_func(h.heap_udata, in_try); }
-            if (sets != null) { h.free_func(h.heap_udata, sets); }
-            if (words == null) return COMPILE_ERROR~;
-            h.free_func(h.heap_udata, words);
-            if (jump_targets == null || in_try == null || sets == null) return COMPILE_ERROR~;
+            if (jump_targets == null || in_try == null || sets == null || words == null) {
+                return COMPILE_ERROR~;
+            }
+            for (usz i = 0; i < nsets; i++) {
+                sets[i] = { .words = &words[i * words_per_set], .word_count = words_per_set };
+            }
+            moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count, jump_targets, in_try);
+            moveelim_compute_liveness(self.code, self.code_count, sets, &sets[n], true, &sets[2 * n]);
+            run_cmp_branch_fusion(self.code, self.code_count, jump_targets, sets, in_try);
         }
     }
 
@@ -1470,6 +1350,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (cp_jump_targets == null) return COMPILE_ERROR~;
+        defer h.free_func(h.heap_udata, cp_jump_targets);
         build_jump_targets(self.code, self.code_count, cp_jump_targets);
         for (uint i = 0; i + 1 < self.code_count; i++) {
             if (cp_jump_targets[i + 1]) { continue; }
@@ -1593,7 +1474,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             self.code[i + 1] = bytecode::make_abc(cop, (uint)consumer.a, new_b, new_c);
             self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         }
-        h.free_func(h.heap_udata, cp_jump_targets);
     }
 
     // --- Peephole: fuse LDINT rK, imm + rD = …,rK → NOP + <op>I rD = rS, imm ---
@@ -1606,10 +1486,10 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
+        defer h.free_func(h.heap_udata, addi_jump_targets);
         build_jump_targets(self.code, self.code_count, addi_jump_targets);
         fuse_imm_binop(self.code, self.code_count, addi_jump_targets);
         fuse_null_branch(self.code, self.code_count, addi_jump_targets);
-        h.free_func(h.heap_udata, addi_jump_targets);
     }
 
     // --- Liveness-based move elimination: `producer rT=... ; LDREG rDst=rT`
@@ -1639,15 +1519,17 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         // (4 * n) per-instruction sets + 2 scratch sets + 1 pinned set.
         uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 3) * (usz)words_per_set * uint::size);
+        defer {
+            if (me_jump_targets != null) h.free_func(h.heap_udata, me_jump_targets);
+            if (me_in_try != null) h.free_func(h.heap_udata, me_in_try);
+            if (me_live_out != null) h.free_func(h.heap_udata, me_live_out);
+            if (me_live_in != null) h.free_func(h.heap_udata, me_live_in);
+            if (me_ret_out != null) h.free_func(h.heap_udata, me_ret_out);
+            if (me_ret_in != null) h.free_func(h.heap_udata, me_ret_in);
+            if (me_words != null) h.free_func(h.heap_udata, me_words);
+        }
         if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null
             || me_ret_out == null || me_ret_in == null || me_words == null) {
-            if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
-            if (me_in_try != null) { h.free_func(h.heap_udata, me_in_try); }
-            if (me_live_out != null) { h.free_func(h.heap_udata, me_live_out); }
-            if (me_live_in != null) { h.free_func(h.heap_udata, me_live_in); }
-            if (me_ret_out != null) { h.free_func(h.heap_udata, me_ret_out); }
-            if (me_ret_in != null) { h.free_func(h.heap_udata, me_ret_in); }
-            if (me_words != null) { h.free_func(h.heap_udata, me_words); }
             return COMPILE_ERROR~;
         }
         for (usz i = 0; i < n; i++) {
@@ -1706,13 +1588,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
                                                        me_jump_targets, me_in_try);
             run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try, self.tail_call_pcs.array_view());
         }
-        h.free_func(h.heap_udata, me_jump_targets);
-        h.free_func(h.heap_udata, me_in_try);
-        h.free_func(h.heap_udata, me_live_out);
-        h.free_func(h.heap_udata, me_live_in);
-        h.free_func(h.heap_udata, me_ret_out);
-        h.free_func(h.heap_udata, me_ret_in);
-        h.free_func(h.heap_udata, me_words);
     }
 
     // --- NOP Compaction Pass ---
@@ -1722,9 +1597,26 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // TRY is always followed by a NOP whose BC field holds the finally_offset. The VM reads that word
     // unconditionally, so it must survive compaction: mark those slots in keep[] before building pc_map.
     if (self.far_offsets.len > 0) self.widen_far_offsets()!;
+
+    // Allocate the CompiledFunction struct once all code-rewriting passes succeed.
+    void* raw = h.alloc_func(h.heap_udata, CompiledFunction::size);
+    if (raw == null) {
+        return COMPILE_ERROR~;
+    }
+    mem::clear(raw, (sz)(CompiledFunction::size));
+
+    CompiledFunction* func = (CompiledFunction*)raw;
+    defer catch h.free_compiled_func(func);
+    func.flags.htype = HType.OBJECT;
+    func.realm = h.realm;
+
     if (self.code_count > 0) {
         bool* nop_keep = null;
         uint* pc_map = null;
+        defer {
+            if (pc_map != null) h.free_func(h.heap_udata, pc_map);
+            if (nop_keep != null) h.free_func(h.heap_udata, nop_keep);
+        }
         uint new_count = 0;
         if (!self.disable_optimize) {
             // Step 1: mark TRY jump slots as non-removable.
@@ -1747,7 +1639,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             // Step 2: build pc_map[old_pc] → new_pc.
             // NOP slots that are not kept map to the new_pc of the next kept slot.
             pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_count + 1) * (long)uint::size));
-            if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); return COMPILE_ERROR~; }
+            if (pc_map == null) return COMPILE_ERROR~;
             for (uint i = 0; i < self.code_count; i++) {
                 pc_map[i] = new_count;
                 if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
@@ -1820,25 +1712,17 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // just keep every instruction (including the peephole-produced NOPs).
     uint final_count = self.disable_optimize ? self.code_count : new_count;
     usz code_bytes = (usz)final_count * Instruction::size;
-    void* code_raw = h.alloc_func(h.heap_udata, code_bytes);
+    func.code = (Instruction*)h.alloc_func(h.heap_udata, code_bytes);
     // Relocation passes need a position for each surviving instruction;
     // finish() coalesces their PC ranges after captured-binding lowering.
-    void* source_raw = null;
     if (final_count > 0 && self.source_positions != null) {
-        source_raw = h.alloc_func(h.heap_udata, (usz)final_count * SourceEntry::size);
+        func.source_map = (SourceEntry*)h.alloc_func(h.heap_udata, (usz)final_count * SourceEntry::size);
     }
-    if (code_raw == null || (final_count > 0 && self.source_positions != null && source_raw == null)) {
-        if (source_raw != null) { h.free_func(h.heap_udata, source_raw); }
-        if (code_raw != null) { h.free_func(h.heap_udata, code_raw); }
-        if (!self.disable_optimize) {
-            h.free_func(h.heap_udata, pc_map);
-            h.free_func(h.heap_udata, nop_keep);
-        }
-        h.free_func(h.heap_udata, raw);
+    if (func.code == null || (final_count > 0 && self.source_positions != null && func.source_map == null)) {
         return COMPILE_ERROR~;
     }
-    Instruction* dst_code = (Instruction*)code_raw;
-    SourceEntry* dst_source = (SourceEntry*)source_raw;
+    Instruction* dst_code = func.code;
+    SourceEntry* dst_source = func.source_map;
     uint dst_idx = 0;
     if (self.disable_optimize) {
         // Copy everything verbatim, preserves all NOPs introduced by the
@@ -1859,8 +1743,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
             }
         }
     }
-    func.code = dst_code;
-    func.source_map = dst_source;
     func.source_map_count = dst_source != null ? final_count : 0;
     func.code_count = final_count;
 
@@ -1887,40 +1769,17 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         // treating every eval from this body as direct, which is what the
         // has_direct_eval flag alone says.
     }
-
-    if (!self.disable_optimize) {
-        h.free_func(h.heap_udata, pc_map);
-        h.free_func(h.heap_udata, nop_keep);
-    }
 }
 
     // Copy the source name (a file path, module specifier, or "<eval>") into a
-    // heap-owned buffer so it outlives the compile. `mem`, like the function
-    // name and retained source text: free_compiled_funcs releases all three
-    // with mem::free and cannot tell the allocators apart. Non-fatal on
-    // allocation failure, matching how the function name is set.
-    {
-        char[] src_name = self.lexer.source_name;
-        if (src_name.len > 0) {
-            char* fname = (char*)alloc::malloc_try(mem, (sz)((usz)src_name.len + 1)) ?? null;
-            if (fname != null) {
-                for (usz i = 0; i < (usz)src_name.len; i++) fname[i] = src_name[i];
-                fname[src_name.len] = 0;
-                func.filename_ptr = fname;
-                func.filename_len = (uint)src_name.len;
-            }
-        }
-    }
+    // heap-owned buffer so it outlives the compile.
+    func.set_filename_owned(self.lexer.source_name);
 
     // Copy constant pool
     if (self.const_count > 0) {
         usz const_bytes = (usz)self.const_count * TVal::size;
         void* const_raw = h.alloc_func(h.heap_udata, const_bytes);
         if (const_raw == null) {
-            if (func.code != null) { h.free_func(h.heap_udata, func.code); }
-            if (func.source_map != null) { h.free_func(h.heap_udata, func.source_map); }
-            if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
-            h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }
         mem::copy(const_raw, &self.constants[0], (sz)(const_bytes));
@@ -1933,11 +1792,6 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         usz inner_bytes = (usz)self.inner_func_count * CompiledFunction*::size;
         void* inner_raw = h.alloc_func(h.heap_udata, inner_bytes);
         if (inner_raw == null) {
-            if (func.code != null) { h.free_func(h.heap_udata, func.code); }
-            if (func.source_map != null) { h.free_func(h.heap_udata, func.source_map); }
-            if (func.constants != null) { h.free_func(h.heap_udata, func.constants); }
-            if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
-            h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }
         mem::copy(inner_raw, &self.inner_funcs[0], (sz)(inner_bytes));
@@ -1975,12 +1829,9 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // EMPTY arguments object that shadows the real one).
     func.flags.uses_arguments = self.uses_arguments
                              || (self.has_direct_eval && !self.is_arrow && !self.eval_mode);
-    // Mapped arguments (plans/083 Phase 3.1): sloppy + simple parameter list
-    // per ECMA-262 arguments exotic objects. Simplicity reads the same three signals
-    // params_are_simple() uses (rest, defaults incl. destructured defaults,
-    // destructured params). Direct-eval-forced uses_arguments is unmapped:
-    // the flag only guarantees an object exists for the eval body, and the
-    // eval body is not this function's own parameter scope.
+    // Mapped arguments: sloppy mode with a simple parameter list (ECMA-262
+    // arguments exotic objects). Direct-eval-forced uses_arguments is unmapped
+    // because the eval body is not this function's own parameter scope.
     func.flags.mapped_arguments = !self.is_strict && self.uses_arguments
                              && !self.has_rest && self.defaults.len == 0
                              && self.destruct_defaults.len == 0

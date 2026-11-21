@@ -217,7 +217,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         }
     }
 
-    // ECMA-262 §20.5.8.1 InstallErrorCause (O, options)
+    // ES2026 §20.5.8.1 InstallErrorCause (O, options)
     // Called as step 4 of every Error/NativeError constructor. If options is
     // an Object and ? HasProperty(options, "cause") is true, install ? Get(options,
     // "cause") as a non-enumerable data property {writable:true, configurable:true,
@@ -307,10 +307,10 @@ fn void builtin_uri_error(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// AggregateError constructor, ECMA-262 §28.1.1.1
+// AggregateError constructor, ES2026 §20.5.7.1.1
 // ============================================================================
 
-// IterableToList(items), ECMA-262 §7.4.11 (used by AggregateError's
+// IteratorToList(items), ES2026 §7.4.11 (used by AggregateError's
 // `errors` argument per §20.5.7.1.1 step 3). GetIterator(items, sync),
 // then IteratorStep/IteratorValue in a loop, appending each value to a
 // fresh Array. Any abrupt completion propagates directly (there is no
@@ -486,7 +486,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         err.put_prop(errors_key, errors_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     }
 
-    // ECMA-262 §20.5.8.1 InstallErrorCause, AggregateError's 3rd arg is options.
+    // ES2026 §20.5.8.1 InstallErrorCause, AggregateError's 3rd arg is options.
     if (ctx.argc >= 3) {
         TVal* opt_arg = &ctx.regs[ctx.base_reg + 2];
         if (opt_arg.is_object() && opt_arg.get_heapptr() != null) {
@@ -572,14 +572,14 @@ fn TVal error_new_suppressed(Heap* heap, TVal error, TVal suppressed) {
 }
 
 // ============================================================================
-// Error.prototype.toString, returns "name: message" per ECMA-262 §15.11.4.4
+// Error.prototype.toString, returns "name: message" per ES2026 §20.5.3.4
 // ============================================================================
 
 fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
     // Get 'this' value (stored at base_reg - 1 in the value stack)
     TVal this_val = ctx.regs[ctx.base_reg - 1];
 
-    // ECMA-262 §19.5.3.4 step 2-3: if `this` is not an Object, throw a TypeError.
+    // ES2026 §20.5.3.4 steps 2-3: if `this` is not an Object, throw a TypeError.
     // (Covers Error.prototype.toString.call(undefined) and calling it as a
     // plain function with no receiver.)
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
@@ -594,17 +594,17 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
     {
         HObject* obj = (HObject*)this_val.get_heapptr();
 
-        // ECMA-262 §19.5.3.4 step 3: let name be ? Get(O, "name"). We must use a
+        // ES2026 §20.5.3.4 step 3: let name be ? Get(O, "name"). We must use a
         // full [[Get]] (not get_prop_proto) so accessor getters on the
         // prototype chain are invoked, and so their throws propagate via
-        // ctx.should_throw per ECMA-262 §25.4.1.5 step 7 (test262 get-throws).
+        // ctx.should_throw (test262 get-throws).
         HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
         TVal? name_prop = builtins_generic_get(obj, name_key, ctx);
         if (ctx.should_throw) return;
         if (try nv = name_prop) {
             if (!nv.is_undefined()) {
-                // ECMA-262 §19.5.3.4 step 4: ? ToString(name), ToString on a
-                // Symbol must throw TypeError per ECMA-262 §7.1.4, and on an
+                // ES2026 §20.5.3.4 step 4: ? ToString(name); ToString on a
+                // Symbol must throw TypeError per ES2026 §7.1.17, and on an
                 // Object must invoke toPrimitive (h.string/valueOf) first per
                 // §7.1.1. builtin_to_string_vm handles both; builtin_to_string
                 // would silently stringify a Symbol as "Symbol(desc)".
@@ -614,7 +614,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
             }
         }
 
-        // ECMA-262 §19.5.3.4 step 5: let msg be ? Get(O, "message"); step 6: ? ToString(msg)
+        // ES2026 §20.5.3.4 step 5: let msg be ? Get(O, "message"); step 6: ? ToString(msg)
         HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
         TVal? msg_prop = builtins_generic_get(obj, msg_key, ctx);
         if (ctx.should_throw) return;
@@ -643,7 +643,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
     }
 }
 // ============================================================================
-// Error.captureStackTrace, V8/SpiderMonkey extension (ECMA-262 §19.5.2.1 stub)
+// Error.captureStackTrace, V8/SpiderMonkey extension (non-standard)
 // ============================================================================
 
 fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
@@ -738,7 +738,7 @@ fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
 }
 
 // SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
-// ECMA-262 §7.3.37, specialised for "stack" on Error.prototype.
+// ES2026 §7.3.7 CreateNonEnumerableDataPropertyOrThrow, specialised for "stack" on Error.prototype.
 //   1. If thisValue is not an Object, throw a TypeError exception.
 //   2. If SameValue(thisValue, home) is true, throw a TypeError exception
 //      (emulates assignment to a non-writable data property on home).
@@ -797,7 +797,7 @@ fn void error_setter_ignores_prototype_properties(BuiltinContext* ctx, HObject* 
 }
 
 // ============================================================================
-// Error.isError, ECMA-262 §20.5.2.2
+// Error.isError, ES2026 §20.5.2.1
 // ============================================================================
 
 // Error.isError(arg), true iff arg is an object carrying the [[ErrorData]]
@@ -821,7 +821,7 @@ fn void builtin_error_isError(BuiltinContext* ctx) {
 
 // Helper: create a prototype object for an error type.
 // proto_parent is the [[Prototype]] (e.g. Error.prototype for subclasses).
-// The prototype is an ordinary object (ObjClass.OBJECT) per ECMA-262 §19.5.6.3,
+// The prototype is an ordinary object (ObjClass.OBJECT) per ES2026 §20.5.6.3,
 // so it must not be an Error instance itself.
 fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] name_str) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -948,7 +948,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     }
 
     // --- Register NativeError constructors as proper HObjects ---
-    // Per ECMA-262 §19.5.6.1: [[Prototype]] of each NativeError constructor is the Error constructor.
+    // Per ES2026 §20.5.6.1: [[Prototype]] of each NativeError constructor is the Error constructor.
     // Each has an own "prototype" property (NWC) pointing to its prototype object.
 
     if (!register_native_error_ctor(global_env, heap, "TypeError",       Builtin.TYPE_ERROR.ordinal,       type_err_proto,   err_ctor)) return false;

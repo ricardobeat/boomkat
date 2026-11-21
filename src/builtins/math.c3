@@ -59,12 +59,12 @@ fn void builtin_math_round(BuiltinContext* ctx) {
 
 // Math.round of a number, which optimized code also calls.
 fn double math_round(double x) {
-    // ECMA-262 §15.8.2.15: round half away from zero
+    // ES2026 §21.3.2.29: round half away from zero
     if (math::is_nan(x)) return double::nan;
     if (math::is_inf(x) || x == 0.0) return x;
-    // Per ECMA-262 §20.2.2.34: Math.round(x) for 0 < x < 0.5 returns +0
+    // Per ES2026 §21.3.2.29: Math.round(x) for 0 < x < 0.5 returns +0
     if (x > 0.0 && x < 0.5) return 0.0;
-    // Per ECMA-262 §20.2.2.34: Math.round(x) for -0.5 ≤ x ≤ -0 returns -0
+    // Per ES2026 §21.3.2.29: Math.round(x) for -0.5 ≤ x ≤ -0 returns -0
     if (x < 0.0 && x >= -0.5) return -0.0;
     // Round half away from zero
     double frac = x - math::floor(x);
@@ -78,7 +78,7 @@ fn void builtin_math_max(BuiltinContext* ctx) {
     }
     double max = math_arg(ctx, 0);
     if (ctx.should_throw) return;
-    // ECMA-262 §20.2.2.24: if any argument is NaN, the result is NaN
+    // ES2026 §21.3.2.25: if any argument is NaN, the result is NaN
     for (ushort i = 1; i < ctx.argc; i++) {
         double v = math_arg(ctx, i);
         // Coercing an argument can throw, and each further argument coerced
@@ -111,7 +111,7 @@ fn void builtin_math_min(BuiltinContext* ctx) {
     }
     double min = math_arg(ctx, 0);
     if (ctx.should_throw) return;
-    // ECMA-262 §20.2.2.25: if any argument is NaN, the result is NaN
+    // ES2026 §21.3.2.26: if any argument is NaN, the result is NaN
     for (ushort i = 1; i < ctx.argc; i++) {
         double v = math_arg(ctx, i);
         // Coercing an argument can throw, and each further argument coerced
@@ -145,7 +145,7 @@ fn void builtin_math_pow(BuiltinContext* ctx) {
 
 // Math.pow of two numbers, which optimized code also calls.
 fn double math_pow_js(double x, double y) {
-    // ECMA-262 §20.2.2.26 Math.pow(x, y):
+    // ES2026 §21.3.2.27 Math.pow(x, y):
     // 1. If y is +0 or -0, the result is 1, even if x is NaN
     // 2. If y is NaN, the result is NaN
     // 3. If |x| is 1 and y is ±∞, the result is NaN
@@ -274,7 +274,7 @@ fn void builtin_math_cbrt(BuiltinContext* ctx) {
 }
 
 fn void builtin_math_hypot(BuiltinContext* ctx) {
-    // ECMA-262 §20.2.2.18 Math.hypot(...):
+    // ES2026 §21.3.2.19 Math.hypot(...):
     // - Coerce all args to Number FIRST (in argument order)
     // - If any coercion throws, propagate the throw immediately
     // - After successful coercion: if any arg was +∞ or -∞, return +∞

@@ -688,10 +688,9 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
     DestructIters iters = { .states = mem::new_array(DestructIterState, (sz)count), .outermost = 0xFFFF };
     defer mem::free(iters.states);
 
-    // Pre-scan: allocate persistent registers before any iterator setup. Rest
-    // group_regs must sit below callee_reg to survive the per-iteration CALL
-    // frame (see plan 042/043). Also note whether any array binds exist, which
-    // decides the IteratorClose TRY guard.
+    // Pre-scan: allocate persistent registers before any iterator setup so
+    // rest group_regs sit below callee_reg and survive per-iteration CALL frames.
+    // Also note whether any array binds exist for the IteratorClose TRY guard.
     bool has_array_binds = false;
     for (uint di = 0; di < count; di++) {
         binds[di].resolve_probe_reg = 0xFFFF;
@@ -1083,21 +1082,10 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
 fn void CompilerContext.record_eval_var_name(&self, char[] raw_name) {
     HString* hs = ((Heap*)self.heap).str_intern(raw_name);
     uint ni = self.add_string_constant_hstr(hs);
-    for (uint k = 0; k < self.eval_var_coll_count; k++) {
-        if (self.eval_var_coll_idxs[k] == ni) return;
-    }
-    if (self.eval_var_coll_count >= self.eval_var_coll_cap) {
-        uint new_cap = self.eval_var_coll_cap == 0 ? 16 : self.eval_var_coll_cap * 2;
-        void* pn = ((Heap*)self.heap).realloc_func(((Heap*)self.heap).heap_udata,
-            self.eval_var_coll_idxs, (usz)(new_cap * 4));
-        if (pn == null) return;
-        self.eval_var_coll_idxs = (uint*)pn;
-        self.eval_var_coll_cap = new_cap;
-    }
-    self.eval_var_coll_idxs[self.eval_var_coll_count++] = ni;
+    if (!self.eval_var_coll_idxs.contains(ni)) self.eval_var_coll_idxs.push(ni);
 }
 
-fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global, bool b33_record = false) {
+fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global) {
     if (self.eval_mode) { self.record_eval_var_name(raw_name); }
     // Intern the name so every later use shares one canonical copy.
     HString* var_hstr = ((Heap*)self.heap).str_intern(raw_name);
@@ -1139,7 +1127,7 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     // the var binding, so reuse it. A block-scoped entry is not the var binding,
     // so an exempt block must still declare it. Only a VAR or parameter entry
     // proves the binding exists.
-    if (try _existing_b33 = self.find_local_reg(var_name)) {
+    if (try _existing = self.find_local_reg(var_name)) {
         self.has_local_bindings = true;
         return;
     }
@@ -1153,14 +1141,7 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     }
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
     uint var_name_idx = self.add_string_constant(var_name);
-    uint hoist_pc = self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
-    // block() may withdraw a B.3.3 entry init when the block is exempt (a
-    // same-named `let` is visible, or a formal or arguments). It then NOPs this
-    // DECLVAR_HOIST and erases the scope entry. The instruction index is recorded
-    // by name for that.
-    if (b33_record) {
-        self.record_b33_hoist(var_name, (uint)var_reg, hoist_pc);
-    }
+    self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
     // At global scope, var bindings are normally env-resident (accessed via
     // GETGLOBAL/PUTGLOBAL); the register is only a temporary DECLVAR source.
     // Free it immediately so 500+ var declarations don't exhaust the register
@@ -1172,7 +1153,7 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
 // Emit deferred body-scope functions after entering the body's lexical
 // scope. Keep the list so generation can skip their declaration nodes.
 fn void CompilerContext.emit_hoisted_fn_decls(&self) {
-    if (self.hoisted_defer_count == 0 || self.hoisted_defer_emitted) return;
+    if (self.hoisted_defers.len == 0 || self.hoisted_defer_emitted) return;
     // The list is not cleared: function_declaration reads it to skip those
     // declarations, all of which are reached after this runs. The flag stops a
     // nested block from repeating the emission.
@@ -1181,16 +1162,13 @@ fn void CompilerContext.emit_hoisted_fn_decls(&self) {
     // in reverse for the CanDeclareGlobalFunction check, which throws a TypeError
     // on a non-definable name (e.g. `function NaN(){}`). Doing it at runtime in
     // this order aborts the eval before earlier declarations reach the global env.
-    for (ushort di = (ushort)(self.hoisted_defer_count); di > 0; di--) {
-        ushort idx = (ushort)(di - 1);
-        self.emit_a_bc(Opcode.CLOSURE, (uint)self.hoisted_defer_regs[idx],
-                       self.hoisted_defer_inner_idxs[idx]);
+    foreach_r (d : self.hoisted_defers.array_view()) {
+        self.emit_a_bc(Opcode.CLOSURE, (uint)d.reg, d.inner_idx);
         // Use DECLGLOBALFUNC, not DECLVAR, so the binding gets function-declaration
         // attributes: inside a function body it is non-configurable (so sloppy
         // `delete f` returns false), and on the global object the descriptor
         // follows CreateGlobalFunctionBinding.
-        self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)self.hoisted_defer_regs[idx],
-                       self.hoisted_defer_name_idxs[idx]);
+        self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)d.reg, d.name_idx);
     }
 }
 
@@ -1264,25 +1242,8 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
         return self.fail("reserved word cannot be used as a binding identifier")~;
     }
 
+    // A duplicate replaces the earlier declaration's entry below: the later declaration wins.
     bool already = !self.add_hoisted_fn(fn_name);
-    if (already) {
-        // A duplicate: the later declaration wins, so only the last one is compiled and instantiated.
-        bool dup_known = false;
-        for (uint di = 0; di < self.hoisted_defer_count; di++) {
-            if (str_eq(self.hoisted_defer_names[di], fn_name)) {
-                dup_known = true;
-                break;
-            }
-        }
-        if (!dup_known) {
-            self.ensure_hoisted_defer_cap();
-            if (self.hoisted_defer_count < self.hoisted_defer_cap) {
-                HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
-                self.hoisted_defer_names[self.hoisted_defer_count] = self.name_text(dup_hstr);
-                self.hoisted_defer_count++;
-            }
-        }
-    }
 
     bool saved_gen = self.is_generator;
     bool saved_user_gen = self.is_user_generator;
@@ -1327,24 +1288,24 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
 
     // Only a repeated name has an entry to replace.
     bool recorded = false;
-    for (uint di = 0; already && di < self.hoisted_defer_count; di++) {
-        if (str_eq(self.hoisted_defer_names[di], fn_name2)) {
-            self.hoisted_defer_regs[di] = func_reg;
-            self.hoisted_defer_inner_idxs[di] = inner_idx;
-            self.hoisted_defer_name_idxs[di] = name_idx;
-            recorded = true;
-            break;
+    if (already) {
+        foreach (&d : self.hoisted_defers.array_view()) {
+            if (str_eq(d.name, fn_name2)) {
+                d.reg = func_reg;
+                d.inner_idx = inner_idx;
+                d.name_idx = name_idx;
+                recorded = true;
+                break;
+            }
         }
     }
     if (!recorded) {
-        self.ensure_hoisted_defer_cap();
-        if (self.hoisted_defer_count < self.hoisted_defer_cap) {
-            self.hoisted_defer_names[self.hoisted_defer_count] = fn_name2;
-            self.hoisted_defer_regs[self.hoisted_defer_count] = func_reg;
-            self.hoisted_defer_inner_idxs[self.hoisted_defer_count] = inner_idx;
-            self.hoisted_defer_name_idxs[self.hoisted_defer_count] = name_idx;
-            self.hoisted_defer_count++;
-        }
+        self.hoisted_defers.push({
+            .name = fn_name2,
+            .reg = func_reg,
+            .inner_idx = inner_idx,
+            .name_idx = name_idx,
+        });
     }
 }
 

@@ -142,13 +142,12 @@ fn void build_await_liveness(CompilerContext* ctx, CompiledFunction* func, Heap*
     usz arena_words = set_count * (usz)word_count;
     uint* arena = (uint*)heap.alloc_func(heap.heap_udata, arena_words * uint::size);
     if (arena == null) return;
+    defer heap.free_func(heap.heap_udata, arena);
     mem::clear(arena, (sz)(arena_words * uint::size));
 
     RegSet* sets = (RegSet*)heap.alloc_func(heap.heap_udata, set_count * RegSet::size);
-    if (sets == null) {
-        heap.free_func(heap.heap_udata, arena);
-        return;
-    }
+    if (sets == null) return;
+    defer heap.free_func(heap.heap_udata, sets);
     for (usz i = 0; i < set_count; i++) {
         sets[i].words = arena + i * (usz)word_count;
         sets[i].word_count = word_count;
@@ -183,7 +182,4 @@ fn void build_await_liveness(CompilerContext* ctx, CompiledFunction* func, Heap*
         func.await_live = entries;
         func.await_live_count = await_count;
     }
-
-    heap.free_func(heap.heap_udata, sets);
-    heap.free_func(heap.heap_udata, arena);
 }

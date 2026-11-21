@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Values, scopes, and errors in C · boomkat docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="site-head">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 12 12" width="18" height="18" shape-rendering="crispEdges" aria-hidden="true"><g fill="currentColor"><rect x="3" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="2" y="1" width="2" height="1"/><rect x="8" y="1" width="2" height="1"/><rect x="2" y="2" width="8" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="1" y="7" width="2" height="1"/><rect x="9" y="7" width="2" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="2" y="9" width="8" height="1"/></g><g fill="currentColor" opacity=".4"><rect x="5" y="6" width="2" height="1"/></g></svg>
+      <span>boomkat</span>
+    </a>
+    <nav class="nav-links">
+      <a href="../tutorials/first-script.html">tutorials</a>
+      <a href="build-profiles.html" aria-current="page">how-to</a>
+      <a href="../reference/c-api.html">reference</a>
+      <a href="../architecture/architecture.html">architecture</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <p class="label">how-to guide</p>
+    <h1>Manage values, local scopes, and errors in C</h1>
+    <p class="lede">
+      Avoid manual <code>bk_free_value</code> calls in loops, inspect thrown exceptions, and share one runtime across multiple realms.
+    </p>
+
+    <div class="band" aria-hidden="true"></div>
+
+    <h2>Use a local scope for temporary values</h2>
+    <p>
+      Outside a local scope, value-returning calls allocate owned registry roots that must be freed with <code>bk_free_value</code>.
+      Open a local scope to release all temporary handles at once, and escape the single handle you want to keep:
+    </p>
+    <pre class="ink"><code><span class="ink-s2">bk_scope</span> <span class="ink-s5">scope</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_scope_open</span>(<span class="ink-s5">js</span>);
+<span class="ink-s2">for</span> (<span class="ink-s2">int</span> <span class="ink-s5">i</span> <span class="ink-s2">=</span> <span class="ink-s5">0</span>; <span class="ink-s5">i</span> <span class="ink-s2">&lt;</span> <span class="ink-s5">1000</span>; <span class="ink-s5">i</span><span class="ink-s2">++</span>) {
+    <span class="ink-s2">bk_value</span> <span class="ink-s5">n</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_new_number</span>(<span class="ink-s5">js</span>, <span class="ink-s5">i</span>);
+    <span class="ink-s5">bk_set_property_uint32</span>(<span class="ink-s5">js</span>, <span class="ink-s5">array</span>, <span class="ink-s5">i</span>, <span class="ink-s5">n</span>);
+}
+<span class="ink-s2">bk_value</span> <span class="ink-s5">result</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_scope_close_escape</span>(<span class="ink-s5">js</span>, <span class="ink-s5">scope</span>, <span class="ink-s5">array</span>);</code></pre>
+    <p>
+      A scope holds up to 131,072 values. For larger loops, open a nested scope inside the loop body.
+      Immediate handles (<code>BK_UNDEFINED</code>, <code>BK_NULL</code>, <code>BK_TRUE</code>, <code>BK_FALSE</code>) never consume a slot.
+    </p>
+
+    <h2>Check and take exceptions</h2>
+    <p>Value-returning functions return <code>BK_EXCEPTION</code> on failure. Check with <code>bk_is_exception</code> and take the thrown value with <code>bk_get_exception</code>:</p>
+    <pre class="ink"><code><span class="ink-s2">bk_value</span> <span class="ink-s5">v</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_eval</span>(<span class="ink-s5">js</span>, <span class="ink-s9">&quot;throw new TypeError('bad input')&quot;</span>);
+<span class="ink-s2">if</span> (<span class="ink-s5">bk_is_exception</span>(<span class="ink-s5">v</span>)) {
+    <span class="ink-s2">bk_value</span> <span class="ink-s5">err</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_get_exception</span>(<span class="ink-s5">js</span>);
+    <span class="ink-s5">fprintf</span>(<span class="ink-s5">stderr</span>, <span class="ink-s9">&quot;%s\n&quot;</span>, <span class="ink-s5">bk_cstr</span>(<span class="ink-s5">js</span>, <span class="ink-s5">err</span>, <span class="ink-s5">NULL</span>));
+    <span class="ink-s5">bk_free_value</span>(<span class="ink-s5">js</span>, <span class="ink-s5">err</span>);
+}</code></pre>
+
+    <h2>Share one runtime across multiple realms</h2>
+    <p>
+      Create a <code>bk_runtime</code> explicitly when you need multiple independent global objects (realms) that share a heap and can pass values without cloning:
+    </p>
+    <pre class="ink"><code><span class="ink-s2">bk_runtime</span> <span class="ink-s5">rt</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_new_runtime</span>(<span class="ink-s5">NULL</span>);
+<span class="ink-s2">bk_ctx</span> <span class="ink-s5">app</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_new_context</span>(<span class="ink-s5">rt</span>, <span class="ink-s5">NULL</span>);
+<span class="ink-s2">bk_ctx</span> <span class="ink-s5">other</span> <span class="ink-s2">=</span> <span class="ink-s5">bk_new_context</span>(<span class="ink-s5">rt</span>, <span class="ink-s5">NULL</span>);
+
+<span class="ink-s0">/* evaluate in app and other */</span>
+
+<span class="ink-s5">bk_free_context</span>(<span class="ink-s5">other</span>);
+<span class="ink-s5">bk_free_context</span>(<span class="ink-s5">app</span>);
+<span class="ink-s5">bk_free_runtime</span>(<span class="ink-s5">rt</span>);</code></pre>
+    <p class="note">
+      Realms share memory and are not a security boundary. For hard isolation or concurrent threads, create separate runtimes.
+    </p>
+
+    <h2>See also</h2>
+    <ul>
+      <li><a href="../reference/c-api.html">C embedding API reference</a></li>
+    </ul>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <div class="foot-bar">
+        <span><a href="https://tomasi.studio/">&copy; 2026 tomasi.studio</a></span>
+        <span class="eof">eof</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -241,6 +241,7 @@
       "single-module": true,
       "sanitize": "address",
       "features": [
+        "VMEM_TEMP",
         "PRINT",
         "CONSOLE",
         "INTL",
@@ -259,6 +260,7 @@
       "single-module": true,
       "sanitize": "address",
       "features": [
+        "VMEM_TEMP",
         "GC_STRESS",
         "GC_VERIFY",
         "POOL_BYPASS",
@@ -793,6 +795,7 @@
       "single-module": true,
       "sanitize": "address",
       "features": [
+        "VMEM_TEMP",
         "PRINT",
         "CONSOLE",
         "TEST262_HELPERS",
@@ -812,6 +815,7 @@
       "single-module": true,
       "sanitize": "address",
       "features": [
+        "VMEM_TEMP",
         "HEAP_VERIFY",
         "SCAN_POISON",
         "PRINT",
@@ -1111,7 +1115,8 @@
       "opt": "O2",
       "single-module": true,
       "features": [
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "MEMORY_ASSERTS"
       ]
     },
     "embedding_lifecycle_asan": {
@@ -1125,6 +1130,8 @@
       "debug-info": "full",
       "sanitize": "address",
       "features": [
+        "VMEM_TEMP",
+        "MEMORY_ASSERTS",
         "GC_STRESS"
       ]
     },

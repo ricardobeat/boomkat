@@ -151,87 +151,88 @@ fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, b
     //
     // So un-mark the finally bodies of each try, then re-mark whatever an
     // *enclosing* try still protects.
-    bool[] tail_in_try = mem::new_array(bool, (sz)code_count);
-    defer mem::free(tail_in_try);
-    for (uint i = 0; i < code_count; i++) { tail_in_try[i] = in_try[i]; }
-    tailcall_unmark_finally_bodies(code, code_count, tail_in_try);
+    @pool() {
+        bool[] tail_in_try = alloc::alloc_array(tmem, bool, (sz)code_count);
+        tail_in_try[..] = in_try[:code_count];
+        tailcall_unmark_finally_bodies(code, code_count, tail_in_try);
 
-    foreach (i : tail_pcs) {
-        if (i + 1 >= code_count) { continue; }
-        Instruction call_insn = code[i];
-        Opcode tail_op = tailcall_form(call_insn.op);
-        if (tail_op == Opcode.NOP) { continue; }
+        foreach (i : tail_pcs) {
+            if (i + 1 >= code_count) { continue; }
+            Instruction call_insn = code[i];
+            Opcode tail_op = tailcall_form(call_insn.op);
+            if (tail_op == Opcode.NOP) { continue; }
 
-        // The RET must follow the call, either immediately or through a single
-        // register copy. The copy is what a conditional in tail position emits:
-        //
-        //     return c ? a : f(x);   ->   CALL_VAR r4 ; LDREG r3 = r4 ; RET r3
-        //
-        // because both arms must leave their value in one register. Both arms
-        // of a conditional are in tail position, so seeing through exactly one
-        // LDREG that moves the call's own result is required, not an
-        // optimization. Nothing else may intervene: a NOP is not skipped
-        // (NOP compaction has not run yet) and any other instruction could
-        // observe or overwrite the result.
-        uint ret_idx = i + 1;
-        uint result_reg = call_insn.a;
-        Instruction next_insn = code[ret_idx];
-        bool via_copy = false;
-        if (next_insn.op == Opcode.LDREG && next_insn.b == result_reg) {
-            // The copy's destination becomes the register RET must name.
-            result_reg = next_insn.a;
-            ret_idx = i + 2;
-            if (ret_idx >= code_count) { continue; }
-            // Control must not enter between the call and its copy: that would
-            // reach the copy with a value this call never produced.
-            if (jump_targets[i + 1]) { continue; }
-            via_copy = true;
+            // The RET must follow the call, either immediately or through a single
+            // register copy. The copy is what a conditional in tail position emits:
+            //
+            //     return c ? a : f(x);   ->   CALL_VAR r4 ; LDREG r3 = r4 ; RET r3
+            //
+            // because both arms must leave their value in one register. Both arms
+            // of a conditional are in tail position, so seeing through exactly one
+            // LDREG that moves the call's own result is required, not an
+            // optimization. Nothing else may intervene: a NOP is not skipped
+            // (NOP compaction has not run yet) and any other instruction could
+            // observe or overwrite the result.
+            uint ret_idx = i + 1;
+            uint result_reg = call_insn.a;
+            Instruction next_insn = code[ret_idx];
+            bool via_copy = false;
+            if (next_insn.op == Opcode.LDREG && next_insn.b == result_reg) {
+                // The copy's destination becomes the register RET must name.
+                result_reg = next_insn.a;
+                ret_idx = i + 2;
+                if (ret_idx >= code_count) { continue; }
+                // Control must not enter between the call and its copy: that would
+                // reach the copy with a value this call never produced.
+                if (jump_targets[i + 1]) { continue; }
+                via_copy = true;
+            }
+
+            // The copy may be followed by an unconditional JUMP to the shared RET
+            // rather than the RET itself. That is what a conditional whose call is
+            // in the FIRST arm emits: the arm jumps over the other arm to the
+            // common return. Following exactly one such jump is still the same
+            // tail position — nothing executes between the call and the return.
+            if (ret_idx < code_count && code[ret_idx].op == Opcode.JUMP) {
+                int off = code[ret_idx].get_sabc();
+                int tgt = (int)ret_idx + 1 + off;
+                if (tgt < 0 || (uint)tgt >= code_count) { continue; }
+                ret_idx = (uint)tgt;
+            }
+
+            Instruction ret_insn = code[ret_idx];
+            if (ret_insn.op != Opcode.RET) { continue; }
+
+            // The RET must return exactly the value this call produced.
+            if (ret_insn.a != result_reg) { continue; }
+
+            // Control must not be able to arrive at the call itself from
+            // elsewhere: a jump into it would reach a frame this pass has already
+            // decided is disposable.
+            if (jump_targets[i]) { continue; }
+
+            // The RET may be a jump target when the call reaches it through its own
+            // copy: that is the merge point of a conditional, where the other arm
+            // jumps in to return its own value through the same register. This path
+            // still returns exactly this call's result, and the rewrite only affects
+            // this path — the other arm reaches the RET, which is still there.
+            // Without an intervening copy there is no such merge: a jump straight to
+            // the RET would return whatever the register happened to hold.
+            if (!via_copy && jump_targets[ret_idx]) { continue; }
+
+            // A try/catch/finally region still owns the frame.
+            if (tail_in_try[i] || tail_in_try[ret_idx]) { continue; }
+
+            // Only the call opcode changes. The RET stays: a TAILCALL whose
+            // callee turns out to be ineligible (a builtin, bound function,
+            // generator or class constructor, or a caller frame that still owns
+            // state) runs as an ordinary call and falls through to it, and a
+            // successful tail call never reaches it — the reused frame returns
+            // directly to the caller's caller. Keeping it also means this pass
+            // cannot change behaviour if the VM declines every tail call.
+            code[i] = bytecode::make_abc(tail_op, call_insn.a, call_insn.b, call_insn.c);
         }
-
-        // The copy may be followed by an unconditional JUMP to the shared RET
-        // rather than the RET itself. That is what a conditional whose call is
-        // in the FIRST arm emits: the arm jumps over the other arm to the
-        // common return. Following exactly one such jump is still the same
-        // tail position — nothing executes between the call and the return.
-        if (ret_idx < code_count && code[ret_idx].op == Opcode.JUMP) {
-            int off = code[ret_idx].get_sabc();
-            int tgt = (int)ret_idx + 1 + off;
-            if (tgt < 0 || (uint)tgt >= code_count) { continue; }
-            ret_idx = (uint)tgt;
-        }
-
-        Instruction ret_insn = code[ret_idx];
-        if (ret_insn.op != Opcode.RET) { continue; }
-
-        // The RET must return exactly the value this call produced.
-        if (ret_insn.a != result_reg) { continue; }
-
-        // Control must not be able to arrive at the call itself from
-        // elsewhere: a jump into it would reach a frame this pass has already
-        // decided is disposable.
-        if (jump_targets[i]) { continue; }
-
-        // The RET may be a jump target when the call reaches it through its own
-        // copy: that is the merge point of a conditional, where the other arm
-        // jumps in to return its own value through the same register. This path
-        // still returns exactly this call's result, and the rewrite only affects
-        // this path — the other arm reaches the RET, which is still there.
-        // Without an intervening copy there is no such merge: a jump straight to
-        // the RET would return whatever the register happened to hold.
-        if (!via_copy && jump_targets[ret_idx]) { continue; }
-
-        // A try/catch/finally region still owns the frame.
-        if (tail_in_try[i] || tail_in_try[ret_idx]) { continue; }
-
-        // Only the call opcode changes. The RET stays: a TAILCALL whose
-        // callee turns out to be ineligible (a builtin, bound function,
-        // generator or class constructor, or a caller frame that still owns
-        // state) runs as an ordinary call and falls through to it, and a
-        // successful tail call never reaches it — the reused frame returns
-        // directly to the caller's caller. Keeping it also means this pass
-        // cannot change behaviour if the VM declines every tail call.
-        code[i] = bytecode::make_abc(tail_op, call_insn.a, call_insn.b, call_insn.c);
-    }
+    };
 }
 
 // Return threading: move each RET to the instruction that leads to it.

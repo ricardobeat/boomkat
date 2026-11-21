@@ -15,8 +15,8 @@ rng = random.Random(42)
 results = {}
 for benchmark in ['loop', 'function_call', 'property_lookup', 'ic_proto', 'array']:
     source = root / 'test' / 'benchmarks' / ('bench_' + benchmark + '.js')
-    image = out / (benchmark + '.bkbc')
-    old_image = out / (benchmark + '.reference.bkbc')
+    image = out / (benchmark + '.bk')
+    old_image = out / (benchmark + '.reference.bk')
     subprocess.run([root / 'out/core-compiler/boomkat_tiny_compile', '--compile', image, source],
                    check=True, capture_output=True)
     # These benchmark programs use only the common API subset. Their code is

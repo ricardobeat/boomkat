@@ -1008,7 +1008,6 @@ fn bool Parser.modifier_applies(&self, bool star_follows_ok) {
     }
 }
 
-// A property key spelled `__proto__`: a string node whose text is `__proto__`.
 fn bool Parser.is_proto_key(&self, uint key) @inline {
     if (self.ast.tags.data[key] != NodeTag.STRING) return false;
     return self.ast.atoms.equals(self.ast.lhs.data[key], "__proto__");

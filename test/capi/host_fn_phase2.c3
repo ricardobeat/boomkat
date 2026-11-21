@@ -1,11 +1,7 @@
-// Phase 2 host-function tests: the call scope, the accessor API, throwing,
-// and value round-tripping.
+// Host-function call scope, accessor API, throwing, and value round-tripping.
 //
-// Everything here goes through builtins::host_* rather than reading
-// ctx.regs directly, which is what the C ABI will layer handles over. The
-// point of the phase is that the GC design holds: every test must also pass
-// under the GC_STRESS + ASan target, where a collection happens at every
-// allocation.
+// Goes through builtins::host_* rather than reading ctx.regs directly, and
+// runs under GC_STRESS + ASan to verify call-scope rooting across allocations.
 module host_fn_phase2;
 
 import boomkat::builtins;

@@ -20,7 +20,7 @@ import std::math;
 // Lazily initialise a hidden field-init context (__field_init__ /
 // __static_init__): a fresh CompilerContext sharing the lexer and heap,
 // wired to see the class's private-name scope, with initializers forbidden
-// from using `arguments` or `super()` (ECMA-262 §15.7.10). Public and private
+// from using `arguments` or `super()` (ES2026 §15.7.1). Public and private
 // field initializers share one context per class (per static-ness) so
 // initialization order matches source order.
 fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx, bool is_static) {
@@ -106,7 +106,7 @@ fn char[] CompilerContext.class_binding_name(&self, char[] prefix, uint ordinal)
     return self.intern_slot_name(name);
 }
 
-// Format a numeric literal's canonical property-key text (ECMA-262 §7.1.12.1
+// Format a numeric literal's canonical property-key text (ES2026 §6.1.6.1.20
 // ToString applied to the NumericValue) into `buf`. Numeric literal tokens
 // are always finite. Used for field-name inference on numeric keys
 // (`class C { 0x10 = fn }` → fn.name "16").
@@ -177,7 +177,7 @@ fn void? CompilerContext.set_numeric_inferred_name(&self, Token key_tok, bool is
 // has_super: if true, creates `constructor(...args) { super(...args); }`
 // otherwise creates `constructor() {}`.
 // class_name: when non-empty, used as the constructor's name property
-// (per ECMA-262 §14.5.14 step 17 + SetFunctionName, a class declaration's
+// (per ES2026 §15.7.14 + SetFunctionName, a class declaration's
 // default constructor inherits the class name as its .name).
 fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] class_name, char[] super_name) {
     void* raw = hp.alloc_func(hp.heap_udata, CompiledFunction::size);
@@ -185,17 +185,18 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     mem::clear(raw, (sz)(CompiledFunction::size));
 
     CompiledFunction* func = (CompiledFunction*)raw;
+    defer catch hp.free_compiled_func(func);
     func.flags.htype = HType.OBJECT;
     func.realm = hp.realm;
     func.flags.is_constructable = true;
     // Class constructors are strict code regardless of the enclosing
-    // script/function strictness (ECMA-262 §14.5.14 step 22). A default
+    // script/function strictness (ES2026 §15.7.14). A default
     // constructor produced by make_default_constructor inherits this from
     // Phase 1's `is_strict = true` in gen_class_body, so stamp
     // it here too. Without it, the poison-pill read of `caller` /
     // `arguments` on the class itself skips the throw and returns null.
     func.flags.is_strict = true;
-    // Class constructor: .prototype is non-configurable per ECMA-262 §14.5.14
+    // Class constructor: .prototype is non-configurable per ES2026 §15.7.14
     // step 25.  CLOSURE checks this flag and uses PROP_FLAGS_WENC (configurable=false).
     func.flags.is_class_ctor = true;
 
@@ -205,10 +206,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
         // `mem`, matching every other name_ptr/src_ptr site: free_compiled_funcs
         // releases these with mem::free and cannot tell the allocators apart.
         char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)class_name.len + 1)) ?? null;
-        if (name_heap == null) {
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (name_heap == null) return COMPILE_ERROR~;
         for (usz i = 0; i < class_name.len; i++) name_heap[i] = class_name[i];
         name_heap[class_name.len] = 0;
         func.name_ptr = name_heap;
@@ -224,10 +222,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
 
         // Create interned string constant for the super binding name
         HString* super_str = hp.str_intern(super_name);
-        if (super_str == null) {
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (super_str == null) return COMPILE_ERROR~;
         // Record it for Object.setPrototypeOf's class sync (object.c3),
         // which keeps the numbered binding in step with the constructor's
         // mutable [[Prototype]].
@@ -235,10 +230,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
         func.const_count = 1;
         usz const_bytes = (usz)func.const_count * TVal::size;
         func.constants = (TVal*)hp.alloc_func(hp.heap_udata, const_bytes);
-        if (func.constants == null) {
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (func.constants == null) return COMPILE_ERROR~;
         TVal super_tv;
         super_tv.set_string(super_str);
         func.constants[0] = super_tv;
@@ -254,11 +246,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
         func.code_count = 7;
         usz code_bytes = (usz)func.code_count * Instruction::size;
         func.code = (Instruction*)hp.alloc_func(hp.heap_udata, code_bytes);
-        if (func.code == null) {
-            hp.free_func(hp.heap_udata, func.constants);
-            hp.free_func(hp.heap_udata, raw);
-            return COMPILE_ERROR~;
-        }
+        if (func.code == null) return COMPILE_ERROR~;
 
         Instruction* c = func.code;
         c[0] = bytecode::make_abc(Opcode.PUSH_LEX, 0, 0, 0);
@@ -276,7 +264,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
 
         usz code_bytes = 3 * Instruction::size;
         void* code_raw = hp.alloc_func(hp.heap_udata, code_bytes);
-        if (code_raw == null) { hp.free_func(hp.heap_udata, raw); return COMPILE_ERROR~; }
+        if (code_raw == null) return COMPILE_ERROR~;
         func.code = (Instruction*)code_raw;
         func.code_count = 3;
 
@@ -321,10 +309,9 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     // like a var-vs-lexical redeclaration. Pop back to this mark once the
     // body is compiled and the PUTLEXes have been emitted.
     uint saved_scope_depth = self.scope_depth;
-    // ECMA-262 §15.4.1: a ClassBody is always strict code, regardless of the
-    // enclosing strictness. Phase 1 (plans/083): sloppy enclosing scripts now
-    // exist, so force is_strict = true for the class body and any nested
-    // method / static block that inherits it via compile_inner_function.
+    // ES2026 §11.2.2: a ClassBody is always strict code, regardless of the
+    // enclosing strictness. Force is_strict = true for the class body and any
+    // nested method / static block that inherits it via compile_inner_function.
     self.is_strict = true;
     self.lexer.set_strict(true);
     self.in_class_body = true;
@@ -358,7 +345,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     self.static_super_name_idx = static_super_name_idx;
 
     // __home_object__ = the class's own .prototype (the true [[HomeObject]]
-    // for an instance method, ECMA-262 §13.3.7.1), bound ONCE below after
+    // for an instance method, ES2026 §13.3.7.1), bound ONCE below after
     // proto_reg is created -- unconditionally, extends or not, unlike the
     // old __super__-based scheme this replaces for super.x/super[x] reads.
     // GetSuperBase = GETPROTO(__home_object__), evaluated fresh on every
@@ -371,7 +358,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     self.home_object_name_idx = home_object_name_idx;
 
     // For default-exported anonymous classes, the constructor's visible
-    // `.name` is the literal "default" (ECMA-262 §16.2.3.7); the binding
+    // `.name` is the literal "default" (ES2026 §16.2.3.7); the binding
     // name "*default*" is a compiler-private symbol.
     char[] ctor_runtime_name = is_default_export ? "default" : class_name;
 
@@ -379,12 +366,12 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     if (tree.field(class_rec, ast::CLS_HERITAGE) != 0) {
         ushort? heritage_reg = self.gen_expr(tree.field(class_rec, ast::CLS_HERITAGE), 0)!.reg;
         base_reg = heritage_reg!;
-        // ECMA-262 §15.7.14 step 5.f: if superclass is not null and not a
+        // ES2026 §15.7.14: if superclass is not null and not a
         // constructor, throw TypeError BEFORE accessing .prototype.
         self.emit_abc(Opcode.CHKCTOR, (uint)base_reg, 0, 0);
         self.has_super_binding = true;
         // __super__ = Base, used only for super() constructor calls (which
-        // genuinely need the parent constructor itself, ECMA-262 §14.7.2
+        // genuinely need the parent constructor itself, ES2026 §15.7.14
         // GetSuperConstructor). super.x/super[x] property reads instead use
         // __home_object__ (bound below), not this binding.
         self.emit_abc(Opcode.LDREG, (uint)super_reg, (uint)base_reg, 0);
@@ -444,7 +431,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     // Fresh per class *evaluation*, this is what gives per-evaluation-
     // freshness for free. This must run before the member loop below because
     // a computed property key (`[expr]`) is evaluated immediately, in source
-    // order, at class-definition time (ECMA-262 §15.7.15 step 6.a.i), it can
+    // order, at class-definition time (ES2026 §15.7.14), it can
     // reference a private name (`[this.#m()]`) that is declared later in the
     // same class body, so the symbol/brand must already
     // exist in scope by then (test262 private-*-is-visible-in-computed-
@@ -471,19 +458,16 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         }
     }
 
-    // Instance field initializers compile into one hidden __field_init__
-    // function, in source order (plan 054 §2d). Created lazily on the first
-    // `#name = expr;` / `#name;` field so classes without fields pay no cost.
-    // Declared here (before the member loop, earlier than its original
-    // position) because private instance methods/accessors need it too,
-    // see immediately below.
+    // Instance field initializers and private instance methods/accessors
+    // compile into one hidden __field_init__ function in source order, created
+    // lazily on first use.
     CompilerContext field_init_ctx;
     // Initialized on first use; cleanup() skips anything never allocated.
     defer field_init_ctx.cleanup();
     bool has_field_init = false;
     uint field_count = 0;
 
-    // Private instance methods/accessors (ECMA-262 §7.3.28
+    // Private instance methods/accessors (ES2026 §7.3.28
     // PrivateMethodOrAccessorAdd): per spec these install into EVERY
     // instance's own [[PrivateElements]], not just the class prototype.
     // The prototype install (below, in the member-install loop) is a
@@ -593,7 +577,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     // Track constructor
     uint ctor_inner_idx = 0xFFFFFFFF;  // sentinel
 
-    // ECMA-262 §14.1.20 step 6.d: if the class has a static `name` method, the
+    // ES2026 §15.7.14: if the class has a static `name` method, the
     // constructor's auto-set name will be overridden by the static method
     // installation. Track it during generation so the constructor's name is
     // suppressed when a static name is present.
@@ -651,7 +635,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
 
             ushort init_reg;
             if (tree.rhs.data[member] != 0) {
-                // ECMA-262 §15.7.10 step 7 / DefineField step 7: an anonymous
+                // ES2026 §15.7.10 / §7.3.32 DefineField: an anonymous
                 // function definition initializer gets SetFunctionName with
                 // the private name, "#field" (hash included).
                 target_ctx.has_inferred_name = true;
@@ -687,7 +671,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             continue;
         }
 
-        // ECMA-262 §14.4: generator-method shorthand, `*m() { yield ... }`.
+        // ES2026 §15.5: generator-method shorthand, `*m() { yield ... }`.
         // Save the generator + async flags; they are only overridden right
         // before compiling the method body below. Keys generated before that
         // (identifier method names, `[expr]` computed keys) runs in the
@@ -783,7 +767,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         // shortcut `name_from_computed_string`): PropName of a computed key
         // is never statically "constructor" even when the key expression
         // evaluates to that string at runtime, so it's always an ordinary
-        // method (ECMA-262 §15.7.6 ConstructorMethod).
+        // method (ES2026 §15.7.3 ConstructorMethod).
         bool name_is_literal = !is_private_member && !has_computed_key && !name_from_computed_string;
         if (name_is_literal && str_eq(method_name.str_value, "constructor")) {
             if (!is_static && (is_getter || is_setter)) {
@@ -823,18 +807,14 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         // introducer. Resource/accessor proposal syntax is not implemented,
         // so reject this ambiguous form instead of accepting it via ASI.
 
-        // Public field branch (P7, plan 054 §7). Triggered when the element
-        // has a name (literal or computed-key, public or private-name) and
-        // is NOT followed by `(` (i.e. is not a method) and NOT a
-        // getter/setter. Identical shape for instance + static fields; the
-        // only knob is which `target_ctx` the install goes into and which
-        // `target` (proto vs ctor) the install writes to.
+        // Public or private class field (instance or static): a named element
+        // that is not a constructor, method, getter, or setter.
         bool is_public_field = !is_constructor
             && !is_getter && !is_setter
             && !is_generator_method && !is_async_method
             && (tree.tags.data[member] == NodeTag.CLASS_FIELD);
         if (is_public_field) {
-            // PropName early errors (ECMA-262 §15.7.1):
+            // PropName early errors (ES2026 §15.7.1):
             //  - FieldDefinition: PropName == "constructor"  → SyntaxError
             //  - staticFieldDefinition: PropName == "prototype" || "constructor"
             //  - ComputedPropertyName: NO early error (PropName is "")
@@ -918,7 +898,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
                     // self.inner_funcs[computed_key_inner_idx] when the
                     // computed key was generated. CLOSURE + CALL + TOPROPKEY
                     // (in-place ToPropertyKey coercion, must run at class
-                    // definition time per ECMA-262 §15.7.15 step 6.a.i so an
+                    // definition time per ES2026 §15.7.14 so an
                     // object-key that throws on toString throws NOW, not at
                     // per-instance init time).
                     fkey_reg = self.alloc_reg();
@@ -973,7 +953,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             target_ctx.inferred_name = {};
 
             // Field terminator: explicit `;`, the class body's `}`, or ASI at
-            // a line terminator (ECMA-262 §12.10.1). A same-line token with no
+            // a line terminator (ES2026 §12.10.1). A same-line token with no
             // separator (`accessor x = 1`) is a SyntaxError.
             target_ctx.gen_line_end(member);
 
@@ -1029,14 +1009,14 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             self.is_constructable = false;
         }
 
-        // ECMA-262 §14.5.13: starred methods cannot be constructors, getters, or
+        // ES2026 §15.7.1: starred methods cannot be constructors, getters, or
         // setters. Catch those before compile_inner_function so we get a clean
         // compile error instead of a miscompiled function.
         if (is_generator_method && (is_constructor || is_getter || is_setter)) {
             return COMPILE_ERROR~;
         }
 
-        // ECMA-262 §14.6: async methods cannot be constructors, getters, or
+        // ES2026 §15.7.1: async methods cannot be constructors, getters, or
         // setters either (`async constructor()`, `async get x()` are
         // SyntaxErrors).
         if (is_async_method && (is_constructor || is_getter || is_setter)) {
@@ -1053,10 +1033,10 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         self.is_user_generator = is_generator_method;
         self.is_async = is_async_method;
 
-        // ECMA-262 §14.5.13: getter/setter methods in class bodies have a name
+        // ES2026 §15.4: getter/setter methods in class bodies have a name
         // prefixed with "get " or "set " (matching object literal semantics).
         // For a computed key ([expr]) the name is the empty string per spec.
-        // The constructor method's name is special, per ECMA-262 §14.5.14
+        // The constructor method's name is special, per ES2026 §15.7.14
         // ClassDefinitionEvaluation + §14.3.7 DefineMethod, the constructor's
         // name is the className (passed via DefineMethod).  For an anonymous
         // class, that means the constructor's name is "" (per spec).
@@ -1117,7 +1097,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         // (__static_super__), not the prototype.
         bool saved_super_is_static_method = self.super_is_static_method;
         self.super_is_static_method = is_static;
-        // ECMA-262 §15.4.5: class MethodDefinitions use UniqueFormalParameters,
+        // ES2026 §15.4.1: class MethodDefinitions use UniqueFormalParameters,
         // duplicate names forbidden regardless of strictness. Force the
         // inner duplicate-name check on (compile_inner_function's
         // is_method_body parameter); the surrounding is_strict
@@ -1253,7 +1233,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
 
     // Retain the entire class source text on the constructor function so that
     // Function.prototype.toString returns the full `class ... { }` text when
-    // called on the class (ECMA-262 §19.2.3.5 / §14.6.3 ClassDefinitionEvaluation).
+    // called on the class (ES2026 §20.2.3.5 / §15.7.14 ClassDefinitionEvaluation).
     if (class_src_start != 0xFFFFFFFF
             && class_src_start < (uint)self.lexer.source.len
             && ctor_inner_idx < self.inner_func_count) {
@@ -1262,11 +1242,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         if (src_end > (uint)self.lexer.source.len) src_end = (uint)self.lexer.source.len;
         uint slen = src_end > class_src_start ? (src_end - class_src_start) : 0;
         if (slen > 0 && ast::index_state != null && ast::index_state.share_source(self.lexer.source) != null) {
-            if (ctor_cf.src_buf != null) {
-                bytecode::source_buf_release(ctor_cf.src_buf);
-            } else if (ctor_cf.src_ptr != null) {
-                mem::free(ctor_cf.src_ptr);
-            }
+            ctor_cf.release_source();
             ctor_cf.src_buf = ast::index_state.src_buf;
             ctor_cf.src_ptr = ctor_cf.src_buf.data + class_src_start;
             ctor_cf.src_len = slen;
@@ -1275,7 +1251,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             if (src_heap != null) {
                 for (uint i = 0; i < slen; i++) src_heap[i] = self.lexer.source[class_src_start + i];
                 src_heap[slen] = 0;
-                if (ctor_cf.src_ptr != null) mem::free(ctor_cf.src_ptr);
+                ctor_cf.release_source();
                 ctor_cf.src_ptr = src_heap;
                 ctor_cf.src_len = slen;
             }
@@ -1323,7 +1299,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     }
 
     // If extends, set proto.__proto__ = Base.prototype (or null for `extends null`).
-    // ECMA-262 §15.7.14 step 5.e: if superclass is null, protoParent=null,
+    // ES2026 §15.7.14: if superclass is null, protoParent=null,
     // constructorParent=%FunctionPrototype% (constructor already inherits it by default).
     if (base_reg != REG_NONE) {
         ushort base_proto_reg = self.alloc_reg();
@@ -1343,7 +1319,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             self.emit_abc(Opcode.GETPROP, (uint)base_proto_reg, (uint)base_reg, (uint)base_proto_key_reg);
             self.free_reg(base_proto_key_reg);
         }
-        // ECMA-262 §14.5.14 step 5.g.ii-iv: Type(protoParent) must be Object or Null.
+        // ES2026 §15.7.14: Type(protoParent) must be Object or Null.
         self.emit_abc(Opcode.CHK_PROT, (uint)base_proto_reg, 0, 0);
         self.emit_abc(Opcode.SETPROTO, (uint)proto_reg, (uint)base_proto_reg, 0);
         // ctor.__proto__ = Base (static inheritance chain)
@@ -1426,10 +1402,10 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         } else {
             // Both static and instance methods use CLASS_INITPROP
             // (DefinePropertyOrThrow semantics with non-enumerable flags).
-            // Per ECMA-262 §14.5.14 step 9, public class methods are
+            // Per ES2026 §15.7.14, public class methods are
             // {writable:true, enumerable:false, configurable:true}; private
             // methods (hidden-symbol key) are additionally non-writable and
-            // non-configurable per ECMA-262 §7.3.28, the CLASS_INITPROP
+            // non-configurable per ES2026 §7.3.28, the CLASS_INITPROP
             // handler picks the flag set from key.is_hidden().
             self.emit_abc(Opcode.CLASS_INITPROP, (uint)target_reg, (uint)key_reg, (uint)method_reg);
         }

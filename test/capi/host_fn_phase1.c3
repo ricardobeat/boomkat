@@ -1,9 +1,8 @@
-// Phase 1 host-function tests: dispatch through the reserved index range.
+// Host-function dispatch tests through the reserved index range.
 //
-// Registers host functions directly against the Heap (no C ABI yet, that is
-// Phase 3) and evaluates JS that calls them through every dispatch shape the
-// plan enumerates: plain call, method with `this`, .call/.apply/.bind, getter,
-// setter, new, super(), a builtin callback, and .name/.length metadata.
+// Registers host functions directly against the Heap and evaluates JS calling
+// them through plain call, method with `this`, .call/.apply/.bind, getter,
+// new, super(), a builtin callback, and .name/.length metadata.
 module host_fn_phase1;
 
 import boomkat::builtins;
@@ -74,8 +73,8 @@ fn void host_ctor(builtins::BuiltinContext* ctx, void* udata) {
     ctx.result_undefined();
 }
 
-// Comparator for Array.prototype.sort: descending. Exercises a builtin
-// calling a host function (the path most designs forget).
+// Comparator for Array.prototype.sort (descending): exercises a builtin
+// calling a host function.
 fn void host_cmp(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
     double a = 0;

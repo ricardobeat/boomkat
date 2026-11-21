@@ -14,7 +14,7 @@ import std::io;
 // Number constructor builtins
 // ============================================================================
 
-// thisNumberValue(this value) per ECMA-262 §21.1.3: returns the Number value
+// thisNumberValue(this value) per ES2026 §21.1.3: returns the Number value
 // if `this` is a number primitive or a Number-wrapper object, else false.
 // Callers must check the returned bool before using `out`, a false return
 // means the caller must throw a TypeError (this value is not a number).
@@ -102,7 +102,7 @@ fn int number_to_radix_str(ulong val, uint radix, char* buf, usz buf_size) {
 fn void builtin_number(BuiltinContext* ctx) {
     TVal num;
     if (ctx.argc > 0) {
-        // ECMA-262 §21.1.1.1 step 2: Number(BigInt) → 𝔽(ℝ(value)); the Number
+        // ES2026 §21.1.1.1 step 2: Number(BigInt) → 𝔽(ℝ(value)); the Number
         // constructor converts a BigInt to the closest double (it does NOT go
         // through ToNumber, which would throw for a BigInt).
         TVal* n_arg = &ctx.regs[ctx.base_reg];
@@ -138,13 +138,13 @@ fn void builtin_number(BuiltinContext* ctx) {
     }
 }
 
-// Number.prototype.toString(radix), ECMA-262 §15.7.4.2
+// Number.prototype.toString(radix), ES2026 §21.1.3.6
 // Returns string representation in the given radix (2-36), default 10.
 fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double d;
 
-    // ECMA-262 §15.7.4.2: throw TypeError if this is not a Number or Number object
+    // ES2026 §21.1.3.6: throw TypeError if this is not a Number or Number object
     if (this_val.is_number()) {
         d = this_val.get_number();
     } else if (this_val.is_fastint()) {
@@ -175,7 +175,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
         double radix_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (radix_d < 2 || radix_d > 36) {
-            // RangeError per ECMA-262 §15.7.4.2
+            // RangeError per ES2026 §21.1.3.6
             builtin_throw(ctx, ctx.heap.range_err_proto, "radix must be an integer between 2 and 36");
             return;
         }
@@ -257,7 +257,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     ctx.result_string(result);
 }
 
-// Number.prototype.toFixed(fractionDigits), ECMA-262 §21.1.3.3
+// Number.prototype.toFixed(fractionDigits), ES2026 §21.1.3.3
 // Step order: ToIntegerOrInfinity(fractionDigits) and its range check happen
 // before thisNumberValue is checked, but thisNumberValue itself must throw
 // TypeError first if `this` is not a number (implementations commonly check
@@ -314,7 +314,7 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     ctx.result_string(s);
 }
 
-// Number.prototype.toExponential(fractionDigits), ECMA-262 §21.1.3.2
+// Number.prototype.toExponential(fractionDigits), ES2026 §21.1.3.2
 // Step order: 1. Let x be ? thisNumberValue(this value). 2. Let f be
 // ? ToIntegerOrInfinity(fractionDigits), this may call user code (valueOf/
 // toString) so it must run even when fractionDigits is undefined behaves
@@ -380,7 +380,7 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     ctx.result_string(s);
 }
 
-// Number.prototype.toPrecision(precision), ECMA-262 §21.1.3.5
+// Number.prototype.toPrecision(precision), ES2026 §21.1.3.5
 // Step order: 1. Let x be ? thisNumberValue(this value). 2. If precision is
 // undefined, return ! ToString(x). 3. Let p be ? ToInteger(precision).
 // 4. If x is NaN, return "NaN" (checked AFTER ToInteger(precision), so a
@@ -443,7 +443,7 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     ctx.result_string(s);
 }
 
-// Number.prototype.valueOf(), ECMA-262 §21.1.3.7
+// Number.prototype.valueOf(), ES2026 §21.1.3.7
 // 1. Return ? thisNumberValue(this value). Throws TypeError if `this` is
 // not a number primitive or Number-wrapper object.
 fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
@@ -471,10 +471,10 @@ fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Number static methods (ECMA-262 §20.1.2)
+// Number static methods (ES2026 §21.1.2)
 // ============================================================================
 
-// Number.isNaN(number), ECMA-262 §20.1.2.4
+// Number.isNaN(number), ES2026 §21.1.2.4
 // Returns true only if the argument is the NaN number value (no coercion).
 fn void builtin_number_isNaN(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -491,7 +491,7 @@ fn void builtin_number_isNaN(BuiltinContext* ctx) {
     }
 }
 
-// Number.isFinite(number), ECMA-262 §20.1.2.2
+// Number.isFinite(number), ES2026 §21.1.2.2
 // Returns true only if the argument is a finite number value (no coercion).
 fn void builtin_number_isFinite(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -508,7 +508,7 @@ fn void builtin_number_isFinite(BuiltinContext* ctx) {
     }
 }
 
-// Number.isInteger(number), ECMA-262 §20.1.2.3
+// Number.isInteger(number), ES2026 §21.1.2.3
 // Returns true only if the argument is an integer number value (no coercion).
 fn void builtin_number_isInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -534,7 +534,7 @@ fn void builtin_number_isInteger(BuiltinContext* ctx) {
     ctx.result_boolean((fl == abs_d));
 }
 
-// Number.isSafeInteger(number), ECMA-262 §20.1.2.5
+// Number.isSafeInteger(number), ES2026 §21.1.2.5
 // Returns true only if the argument is a safe integer (±(2^53 - 1)).
 fn void builtin_number_isSafeInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -565,7 +565,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     heap.number_proto = proto;
 
     // Add .toString() method, registered as a proper function object (not
-    // LIGHTFUNC) so its .length (1, per ECMA-262 §21.1.3.6) can differ from
+    // LIGHTFUNC) so its .length (1, per ES2026 §21.1.3.6) can differ from
     // Number.prototype.toLocaleString's .length (0), even though both share
     // the same builtin_fn_index and would otherwise read identical metadata.
     HObject*? tostring_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

@@ -81,14 +81,14 @@ def main():
                                ('dynamic_disabled', b'dynamic compilation disabled\n'),
                                ('core_builtins', b'core builtins passed\n'),
                                ('string_widths', b'string widths passed\n')]:
-            image = tmp / (name + '.bkbc')
+            image = tmp / (name + '.bk')
             compile_file(GEN, ROOT / 'test/bytecode' / (name + '.js'), image)
             for runner in RUNNERS:
                 assert run([runner, image]).stdout == expected
                 checks += 1
         empty = tmp / 'empty.js'
         empty.write_text('')
-        image = tmp / 'empty.bkbc'
+        image = tmp / 'empty.bk'
         compile_file(GEN, empty, image)
         for runner in RUNNERS:
             assert run([runner, image]).stdout == b''
@@ -101,7 +101,7 @@ def main():
                         'if (text.length !== 100000) throw new Error("strings");\n'
                         'for (var i = 0; i < 10000; i++) { var o = {x: i, y: text}; if (o.x !== i) throw new Error("GC"); }\n'
                         'print("wide and GC passed");\n')
-        wide_image = tmp / 'wide.bkbc'
+        wide_image = tmp / 'wide.bk'
         compile_file(GEN, wide, wide_image)
         for runner in RUNNERS:
             assert run([runner, wide_image]).stdout == b'wide and GC passed\n'

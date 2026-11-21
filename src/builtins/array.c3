@@ -15,7 +15,7 @@ import boomkat::vm;
 // Additional Array.prototype methods
 // ============================================================================
 
-// Array.of(...items), ECMA-262 §22.1.2.3
+// Array.of(...items), ES2026 §23.1.2.4
 fn void builtin_array_of(BuiltinContext* ctx) {
     uint len = (uint)ctx.argc;
 
@@ -80,7 +80,7 @@ fn void builtin_array_of(BuiltinContext* ctx) {
     ctx.result_object(arr);
 }
 
-// Array.prototype.fill(value, start, end), ECMA-262 §22.1.3.6
+// Array.prototype.fill(value, start, end), ES2026 §23.1.3.7
 fn void builtin_array_proto_fill(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -132,8 +132,7 @@ fn void builtin_array_proto_fill(BuiltinContext* ctx) {
     ctx.result_object(obj);
 }
 
-// Practical cap for iterative methods: beyond this many elements we don't
-// Array.prototype.at(index), ECMA-262 §22.1.3.1
+// Array.prototype.at(index), ES2026 §23.1.3.1
 fn void builtin_array_proto_at(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -142,7 +141,7 @@ fn void builtin_array_proto_at(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
     // Step 3: ToIntegerOrInfinity(index), coerces via valueOf/toString and
-    // clamps NaN to 0 (ECMA-262 §23.1.3.1).
+    // clamps NaN to 0 (ES2026 §23.1.3.1).
     double idx_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
 
@@ -158,7 +157,7 @@ fn void builtin_array_proto_at(BuiltinContext* ctx) {
     }
 }
 
-// Array.prototype.copyWithin(downstream, start, end), ECMA-262 §22.1.3.3
+// Array.prototype.copyWithin(downstream, start, end), ES2026 §23.1.3.4
 // Move `count` elements of `obj` from index `from` to index `to`, the step
 // shift, unshift, splice and copyWithin share: each present source element is
 // [[Set]] at its target and each absent one deletes its target, from the top
@@ -240,7 +239,7 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     ctx.result_object(obj);
 }
 
-// Array.prototype.includes(searchElement, fromIndex), ECMA-262 §22.1.3.13
+// Array.prototype.includes(searchElement, fromIndex), ES2026 §23.1.3.16
 fn void builtin_array_proto_includes(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -248,13 +247,13 @@ fn void builtin_array_proto_includes(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // ECMA-262 §23.1.3.12 style: If len is 0, return false (no fromIndex eval).
+    // ES2026 §23.1.3.16: If len is 0, return false (no fromIndex eval).
     if (len == 0) {
         ctx.result_boolean(false);
         return;
     }
 
-    // Use ToInteger per spec (per ECMA-262 §23.1.3.11 step 4). Use
+    // Use ToIntegerOrInfinity per spec (ES2026 §23.1.3.16). Use
     // builtin_to_integer_vm so valueOf abrupt propagates, and reject Symbol
     // inputs with TypeError (ToNumber(Symbol) throws).
     long start_i = 0;
@@ -332,7 +331,7 @@ fn ulong flatten_into(HObject* downstream, HObject* source, ulong source_len, ul
     return downstream_idx;
 }
 
-// Array.prototype.flat(depth), ECMA-262 §22.1.3.10
+// Array.prototype.flat(depth), ES2026 §23.1.3.13
 fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
@@ -353,7 +352,7 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     }
     if (depth_num < 0) depth_num = 0;
 
-    // ECMA-262 §22.1.2.3 step 5: ArraySpeciesCreate(O, 0). Throws TypeError when
+    // ES2026 §23.1.3.13: ArraySpeciesCreate(O, 0). Throws TypeError when
     // the species constructor is non-callable or returns a non-object.
     HObject* result = array_species_create_result(ctx, obj, 0);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -366,7 +365,7 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     ctx.result_object(result);
 }
 
-// Array.prototype.flatMap(mapFn, thisArg), ECMA-262 §22.1.3.11
+// Array.prototype.flatMap(mapFn, thisArg), ES2026 §23.1.3.14
 fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
@@ -374,11 +373,11 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         return;
     }
 
-    // ECMA-262 §22.1.3.11: read LengthOfArrayLike before checking IsCallable.
+    // ES2026 §23.1.3.14: read LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // mapFn is required and must be callable (ECMA-262 §22.1.3.11 step 3).
+    // mapFn is required and must be callable (ES2026 §23.1.3.14).
     // When absent or non-callable, throw TypeError.
     TVal flatmap_callback;
     if (ctx.argc >= 1) {
@@ -395,7 +394,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
 
-    // ECMA-262 §22.1.3.11 step 5: ArraySpeciesCreate(O, 0).
+    // ES2026 §23.1.3.14: ArraySpeciesCreate(O, 0).
     HObject* result = array_species_create_result(ctx, obj, 0);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (result == null) { ctx.result_undefined(); return; }
@@ -444,7 +443,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         }
     }
 
-    // ECMA-262 §22.1.3.11: FlattenIntoArray does NOT explicitly set length.
+    // ES2026 §23.1.3.13.1: FlattenIntoArray does NOT explicitly set length.
     // For ARRAY class, update the internal length to match the written
     // elements so the length property reflects the actual element count.
     // For non-ARRAY results (e.g. from a custom species constructor),
@@ -459,7 +458,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
 // Array constructor builtins
 // ============================================================================
 
-// Array() as function (ECMA-262 §15.4.1) or new Array() as constructor (§15.4.2).
+// Array() as function or new Array() as constructor (ES2026 §23.1.1.1).
 // Creates and returns a new Array object.
 fn void builtin_array(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -471,7 +470,7 @@ fn void builtin_array(BuiltinContext* ctx) {
     ctx.heap.set_prototype(arr, builtin_proto_from_new_target(ctx, ctx.heap.array_proto));
 
     // Array's exotic "length" is not a regular own property, it lives in the
-    // dedicated array_len_ptr() slot (ECMA-262 §9.4.2.1 ArraySetLength / [[DefineOwnProperty]]
+    // dedicated array_len_ptr() slot (ES2026 §10.4.2.4 ArraySetLength / [[DefineOwnProperty]]
     // "length" is {writable:true, enumerable:false, configurable:false}, and this
     // engine's array exotic implementation never materialises it as a table entry).
     // Using put_prop() here would wrongly create an enumerable own property that
@@ -488,14 +487,14 @@ fn void builtin_array(BuiltinContext* ctx) {
         TVal arg = ctx.regs[ctx.base_reg];
         if (arg.is_number() || arg.is_fastint()) {
             // Single numeric arg: set array length
-            // ECMA-262 §15.4.2.2: If ToUint32(len) !== ToNumber(len), throw RangeError
+            // ES2026 §23.1.1.1: If ToUint32(len) !== ToNumber(len), throw RangeError
             double d;
             if (arg.is_fastint()) {
                 d = (double)arg.get_fastint();
             } else {
                 d = arg.get_number();
             }
-            // ToUint32 check per ECMA-262 §9.6
+            // ToUint32 check per ES2026 §7.1.7
             uint n = (uint)(long)d;
             if ((double)n != d) {
                 // Invalid array length, throw RangeError
@@ -532,7 +531,7 @@ fn void builtin_array(BuiltinContext* ctx) {
 }
 
 // Helper: get the 'this' value as an object for Array.prototype methods.
-// Supports ToObject wrapping for primitive `this` values (ECMA-262 §9.9).
+// Supports ToObject wrapping for primitive `this` values (ES2026 §7.1.18).
 fn HObject* array_proto_get_this(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -566,7 +565,7 @@ fn HObject* array_proto_get_this(BuiltinContext* ctx) {
 // Array.prototype helpers
 // ============================================================================
 
-// ECMA-262 §9.6 ToUint32, convert a double to uint32 per the spec algorithm.
+// ES2026 §7.1.7 ToUint32, convert a double to uint32 per the spec algorithm.
 // NaN, ±Infinity, ±0 → 0. Otherwise floor(abs(x)) mod 2^32.
 fn uint to_uint32(double val) {
     // NaN: NaN != NaN is true in IEEE 754
@@ -577,7 +576,7 @@ fn uint to_uint32(double val) {
     if (val >= 0.0 && val < 4294967296.0 && val == math::floor(val)) {
         return (uint)val;
     }
-    // General case: val mod 2^32 using floor-based modulo (ECMA-262 §9.6 step 4)
+    // General case: val mod 2^32 using floor-based modulo (ES2026 §7.1.7)
     double two32 = 4294967296.0;
     double n = val - math::floor(val / two32) * two32;
     if (n < 0.0) n += two32;
@@ -585,7 +584,7 @@ fn uint to_uint32(double val) {
 }
 
 // Resolve a spec "relative index" against a length, the clamping half of
-// ECMA-262 §23.1.3.x steps like "if relativeStart < 0, let k be max(len +
+// ES2026 §23.1.3 steps like "if relativeStart < 0, let k be max(len +
 // relativeStart, 0); else let k be min(relativeStart, len)". `rel` must
 // already have gone through ToIntegerOrInfinity.
 fn ulong arr_relative_index(double rel, ulong len) {
@@ -726,7 +725,7 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
     return 0;
 }
 
-// ECMA-262 §7.1.21 ToLength conversion for array iteration methods.
+// ES2026 §7.1.20 ToLength conversion for array iteration methods.
 // Converts a raw double to a length value per the spec:
 //   1. ToIntegerOrInfinity: NaN → 0, +0/-0 → 0, ±Infinity → 0, otherwise truncate
 //   2. If len ≤ 0, return 0
@@ -756,7 +755,7 @@ fn bool array_to_length(HObject* obj, Heap* heap, BuiltinContext* ctx, ulong* ou
     return true;
 }
 
-// ECMA-262 §15.4.4.x: Read length, convert via ToLength for indexOf/lastIndexOf.
+// ES2026 §23.1.3: Read length, convert via ToLength for indexOf/lastIndexOf.
 // ECMA-262 ToLength: NaN → 0, -0 → 0, negative → 0, Infinity → 2^53-1.
 // indexOf/lastIndexOf use ToLength, not RangeError validation.
 fn bool array_to_length_checked(HObject* obj, Heap* heap, BuiltinContext* ctx, ulong* out_len) {
@@ -796,7 +795,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             // Delete named numeric properties that fall in the dropped range.
             // Walk backwards through the property table; delete_prop compacts the
             // table (shifting higher entries down), so scanning backward is safe.
-            // Per ECMA-262 §15.4.5.1 step 3.l: if a non-configurable element is found,
+            // Per ES2026 §10.4.2.4: if a non-configurable element is found,
             // stop deletion and set the length to one above it (sloppy mode).
             uint pc = obj.prop_count;
             if (pc > 0) {
@@ -1025,10 +1024,10 @@ fn bool array_strict_equals(TVal a, TVal b) {
 }
 
 // ============================================================================
-// Array.prototype.toString (ECMA-262 §15.4.4.2)
+// Array.prototype.toString (ES2026 §23.1.3.36)
 // ============================================================================
 //
-// Per ECMA-262 §15.4.4.3: Let func be Get(array, "join").
+// Per ES2026 §23.1.3.36: Let func be Get(array, "join").
 // If IsCallable(func) is false, set func to Object.prototype.toString.
 // Return Call(func, array).
 fn void builtin_array_proto_toString(BuiltinContext* ctx) {
@@ -1080,7 +1079,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
     }
 
     if (!join_callable) {
-        // Step 3 (ECMA-262 §22.1.3.30): set func to the *intrinsic* %Object.prototype.toString%.
+        // ES2026 §23.1.3.36: set func to the *intrinsic* %Object.prototype.toString%.
         // The user may have deleted Object.prototype.toString (see test262
         // built-ins/Array/prototype/toString/non-callable-join-string-tag.js), so we must NOT
         // re-look it up on Object.prototype. Call the built-in function directly: its
@@ -1110,7 +1109,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.join (ECMA-262 §23.1.3.15)
+// Array.prototype.join (ES2026 §23.1.3.18)
 // ============================================================================
 fn void builtin_array_proto_join(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1271,7 +1270,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toLocaleString (ECMA-262 §23.1.3.29)
+// Array.prototype.toLocaleString (ES2026 §23.1.3.32)
 // ============================================================================
 //
 // Native rather than compiled JS so it can share join's in-progress set: a
@@ -1383,7 +1382,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.pop (ECMA-262 §15.4.4.6)
+// Array.prototype.pop (ES2026 §23.1.3.22)
 // ============================================================================
 fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1393,7 +1392,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     HString* len_key_pop = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
     if (len == 0) {
-        // ECMA-262 §23.1.3.20 step 3.a: Set(O, "length", 0, true), throws if non-writable.
+        // ES2026 §23.1.3.22: Set(O, "length", 0, true), throws if non-writable.
         if (!arr_set_length_or_throw(ctx, obj, len_key_pop, 0)) { ctx.result_undefined(); return; }
         ctx.result_undefined();
         return;
@@ -1474,7 +1473,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     arr_delete_elem_strict_or_throw(ctx, obj, idx);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
 
-    // ECMA-262 §23.1.3.20 step 6: Set(O, "length", idx, true), throws if non-writable.
+    // ES2026 §23.1.3.22: Set(O, "length", idx, true), throws if non-writable.
     if (!arr_set_length_or_throw(ctx, obj, len_key_pop, idx)) { ctx.result_undefined(); return; }
 
     // Return the popped element
@@ -1482,7 +1481,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.push (ECMA-262 §15.4.4.7)
+// Array.prototype.push (ES2026 §23.1.3.23)
 // ============================================================================
 
 // Append one already-evaluated value when the caller can prove ordinary array
@@ -1522,7 +1521,7 @@ fn long array_push_one_fast(HObject* obj, TVal value, heap::Heap* h) {
 
 fn void builtin_array_proto_push(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
-    // ECMA-262 §23.1.3.23 step 1-2: ToObject, throw for null/undefined, box primitives.
+    // ES2026 §23.1.3.23: ToObject, throw for null/undefined, box primitives.
     if (this_val.is_null() || this_val.is_undefined()) {
         arr_throw_type_error(ctx, "Array.prototype.push called on null or undefined");
         return;
@@ -1543,7 +1542,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         return;
     }
 
-    // ECMA-262 §23.1.3.23 step 4: throw if result length would exceed 2^53-1.
+    // ES2026 §23.1.3.23: throw if result length would exceed 2^53-1.
     if (len + (ulong)ctx.argc > (ulong)types::MAX_SAFE_INT) {
         arr_throw_type_error(ctx, "Pushing would exceed the maximum array length (2^53-1)");
         ctx.result_undefined();
@@ -1665,7 +1664,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.reverse (ECMA-262 §23.1.3.27)
+// Array.prototype.reverse (ES2026 §23.1.3.26)
 // ============================================================================
 fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1678,7 +1677,7 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
     for (ulong lower = 0; lower < middle; lower++) {
         ulong upper = len - 1 - lower;
 
-        // ECMA-262 §23.1.3.27 steps 5.a-5.d: HasProperty then conditional Get,
+        // ES2026 §23.1.3.26: HasProperty then conditional Get,
         // for lower then upper (in that order, matters for Proxy trap order).
         bool has_lower = arr_has_prop_ctx(ctx, obj, lower);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -1712,7 +1711,7 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.shift (ECMA-262 §23.1.3.27)
+// Array.prototype.shift (ES2026 §23.1.3.27)
 // ============================================================================
 fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1758,7 +1757,7 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.slice (ECMA-262 §15.4.4.10)
+// Array.prototype.slice (ES2026 §23.1.3.28)
 // ============================================================================
 fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1777,7 +1776,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     ulong k;
     k = arr_relative_index(relative_start, len);
 
-    // Determine end, ECMA-262 §23.1.3.25 step 6: if end is undefined, use len.
+    // Determine end, ES2026 §23.1.3.28: if end is undefined, use len.
     double relative_end = (double)len;
     if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
         relative_end = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
@@ -1787,7 +1786,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     ulong final_val;
     final_val = arr_relative_index(relative_end, len);
 
-    // ECMA-262 §23.1.3.24 step 8: ArraySpeciesCreate(O, count).
+    // ES2026 §23.1.3.28: ArraySpeciesCreate(O, count).
     // §9.4.2.2 ArrayCreate: if length > 2^32-1, throw RangeError.
     ulong count = final_val > k ? final_val - k : 0;
     if (count > 0xFFFFFFFF) {
@@ -1796,12 +1795,12 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
         return;
     }
 
-    // Create result array via ArraySpeciesCreate (ECMA-262 §23.1.3.24 step 8).
+    // Create result array via ArraySpeciesCreate (ES2026 §23.1.3.28).
     HObject* result_arr = array_species_create_result(ctx, obj, count);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (result_arr == null) { ctx.result_undefined(); return; }
 
-    // ECMA-262 §23.1.3.24 steps 9-11: n advances every iteration, so holes in
+    // ES2026 §23.1.3.28: n advances every iteration, so holes in
     // the source stay holes at the same relative position in the result, and
     // the final length is the full count even when it ends in holes.
     ulong n = 0;
@@ -1827,7 +1826,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
 // comparefn and default string comparison. Sets ctx.should_throw on
 // comparator error and returns 0 in that case.
 fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparefn, TVal a, TVal b) {
-    // ECMA-262 §23.1.3.30 SortCompare step 3-4: undefined always sorts last,
+    // ES2026 §23.1.3.30.2 CompareArrayElements: undefined always sorts last,
     // regardless of the comparefn (comparefn is never called with undefined).
     bool a_undef = a.is_undefined();
     bool b_undef = b.is_undefined();
@@ -1882,7 +1881,7 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
 }
 
 // ============================================================================
-// Array.prototype.sort (ECMA-262 §23.1.3.30), with comparefn support
+// Array.prototype.sort (ES2026 §23.1.3.30), with comparefn support
 // ============================================================================
 
 // Elements sorted in the inline buffers before spilling to the temp allocator.
@@ -1891,43 +1890,51 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
 // A larger buffer costs 128 KB of native stack per level, which can fault before
 // the run-depth guard throws.
 const usz SORT_INLINE_ELEMS = 64;
+// +32 covers OnStackAllocatorHeader (8 B) and up to 15 B alignment padding so
+// all SORT_INLINE_ELEMS elements stay on the stack without falling back to mem.
+const sz  SORT_STACK_BYTES  = (sz)(SORT_INLINE_ELEMS * TVal::size + 32);
 
-// Stable bottom-up merge sort. Returns false if comparefn threw. The caller
-// must keep the items rooted, since comparefn can release them.
+// Stable bottom-up merge sort. Returns false if comparefn threw or OOM. The
+// caller must keep the items rooted, since comparefn can release them.
 fn bool array_merge_sort(BuiltinContext* ctx, TVal[] items, TVal comparefn, bool has_comparefn) {
     usz count = items.len;
     if (count <= 1) return true;
-    TVal[SORT_INLINE_ELEMS] stack_temp;
-    TVal[] temp = count > SORT_INLINE_ELEMS ? mem::temp_array(TVal, (sz)count) : stack_temp[:count];
-
-    for (usz width = 1; width < count; width *= 2) {
-        for (usz i = 0; i < count; i += 2 * width) {
-            usz left = i;
-            usz mid = i + width < count ? i + width : count;
-            usz right = i + 2 * width < count ? i + 2 * width : count;
-
-            // Copy left run into temp buffer.
-            for (usz j = left; j < mid; j++) {
-                temp[j] = items[j];
-            }
-
-            // Merge temp[left..mid-1] and items[mid..right-1] back into items.
-            usz l = left;
-            usz r = mid;
-            usz k = left;
-            while (l < mid && r < right) {
-                int cmp = array_sort_compare(ctx, comparefn, has_comparefn, temp[l], items[r]);
-                if (ctx.should_throw) return false;
-                if (cmp <= 0) {
-                    items[k++] = temp[l++];
-                } else {
-                    items[k++] = items[r++];
-                }
-            }
-            while (l < mid) items[k++] = temp[l++];
+    @stack_mem(SORT_STACK_BYTES; Allocator smem) {
+        TVal[]? temp = alloc::alloc_array_try(smem, TVal, (sz)count);
+        if (catch temp) {
+            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+            return false;
         }
-    }
-    return true;
+
+        for (usz width = 1; width < count; width *= 2) {
+            for (usz i = 0; i < count; i += 2 * width) {
+                usz left = i;
+                usz mid = i + width < count ? i + width : count;
+                usz right = i + 2 * width < count ? i + 2 * width : count;
+
+                // Copy left run into temp buffer.
+                for (usz j = left; j < mid; j++) {
+                    temp[j] = items[j];
+                }
+
+                // Merge temp[left..mid-1] and items[mid..right-1] back into items.
+                usz l = left;
+                usz r = mid;
+                usz k = left;
+                while (l < mid && r < right) {
+                    int cmp = array_sort_compare(ctx, comparefn, has_comparefn, temp[l], items[r]);
+                    if (ctx.should_throw) return false;
+                    if (cmp <= 0) {
+                        items[k++] = temp[l++];
+                    } else {
+                        items[k++] = items[r++];
+                    }
+                }
+                while (l < mid) items[k++] = temp[l++];
+            }
+        }
+        return true;
+    };
 }
 
 fn void builtin_array_proto_sort(BuiltinContext* ctx) {
@@ -1958,88 +1965,104 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         return;
     }
 
-    // Collect present elements into a C3 buffer.  Holes are skipped here and
-    // restored as deletions at the end, which avoids the dense/named-property
-    // mismatch that occurs when writing "undefined" into a slot that still has
-    // a named property.
-    TVal[SORT_INLINE_ELEMS] stack_items;
-    TVal[] items;
-    if (len > SORT_INLINE_ELEMS) {
-        uint heap_len = len > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)len;
-        items = mem::temp_array(TVal, (sz)heap_len);
-    } else {
-        items = stack_items[0:(uint)len];
-    }
+    // Collect present elements into a C3 buffer, starting on the stack and
+    // growing as present elements appear so huge sparse lengths do not reserve
+    // memory for holes.  Holes are skipped here and restored as deletions at
+    // the end, which avoids the dense/named-property mismatch that occurs when
+    // writing "undefined" into a slot that still has a named property.
+    @stack_mem(SORT_STACK_BYTES; Allocator smem) {
+        usz init_cap = len < SORT_INLINE_ELEMS ? (usz)len : SORT_INLINE_ELEMS;
+        TVal[]? items_opt = alloc::alloc_array_try(smem, TVal, (sz)init_cap);
+        if (catch items_opt) {
+            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+            return;
+        }
+        TVal[] items = items_opt;
 
-    // Getters can release earlier elements during collection, and write-back
-    // can release elements still waiting in items. Retain each value before
-    // the next observable operation; the root also covers comparator calls.
-    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch holder_obj) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* holder = holder_obj;
-    heap::ObjectRoot holder_root;
-    ctx.heap.push_object_root(&holder_root, holder);
-    defer ctx.heap.pop_object_root(&holder_root);
+        // Getters can release earlier elements during collection, and write-back
+        // can release elements still waiting in items. Retain each value before
+        // the next observable operation; the root also covers comparator calls.
+        HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (catch holder_obj) {
+            ctx.result_undefined();
+            return;
+        }
+        HObject* holder = holder_obj;
+        heap::ObjectRoot holder_root;
+        ctx.heap.push_object_root(&holder_root, holder);
+        defer ctx.heap.pop_object_root(&holder_root);
 
-    ulong present_count = 0;
-    for (ulong i = 0; i < len; i++) {
-        // Re-read the current length before each collection step.  Getters may
-        // have decreased length, in which case indices at or beyond the new
-        // length are treated as absent (matching V8's array semantics), while
-        // the loop still stops at the originally-captured length so elements
-        // appended during collection are not picked up.
-        ulong current_len;
-        if (!array_to_length(obj, ctx.heap, ctx, &current_len)) { ctx.result_undefined(); return; }
-        if (i >= current_len) continue;
+        ulong present_count = 0;
+        for (ulong i = 0; i < len; i++) {
+            // Re-read the current length before each collection step.  Getters may
+            // have decreased length, in which case indices at or beyond the new
+            // length are treated as absent (matching V8's array semantics), while
+            // the loop still stops at the originally-captured length so elements
+            // appended during collection are not picked up.
+            ulong current_len;
+            if (!array_to_length(obj, ctx.heap, ctx, &current_len)) { ctx.result_undefined(); return; }
+            if (i >= current_len) continue;
 
-        bool present = arr_has_prop_ctx(ctx, obj, i);
-        if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (present) {
-            TVal v;
-            if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                if (!holder.set_array_idx((uint)present_count, v, ctx.heap)) {
-                    ctx.result_undefined();
-                    return;
+            bool present = arr_has_prop_ctx(ctx, obj, i);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (present) {
+                TVal v;
+                if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
+                    if (ctx.should_throw) { ctx.result_undefined(); return; }
+                    if (!holder.set_array_idx((uint)present_count, v, ctx.heap)) {
+                        ctx.result_undefined();
+                        return;
+                    }
+                    if (present_count == items.len) {
+                        if (items.len > (usz)sz::max / (2 * TVal::size)) {
+                            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+                            return;
+                        }
+                        usz new_cap = items.len * 2;
+                        if ((ulong)new_cap > len) new_cap = (usz)len;
+                        TVal[]? grown = alloc::realloc_array_try(smem, items.ptr, TVal, (sz)new_cap);
+                        if (catch grown) {
+                            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+                            return;
+                        }
+                        items = grown;
+                    }
+                    items[present_count] = v;
+                    present_count++;
                 }
-                items[present_count] = v;
-                present_count++;
             }
         }
-    }
 
-    if (!array_merge_sort(ctx, items[:present_count], comparefn, has_comparefn)) {
-        ctx.result_undefined();
-        return;
-    }
-
-    // Write sorted present elements back to indices 0..present_count-1 using
-    // [[Set]] semantics so that accessor setters are invoked.
-    for (ulong i = 0; i < present_count; i++) {
-        if (!array_set_elem_ulong_set(ctx, obj, i, items[i])) {
+        if (!array_merge_sort(ctx, items[:present_count], comparefn, has_comparefn)) {
             ctx.result_undefined();
             return;
         }
-    }
 
-    // Delete trailing slots so holes remain holes (ECMA-262 §23.1.3.30 step 9).
-    for (ulong i = present_count; i < len; i++) {
-        if (!array_delete_elem_ulong_checked(ctx, obj, i)) {
-            ctx.result_undefined();
-            return;
+        // Write sorted present elements back to indices 0..present_count-1 using
+        // [[Set]] semantics so that accessor setters are invoked.
+        for (ulong i = 0; i < present_count; i++) {
+            if (!array_set_elem_ulong_set(ctx, obj, i, items[i])) {
+                ctx.result_undefined();
+                return;
+            }
         }
-    }
 
-    // The spec does not set length after sorting; any side effects from
-    // getters/setters during the sort are allowed to persist.
-    ctx.result_object(obj);
+        // Delete trailing slots so holes remain holes (ES2026 §23.1.3.30).
+        for (ulong i = present_count; i < len; i++) {
+            if (!array_delete_elem_ulong_checked(ctx, obj, i)) {
+                ctx.result_undefined();
+                return;
+            }
+        }
+
+        // The spec does not set length after sorting; any side effects from
+        // getters/setters during the sort are allowed to persist.
+        ctx.result_object(obj);
+    };
 }
 
 // ============================================================================
-// Array.prototype.splice (ECMA-262 §15.4.4.12)
+// Array.prototype.splice (ES2026 §23.1.3.31)
 // ============================================================================
 fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2061,13 +2084,13 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     // Get actualDeleteCount
     ulong actual_delete_count;
     if (ctx.argc == 0) {
-        // ECMA-262 §23.1.3.28 step 8: when no arguments at all, insertCount = 0
+        // ES2026 §23.1.3.31: when no arguments at all, insertCount = 0
         // and actualDeleteCount = 0, splice is a no-op that just returns an
         // empty result array and writes the (possibly ToLength-clamped)
         // length back to O.
         actual_delete_count = 0;
     } else {
-        // ECMA-262 §23.1.3.28 step 9-10: 1 arg (only start) → actualDeleteCount
+        // ES2026 §23.1.3.31: 1 arg (only start) → actualDeleteCount
         // = len - actualStart; ≥2 args → min(max(dc, 0), len - actualStart).
         if (ctx.argc == 1) {
             actual_delete_count = len - actual_start;
@@ -2086,7 +2109,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
         item_count = ctx.argc - 2;
     }
 
-    // ECMA-262 §23.1.3.28 step 11: throw before any mutation if the resulting
+    // ES2026 §23.1.3.31: throw before any mutation if the resulting
     // length would exceed 2^53-1.
     if (len - actual_delete_count + (ulong)item_count > (ulong)types::MAX_SAFE_INT) {
         arr_throw_type_error(ctx, "Splicing would exceed the maximum array length (2^53-1)");
@@ -2174,7 +2197,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toReversed (ECMA-262 §23.1.3.33)
+// Array.prototype.toReversed (ES2026 §23.1.3.33)
 // ============================================================================
 fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2224,7 +2247,7 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toSorted (ECMA-262 §23.1.3.34)
+// Array.prototype.toSorted (ES2026 §23.1.3.34)
 // ============================================================================
 fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2263,66 +2286,75 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
 
     // Step 3: Read all elements, holes included, into a list. The holder
     // keeps them alive while getters and comparefn run.
-    TVal[SORT_INLINE_ELEMS] stack_items;
-    TVal[] items = len > SORT_INLINE_ELEMS ? mem::temp_array(TVal, (sz)len) : stack_items[:(usz)len];
-
-    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch holder_obj) {
-        ctx.result_undefined();
+    if (len > (ulong)((usz)sz::max / TVal::size)) {
+        arr_throw_range_error(ctx, "Array.prototype.toSorted out of memory");
         return;
     }
-    HObject* holder = holder_obj;
-    heap::ObjectRoot holder_root;
-    ctx.heap.push_object_root(&holder_root, holder);
-    defer ctx.heap.pop_object_root(&holder_root);
+    @stack_mem(SORT_STACK_BYTES; Allocator smem) {
+        TVal[]? items = alloc::alloc_array_try(smem, TVal, (sz)len);
+        if (catch items) {
+            arr_throw_range_error(ctx, "Array.prototype.toSorted out of memory");
+            return;
+        }
 
-    for (ulong i = 0; i < len; i++) {
-        TVal elem; elem.set_undefined();
-        arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
-        if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (!holder.set_array_idx((uint)i, elem, ctx.heap)) {
+        HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (catch holder_obj) {
             ctx.result_undefined();
             return;
         }
-        items[i] = elem;
-    }
+        HObject* holder = holder_obj;
+        heap::ObjectRoot holder_root;
+        ctx.heap.push_object_root(&holder_root, holder);
+        defer ctx.heap.pop_object_root(&holder_root);
 
-    // Step 4: SortCompare (§23.1.3.34.1) puts undefined last without calling
-    // comparefn.
-    if (!array_merge_sort(ctx, items, comparefn, !comparefn.is_undefined())) {
-        ctx.result_undefined();
-        return;
-    }
-
-    // Step 5: Create result array and populate with sorted elements
-    HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch new_arr) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* result = new_arr;
-    ctx.heap.set_prototype(result, ctx.heap.array_proto);
-
-    for (ulong i = 0; i < len; i++) {
-        TVal elem = items[i];
-        if (elem.is_undefined()) {
-            // Undefined (including former holes) must be an own property in
-            // the result, and array_set_elem_ulong treats undefined as a hole.
-            HString* key = ctx.heap.int_to_hstring((long)i);
-            if (key != null) {
-                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
+        for (ulong i = 0; i < len; i++) {
+            TVal elem; elem.set_undefined();
+            arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (!holder.set_array_idx((uint)i, elem, ctx.heap)) {
+                ctx.result_undefined();
+                return;
             }
-        } else {
-            array_set_elem_ulong(result, i, elem, ctx.heap);
+            items[i] = elem;
         }
-    }
-    array_set_length_ulong(result, len, ctx.heap, ctx.vm);
 
-    ctx.result_object(result);
+        // Step 4: SortCompare (§23.1.3.34.1) puts undefined last without calling
+        // comparefn.
+        if (!array_merge_sort(ctx, items, comparefn, !comparefn.is_undefined())) {
+            ctx.result_undefined();
+            return;
+        }
+
+        // Step 5: Create result array and populate with sorted elements
+        HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (catch new_arr) {
+            ctx.result_undefined();
+            return;
+        }
+        HObject* result = new_arr;
+        ctx.heap.set_prototype(result, ctx.heap.array_proto);
+
+        for (ulong i = 0; i < len; i++) {
+            TVal elem = items[i];
+            if (elem.is_undefined()) {
+                // Undefined (including former holes) must be an own property in
+                // the result, and array_set_elem_ulong treats undefined as a hole.
+                HString* key = ctx.heap.int_to_hstring((long)i);
+                if (key != null) {
+                    result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
+                }
+            } else {
+                array_set_elem_ulong(result, i, elem, ctx.heap);
+            }
+        }
+        array_set_length_ulong(result, len, ctx.heap, ctx.vm);
+
+        ctx.result_object(result);
+    };
 }
 
 // ============================================================================
-// Array.prototype.toSpliced (ECMA-262 §23.1.3.35)
+// Array.prototype.toSpliced (ES2026 §23.1.3.35)
 // ============================================================================
 fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -2459,7 +2491,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.with (ECMA-262 §23.1.3.37)
+// Array.prototype.with (ES2026 §23.1.3.39)
 // ============================================================================
 fn void builtin_array_proto_with(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2548,7 +2580,7 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.unshift (ECMA-262 §15.4.4.13)
+// Array.prototype.unshift (ES2026 §23.1.3.37)
 // ============================================================================
 fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2558,7 +2590,7 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     ushort arg_count = ctx.argc;
 
-    // ECMA-262 §23.1.3.31 step 4: with no arguments there is nothing to shift
+    // ES2026 §23.1.3.37: with no arguments there is nothing to shift
     // and no overflow to check, length is just re-clamped below.
     if (arg_count > 0) {
         // Step 4.a: throw before any element is moved.
@@ -2594,7 +2626,7 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.indexOf (ECMA-262 §15.4.4.14)
+// Array.prototype.indexOf (ES2026 §23.1.3.17)
 // ============================================================================
 fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2603,7 +2635,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length_checked(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // ECMA-262 §23.1.3.12 step 3: If len is 0, return -1.
+    // ES2026 §23.1.3.17: If len is 0, return -1.
     // Done before ToInteger(fromIndex) so side-effect order tests (e.g.
     // `length-zero-returns-minus-one.js`) don't trigger fromIndex's valueOf.
     if (len == 0) {
@@ -2619,7 +2651,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
         search_elem.set_undefined();
     }
 
-    // Get fromIndex (default 0), per ECMA-262 §15.4.4.14 step 3.
+    // Get fromIndex (default 0), per ES2026 §23.1.3.17.
     // builtin_to_integer handles Infinity / -Infinity / NaN / hex strings.
     double relative_start = 0.0;
     if (ctx.argc > 1) {
@@ -2627,7 +2659,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
     }
 
-    // Per ECMA-262 §15.4.4.14 step 4: compute k from n (ToInteger of fromIndex).
+    // Per ES2026 §23.1.3.17: compute k from n (ToIntegerOrInfinity of fromIndex).
     // If n ≥ len → return -1 (handles Infinity cleanly).
     // If n < 0 → k = max(len + n, 0) (n is finite here, since Infinity already returned).
     // Else → k = n.
@@ -2669,7 +2701,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.lastIndexOf (ECMA-262 §15.4.4.15)
+// Array.prototype.lastIndexOf (ES2026 §23.1.3.20)
 // ============================================================================
 fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2678,7 +2710,7 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length_checked(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // ECMA-262 §23.1.3.13 step 3: If len is 0, return -1.
+    // ES2026 §23.1.3.20: If len is 0, return -1.
     // Done before ToInteger(fromIndex) so side-effect order tests don't
     // trigger fromIndex's valueOf.
     if (len == 0) {
@@ -2694,14 +2726,14 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
         search_elem.set_undefined();
     }
 
-    // Get fromIndex (default len - 1), per ECMA-262 §15.4.4.15 step 3.
+    // Get fromIndex (default len - 1), per ES2026 §23.1.3.20.
     double relative_start = (double)(len - 1);
     if (ctx.argc > 1) {
         relative_start = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
     }
 
-    // Per ECMA-262 §15.4.4.15 step 4: compute k from n (ToInteger of fromIndex).
+    // Per ES2026 §23.1.3.20: compute k from n (ToIntegerOrInfinity of fromIndex).
     // If n ≥ len → k = len - 1 (handles Infinity correctly).
     // If n < 0 → k = len + n. If len+n < 0 → no match (-1).
     // Else → k = min(n, len - 1).
@@ -2746,20 +2778,20 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.concat (ECMA-262 §22.1.3.1, with Symbol.isConcatSpreadable)
+// Array.prototype.concat (ES2026 §23.1.3.2, with Symbol.isConcatSpreadable)
 // ============================================================================
 fn void builtin_array_proto_concat(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
 
-    // Create result array via ArraySpeciesCreate (ECMA-262 §23.1.3.1 step 1).
+    // Create result array via ArraySpeciesCreate (ES2026 §23.1.3.2).
     HObject* result = array_species_create_result(ctx, obj, 0);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (result == null) { ctx.result_undefined(); return; }
 
     ulong n = 0;
 
-    // ECMA-262 §23.1.3.1 step 5: items = [O, ...args]. Process each item via
+    // ES2026 §23.1.3.2: items = [O, ...args]. Process each item via
     // the shared IsConcatSpreadable path so 'this' follows the same rules
     // as arguments (non-Array 'this' becomes a single element).
     HString* concat_sym = ensure_concatspreadable_symbol(ctx.heap);
@@ -2785,7 +2817,7 @@ fn void builtin_array_proto_concat(BuiltinContext* ctx) {
     ctx.result_object(result);
 }
 
-// Process one item for Array.prototype.concat (ECMA-262 §23.1.3.1 step 5).
+// Process one item for Array.prototype.concat (ES2026 §23.1.3.2).
 // `item` may be a primitive or an object. Returns false when a pending throw
 // must abort the caller (ctx.should_throw is set).
 fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
@@ -2808,7 +2840,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
 
     HObject* item_obj = (HObject*)item.get_heapptr();
 
-    // ECMA-262 §23.1.3.1 step 5.b: spreadable = IsConcatSpreadable(E)
+    // ES2026 §23.1.3.2: spreadable = IsConcatSpreadable(E)
     // 5.b.ii: Get(E, @@isConcatSpreadable), use full Get semantics so
     //         accessor getters are invoked and their throws propagate.
     // 5.b.iii: If undefined, fall back to IsArray(E), §7.2.2 IsArray recurses
@@ -2847,7 +2879,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
             if (arr_has_prop_ctx(ctx, item_obj, i)) {
                 TVal elem;
                 if (arr_get_elem_vm(item_obj, i, ctx.heap, ctx, &elem)) {
-                    // ECMA-262 §23.1.3.1 step 5.c.iv.3.b: CreateDataPropertyOrThrow
+                    // ES2026 §23.1.3.2: CreateDataPropertyOrThrow
                     if (!array_set_elem_ulong_checked(ctx, result, n, elem)) return false;
                 }
             }
@@ -2858,7 +2890,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
             arr_throw_type_error(ctx, "Concatenating would exceed the maximum array length (2^53-1)");
             return false;
         }
-        // ECMA-262 §23.1.3.1 step 5.d.ii: CreateDataPropertyOrThrow
+        // ES2026 §23.1.3.2: CreateDataPropertyOrThrow
         if (!array_set_elem_ulong_checked(ctx, result, n, item)) return false;
         n++;
     }
@@ -2877,7 +2909,7 @@ fn bool arr_from_is_callable(TVal v) {
     return false;
 }
 
-// IteratorClose(iterator, completion), ECMA-262 §7.4.8, "poor man's" variant
+// IteratorClose(iterator, completion), ES2026 §7.4.11, "poor man's" variant
 // used when abandoning iteration early due to an abrupt completion that has
 // already been recorded in ctx (ctx.should_throw/ctx.throw_value). Calls
 // iterator.return() if present, discarding *its* result but propagating a
@@ -2902,7 +2934,7 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     ctx.should_throw = false;
     // Use builtins_generic_get, not get_prop_proto (which bypasses accessor
     // getters entirely): an accessor "return" property must have its getter
-    // invoked here too, ECMA-262 §7.4.8 IteratorClose calls GetMethod, and a
+    // invoked here too, ES2026 §7.4.11 IteratorClose calls GetMethod, and a
     // throw from the getter itself is swallowed the same as a throw from
     // return() (the original abrupt completion in ctx takes precedence).
     TVal? return_method_opt = builtins_generic_get(iter_obj, return_key, ctx);
@@ -2918,7 +2950,7 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     }
 }
 
-// Set(O, "length", value, true), ECMA-262 §7.3.4, restricted to the
+// Set(O, "length", value, true), ES2026 §7.3.4, restricted to the
 // "length" key on the Array.from result object A. Unlike arr_create_data_
 // property_or_throw (which bypasses the prototype chain), this honours an
 // inherited accessor setter for "length", needed when A came from a custom
@@ -2951,7 +2983,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
         return true;
     }
 
-    // ECMA-262 §10.4.2.4 ArraySetLength: ToUint32(len_val) must equal len_val.
+    // ES2026 §10.4.2.4 ArraySetLength: ToUint32(len_val) must equal len_val.
     if (obj.get_class() == hobject::ObjClass.ARRAY && len_val > 0xFFFFFFFFUL) {
         arr_throw_range_error(ctx, "Invalid array length");
         return false;
@@ -3016,7 +3048,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
 
     // No own property: check the prototype chain for an inherited accessor
     // before falling back to defining a new own data property (Set()'s
-    // OrdinarySet walks the chain first per ECMA-262 §10.1.9.2).
+    // OrdinarySet walks the chain first per ES2026 §10.1.9.1).
     hobject::AccessorResult acc = obj.find_accessor_proto(len_key, false, ctx.heap);
     if (acc.found) {
         if (acc.accessor_fn.is_undefined() || acc.accessor_fn.is_null()) {
@@ -3081,7 +3113,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     return true;
 }
 
-// Array.from ( items [ , mapfn [ , thisArg ] ] ), ECMA-262 §23.1.2.1
+// Array.from ( items [ , mapfn [ , thisArg ] ] ), ES2026 §23.1.2.1
 fn void builtin_array_from(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
@@ -3144,7 +3176,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     }
 
     if (have_iter_method) {
-        // === Iterable path, ECMA-262 §23.1.2.1 step 6 ===
+        // === Iterable path, ES2026 §23.1.2.1 ===
         if (!arr_from_is_callable(iter_method)) {
             arr_throw_type_error(ctx, "Result of the Symbol.iterator method is not callable");
             ctx.result_undefined();
@@ -3204,7 +3236,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         mapfn.set_temproot();
         this_arg.set_temproot();
 
-        // ECMA-262 §7.4.2 GetIterator reads `next` ONCE, when the iterator is
+        // ES2026 §7.4.4 GetIterator reads `next` ONCE, when the iterator is
         // obtained, and every IteratorStep calls that same function. Reading it
         // per iteration is observable — an accessor `next` sees one get per
         // element instead of one — and when the accessor returns a FRESH
@@ -3351,7 +3383,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         return;
     }
 
-    // === Array-like path, ECMA-262 §23.1.2.1 steps 7-19 ===
+    // === Array-like path, ES2026 §23.1.2.1 ===
     // items must not be null or undefined (ToObject would throw).
     if (items.is_undefined() || items.is_null()) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
@@ -3485,7 +3517,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     ctx.result_object(arr);
 }
 
-// Array.isArray(arg), ECMA-262 §22.1.2.2
+// Array.isArray(arg), ES2026 §23.1.2.3
 fn void builtin_array_isArray(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
         ctx.result_boolean(false);
@@ -3514,7 +3546,7 @@ fn void builtin_array_isArray(BuiltinContext* ctx) {
 // Array.prototype callback methods, native implementations using heap.call_fn
 // ============================================================================
 
-// Helper: ToObject for Array.prototype methods (ECMA-262 §9.9).
+// Helper: ToObject for Array.prototype methods (ES2026 §7.1.18).
 // Wraps primitives (Boolean/Number/String) into wrapper objects.
 // Returns null-optional for null/undefined (caller should throw TypeError).
 fn HObject* arr_to_object(TVal val, Heap* heap) {
@@ -3544,7 +3576,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
         }
         return null;
     }
-    // BigInt → BigInt wrapper object (ECMA-262 §7.1.18)
+    // BigInt → BigInt wrapper object (ES2026 §7.1.18)
     if (val.is_bigint()) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.BIGINT);
         if (try obj = obj_raw) {
@@ -3610,7 +3642,7 @@ fn bool arr_create_data_index(BuiltinContext* ctx, HObject* obj, ulong k, TVal v
     return pk == null || arr_create_data_property_or_throw(ctx, obj, pk, val);
 }
 
-// CreateDataPropertyOrThrow(O, P, V), ECMA-262 §7.3.7 / §7.3.6 CreateDataProperty.
+// CreateDataPropertyOrThrow(O, P, V), ES2026 §7.3.6 / §7.3.5 CreateDataProperty.
 // Used by Array.from to define each result index with {writable:true,
 // enumerable:true, configurable:true} semantics rather than plain [[Set]].
 // This matters when the result object's index was pre-defined as
@@ -3619,7 +3651,7 @@ fn bool arr_create_data_index(BuiltinContext* ctx, HObject* obj, ulong k, TVal v
 // throw). Returns true on success; on failure sets ctx.should_throw and
 // returns false.
 fn bool arr_create_data_property_or_throw(BuiltinContext* ctx, HObject* obj, HString* key, TVal val) {
-    // CreateDataPropertyOrThrow (ECMA-262 §7.3.6) is defined in terms of
+    // CreateDataPropertyOrThrow (ES2026 §7.3.6) is defined in terms of
     // O.[[DefineOwnProperty]], so it must go through object_define_own: the
     // target can be a Proxy (whose "defineProperty" trap has to run and be
     // observable), a module namespace, a TypedArray, or an Array whose
@@ -3680,7 +3712,7 @@ fn bool arr_present_elem(BuiltinContext* ctx, HObject* obj, ulong key, TVal* out
     return arr_has_prop_ctx(ctx, obj, key) && arr_get_elem_vm(obj, key, ctx.heap, ctx, out);
 }
 
-// Helper: check if numeric key exists on object (ECMA-262 §15.4.5.1 step 4 "k in O").
+// Helper: check if numeric key exists on object (ES2026 §7.3.11 HasProperty).
 // Uses get_prop_or_accessor_proto to handle accessor properties.
 fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
     hobject::IndexProp held;
@@ -3757,7 +3789,7 @@ fn void arr_delete_elem_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
     if (del_key != null) obj.delete_prop(del_key, ctx.heap);
 }
 
-// DeletePropertyOrThrow(O, P), ECMA-262 §7.3.9: unlike arr_delete_elem_or_throw
+// DeletePropertyOrThrow(O, P), ES2026 §7.3.9: unlike arr_delete_elem_or_throw
 // above, the ordinary (non-Proxy) path honours [[Delete]]'s return value, so a
 // non-configurable index throws a TypeError instead of silently succeeding.
 fn void arr_delete_elem_strict_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
@@ -3836,7 +3868,7 @@ fn bool is_builtin_array_ctor(HObject* obj) {
            (*obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.ARRAY.ordinal;
 }
 
-// ArraySpeciesCreate helper, ECMA-262 §9.4.2.3
+// ArraySpeciesCreate helper, ES2026 §10.4.2.3
 // Determines the constructor to use for derived array results.
 // Returns true if out_constructor is set (caller should construct with new);
 // returns false if the caller should fall back to a plain Array.
@@ -3900,7 +3932,7 @@ fn bool array_species_create(BuiltinContext* ctx, HObject* original, HObject** o
 // Returns the result array, or null on allocation/throw error (caller should
 // check ctx.should_throw).
 fn HObject* array_species_create_result(BuiltinContext* ctx, HObject* original, ulong len) {
-    // ECMA-262 §9.4.2.3 ArraySpeciesCreate step 3: IsArray(original).
+    // ES2026 §10.4.2.3 ArraySpeciesCreate: IsArray(original).
     // Proxy objects must recurse through their target (revoked → TypeError).
     bool orig_is_array;
     if (original.is_proxy()) {
@@ -4163,7 +4195,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     }
 
     // STRING exotic: an in-range character index is a non-writable,
-    // non-configurable own data property (ECMA-262 §10.4.3.5
+    // non-configurable own data property (ES2026 §10.4.3.5
     // StringGetOwnProperty), so [[Set]] must fail (Throw=true -> TypeError)
     // exactly like any other read-only own property. Character indices are
     // served lazily (no per-character own properties are materialised), so
@@ -4607,7 +4639,7 @@ fn TVal arr_call_callback(BuiltinContext* ctx, TVal callback, TVal thisArg, TVal
     return res;
 }
 
-// Array.prototype.forEach(callbackfn[, thisArg]), ECMA-262 §15.4.4.18
+// Array.prototype.forEach(callbackfn[, thisArg]), ES2026 §23.1.3.15
 fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4617,7 +4649,7 @@ fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     }
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
-    // Per ECMA-262 §15.4.4.18 step 2: IsCallable(callbackfn) must be true even
+    // Per ES2026 §23.1.3.15: IsCallable(callbackfn) must be true even
     // when argc < 1 (i.e. callbackfn is undefined). Always check so the
     // TypeError is thrown.
     TVal cb_val;
@@ -4637,7 +4669,7 @@ fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     ctx.result_undefined();
 }
 
-// Array.prototype.map(callbackfn[, thisArg]), ECMA-262 §15.4.4.19
+// Array.prototype.map(callbackfn[, thisArg]), ES2026 §23.1.3.21
 fn void builtin_array_proto_map(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4645,7 +4677,7 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ECMA-262 §23.1.3.18 step 2: get LengthOfArrayLike before checking IsCallable.
+    // ES2026 §23.1.3.21: get LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     // Step 5: ArraySpeciesCreate(O, len) only throws RangeError for len >
@@ -4695,7 +4727,7 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     ctx.result_object((void*)arr);
 }
 
-// Array.prototype.filter(callbackfn[, thisArg]), ECMA-262 §15.4.4.20
+// Array.prototype.filter(callbackfn[, thisArg]), ES2026 §23.1.3.8
 fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4703,7 +4735,7 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ECMA-262 §23.1.3.12 step 2: get LengthOfArrayLike before checking IsCallable.
+    // ES2026 §23.1.3.8: get LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     TVal cb_val;
@@ -4796,7 +4828,7 @@ fn void builtin_array_proto_findLast(BuiltinContext* ctx) => @array_find(ctx, tr
 fn void builtin_array_proto_findIndex(BuiltinContext* ctx) => @array_find(ctx, false, true);
 fn void builtin_array_proto_findLastIndex(BuiltinContext* ctx) => @array_find(ctx, true, true);
 
-// Array.prototype.every(callbackfn[, thisArg]), ECMA-262 §15.4.4.17
+// Array.prototype.every(callbackfn[, thisArg]), ES2026 §23.1.3.6
 fn void builtin_array_proto_every(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4804,7 +4836,7 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ECMA-262 §15.4.4.16: read LengthOfArrayLike before checking IsCallable.
+    // ES2026 §23.1.3.6: read LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     TVal cb_val;
@@ -4828,7 +4860,7 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
     ctx.result_boolean(true);
 }
 
-// Array.prototype.some(callbackfn[, thisArg]), ECMA-262 §15.4.4.16
+// Array.prototype.some(callbackfn[, thisArg]), ES2026 §23.1.3.29
 fn void builtin_array_proto_some(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4836,7 +4868,7 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ECMA-262 §15.4.4.17: read LengthOfArrayLike before checking IsCallable.
+    // ES2026 §23.1.3.29: read LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     TVal cb_val;
@@ -4860,7 +4892,7 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
     ctx.result_boolean(false);
 }
 
-// Array.prototype.reduce(callbackfn[, initialValue]), ECMA-262 §15.4.4.21
+// Array.prototype.reduce(callbackfn[, initialValue]), ES2026 §23.1.3.24
 fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4922,7 +4954,7 @@ fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     ctx.copy_result(acc);
 }
 
-// Array.prototype.reduceRight(callbackfn[, initialValue]), ECMA-262 §15.4.4.22
+// Array.prototype.reduceRight(callbackfn[, initialValue]), ES2026 §23.1.3.25
 fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4988,7 +5020,7 @@ fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     ctx.copy_result(acc);
 }
 
-// Array[@@species] getter, ECMA-262 §23.1.2.5. Returns the this value (the
+// Array[@@species] getter, ES2026 §23.1.2.6. Returns the this value (the
 // constructor itself), so a subclass like `class MyArray extends Array {}`
 // gets MyArray back from ArraySpeciesCreate by inheriting this accessor
 // through its constructor's prototype chain.
@@ -5058,7 +5090,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
             Builtin.ARRAY_PROTO_TOSORTED.ordinal,
             Builtin.ARRAY_PROTO_TOSPLICED.ordinal,
             Builtin.ARRAY_PROTO_WITH.ordinal,
-            // Array.prototype.keys/values/entries (ECMA-262 §22.1.3.x)
+            // Array.prototype.keys/values/entries (ES2026 §23.1.3)
             Builtin.ARRAY_PROTO_KEYS.ordinal,
             Builtin.ARRAY_PROTO_VALUES.ordinal,
             Builtin.ARRAY_PROTO_ENTRIES.ordinal,
@@ -5075,7 +5107,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         if (!register_builtin_members(proto, heap, METHODS[..])) return false;
     }
 
-    // Register Array.prototype[@@iterator] (ECMA-262 §22.1.3.30)
+    // Register Array.prototype[@@iterator] (ES2026 §23.1.3.40)
     // Per spec, @@iterator must be the *same function object* as .values.
     {
         HString* iter_sym = ensure_iterator_symbol(heap);
@@ -5092,7 +5124,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Array.prototype[@@unscopables] (ECMA-262 §23.1.3.34): a null-prototype
+    // Array.prototype[@@unscopables] (ES2026 §23.1.3.41): a null-prototype
     // object listing the for-in-shadowing method names, each a data property
     // with value true. The property itself is { writable:false, enumerable:false,
     // configurable:true }.
@@ -5121,25 +5153,25 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Array.prototype has no own @@toStringTag (ECMA-262 §23.1.3.31): the
+    // Array.prototype has no own @@toStringTag (ES2026 §23.1.3): the
     // "Array" tag in Object.prototype.toString comes from the IsArray()
     // internal-slot check, not from a @@toStringTag property.
 
-    // Add Array.isArray (ECMA-262 §22.1.2.2) as static method on the constructor
+    // Add Array.isArray (ES2026 §23.1.2.3) as static method on the constructor
     HString* isarray_key = builtin_intern_string(heap, "isArray");
     if (isarray_key == null) return false;
     TVal isarray_tv;
     isarray_tv.set_builtin(heap, Builtin.ARRAY_ISARRAY.ordinal);
     arr.put_prop(isarray_key, isarray_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add Array.of (ECMA-262 §22.1.2.3) as static method on the constructor
+    // Add Array.of (ES2026 §23.1.2.4) as static method on the constructor
     HString* of_key = builtin_intern_string(heap, "of");
     if (of_key == null) return false;
     TVal of_tv;
     of_tv.set_builtin(heap, Builtin.ARRAY_OF.ordinal);
     arr.put_prop(of_key, of_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add Array.from (ECMA-262 §22.1.2.1) as static method on the constructor
+    // Add Array.from (ES2026 §23.1.2.1) as static method on the constructor
     HString* from_key = builtin_intern_string(heap, "from");
     if (from_key == null) return false;
     TVal from_tv;
@@ -5155,7 +5187,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         arr.put_prop(from_async_key, from_async_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
-    // Add @@species accessor (ECMA-262 §23.1.2.5): getter returns `this`.
+    // Add @@species accessor (ES2026 §23.1.2.6): getter returns `this`.
     HString* species_sym = ensure_species_symbol(heap);
     if (species_sym != null) {
         HObject*? getter_fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

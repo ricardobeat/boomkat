@@ -93,7 +93,7 @@ fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
     }
 }
 
-// ECMA-262 §13.7.4.1 / §13.7.5.13 early error for `var` declarations: a var
+// ES2026 §14.7.4.1 / §14.7.5.1 early error for `var` declarations: a var
 // binding must not collide with a let/const/class binding in scope, including
 // the lexical names of an enclosing for-head (the body's var may recurse into
 // nested blocks). Same-block conflicts are caught by the block() pre-scan, so
@@ -324,18 +324,6 @@ fn ushort? CompilerContext.resolve_slot_global_by_index(&self, uint name_idx) {
     HString* name_hstr = (HString*)self.constants[name_idx].get_heapptr();
     return self.resolve_slot_global(self.name_text(name_hstr));
 }
-// Defaults to false (treated as `var`) if the name isn't found in the
-// scope stack, such as a top-level `function` declaration promoted straight
-// to the module env, which is hoisted and never in TDZ.
-
-
-// True when `name` has a runtime binding in this module scope: any
-// var/let/const/class/function declared here. A TypeScript type-only name
-// (an `interface` or `type` alias, which the parser erases without a
-// binding) is absent, which is what lets `export { G };` after
-// `interface G {}` erase to nothing instead of registering a phantom
-// export the linker would reject.
-
 
 // Resolve a variable name to its register REGARDLESS of capture status.
 // Only for declaration-site checks (e.g. `var` redeclaration must reuse the
@@ -413,30 +401,6 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
     return e.reg;
 }
 
-// True when a same-named lexical binding sits anywhere in the CURRENT
-// function body OUTSIDE this block (B.3.3.1 step ii's "would produce an Early
-// Error" test, i.e. the §13.2.1 lex-vs-var conflict). A same-named `var`
-// merges (§13.2.5) and does not exempt; formal/catch parameters merge too
-// (§9.2.10 step 27), so neither vetoes. Only `let`/`const`/`class` count,
-// and classes declare as LET-kind in this engine, so testing LET and CONST
-// covers all three. Walks the whole stack: enclosing blocks, the body top
-// level, and already-declared siblings all veto. The block's OWN lex_spans
-// names are not yet on the stack (they declare as they parse below), so they
-// never self-veto; LATER siblings are invisible and do not veto (node treats
-// those as runtime shadowing, not an early error).
-
-
-// True when `name` is a FORMAL parameter of the enclosing function.
-//
-// Catch parameters do not count: the exemption covers BoundNames of formals,
-// never a catch binding, so `try{}catch(f){ {function f(){}} }` must still
-// publish the closure to var scope. Formals are declared before the body
-// marker is pushed while a catch parameter is declared after it, so only
-// entries below the first body mark (scanning up from the bottom) qualify.
-// Always false at global scope, which has no formals — a same-named catch
-// parameter there must not exempt.
-
-
 // True when `name` is already bound as a formal or catch PARAMETER while
 // scanning outward from the current position, stopping at the first body
 // mark. A catch parameter declared in an ENCLOSING catch does not count:
@@ -446,7 +410,7 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
 // time by is_formal_param_name, which walks from the formal region instead.
 //
 // The hoisting pass uses this for the one case where a hoisted `var` must not
-// create a binding: ECMA-262 §9.2.10 step 27 initializes a var-declared name to
+// create a binding: ES2026 §10.2.11 step 27 initializes a var-declared name to
 // undefined only when it is NOT already a parameter name, so
 // `function f(p){ if (false) { var p = 1; } return p; }` must return the
 // ARGUMENT, not undefined. Leaving the parameter's own binding in place (and
@@ -519,8 +483,7 @@ fn void CompilerContext.mark_var_captured(&self, char[] name) {
 // declaration in scope_stack; return 0xFFFFFFFF otherwise. Used at every
 // register-only write site (postfix INC/DEC, plain/compound/logical
 // assignment) so a const violation is routed through PUTVAR_ASSIGN /
-// INC_VAR or DEC_VAR. The bare register-only opcode
-// silently succeeds on a const, which is the bug plan 062 group H fixes.
+// INC_VAR or DEC_VAR instead of silently succeeding on a bare register op.
 //
 // Returns 0xFFFFFFFF (not 0) for "no match" because add_string_constant can
 // legitimately return 0 for the very first string interned into a fresh pool,
@@ -579,7 +542,7 @@ fn ushort CompilerContext.shield_computed_key(&self, ushort key_reg) {
 // True when a bare-identifier assignment to `name` is STATICALLY RESOLVABLE,
 // so the RESOLVEVAR probe and its THROW_UNRESOLVED guard are provably dead.
 //
-// PutValue (ECMA-262 §13.15.2 step 1) requires a strict assignment to observe
+// PutValue (ES2026 §13.15.2 step 1) requires a strict assignment to observe
 // whether its LHS resolves BEFORE the RHS runs, which is what those two
 // instructions implement. A binding this compiler declared in the current
 // function always resolves: it exists in the environment from the moment the

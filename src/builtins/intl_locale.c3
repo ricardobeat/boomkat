@@ -186,7 +186,7 @@ fn HObject* intl_locale_create(BuiltinContext* ctx, HObject* proto, LocaleId* id
     return obj;
 }
 
-//the prototype is read from NewTarget first, then the tag, then the
+// The prototype is read from NewTarget first, then the tag, then the
 // options in the order below.
 fn void builtin_intl_locale(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {

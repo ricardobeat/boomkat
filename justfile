@@ -500,6 +500,25 @@ bench-memory-compare:
 	@echo "=== CURRENT BUILD ==="
 	@bash scripts/run_memory_bench.sh
 
+# ── Website ──────────────────────────────────────────────────────────────────
+
+# Regenerate the static C3 internal API reference in docs/site/reference/c3-api/
+docs-c3-api:
+    python3 scripts/gen_c3_api_docs.py
+
+# Publish web/ and docs/site/ to https://tomasi.studio/boomkat/ (goes live immediately)
+publish-site:
+    rm -rf .site && mkdir -p .site/boomkat
+    cp web/index.html .site/boomkat/
+    cp -R docs/site .site/boomkat/docs
+    scripts/publish-site.sh boomkat boomkat .site
+    rm -rf .site
+
+# Roll https://tomasi.studio/boomkat/ back to the previous deploy
+rollback-site:
+    bunny sites deployments publish --previous --force --site boomkat
+    scripts/publish-site.sh boomkat boomkat
+
 # ── Help ─────────────────────────────────────────────────────────────────────
 
 # List available commands

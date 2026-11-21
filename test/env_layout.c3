@@ -1,4 +1,4 @@
-// Layout probe for plans/085; compare proposed metadata with runtime types.
+// Layout probe comparing EnvRecord and TVal metadata with runtime types.
 module env_layout;
 
 import std::io;

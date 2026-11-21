@@ -2,10 +2,9 @@
 // comparison opcodes.
 //
 // The hot number paths in Vm.run call into these helpers only after checking
-// that at least one operand is a BigInt, so the common numeric case pays
-// nothing.  Arithmetic on two BigInts is done in native int128 (fixed width);
-// out-of-range results and division/modulo by zero raise the appropriate
-// error via the deferred-throw mechanism (vm.throw_pending).
+// that at least one operand is a BigInt. Arithmetic on two BigInts uses
+// arbitrary-precision limbs; out-of-range results and division/modulo by zero
+// raise the appropriate error via vm.throw_pending.
 module boomkat::vm;
 
 import boomkat::types;

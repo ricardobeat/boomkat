@@ -61,7 +61,7 @@ fn IntlRelativeState* intl_relative_receiver(BuiltinContext* ctx) {
     return null;
 }
 
-//the prototype is read from NewTarget before any option is touched.
+// The prototype is read from NewTarget before any option is touched.
 fn void builtin_intl_relative_format(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "RelativeTimeFormat requires new");

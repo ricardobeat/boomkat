@@ -126,12 +126,10 @@ fn bool CompilerContext.adopt_capture_slots(&self, CompiledFunction* ready, Comp
     if (constants == null) return false;
     ready.constants = constants;
     uint* names = (uint*)h.alloc_func(h.heap_udata, (usz)stub.capture_count * uint::size);
+    defer if (names != null) h.free_func(h.heap_udata, names);
     uint* slots = (uint*)h.alloc_func(h.heap_udata, pool * uint::size);
     defer if (slots != null) h.free_func(h.heap_udata, slots);
-    if (names == null || slots == null) {
-        if (names != null) h.free_func(h.heap_udata, names);
-        return false;
-    }
+    if (names == null || slots == null) return false;
     mem::clear(slots, (sz)(pool * uint::size));
     // The names `ready` offered as captures, marked until a slot claims them.
     const uint OFFERED = uint::max;
@@ -154,13 +152,7 @@ fn bool CompilerContext.adopt_capture_slots(&self, CompiledFunction* ready, Comp
     for (uint ci = 0; ci < candidates; ci++) {
         if (slots[own[ci]] == OFFERED) slots[own[ci]] = 0;
     }
-    ready.capture_names = names;
-    ready.capture_count = stub.capture_count;
-    ready.capture_cells = stub.capture_cells;
-    ready.capture_parent_reg = stub.capture_parent_reg;
-    ready.capture_fixed = stub.capture_fixed;
-    stub.capture_cells = null;
-    ushort* cells = ready.capture_cells;
+    ushort* cells = stub.capture_cells;
     for (uint pc = 0; pc < ready.code_count; pc++) {
         Instruction* ins = &ready.code[pc];
         if (ins.op == Opcode.WIDE) continue;
@@ -197,6 +189,13 @@ fn bool CompilerContext.adopt_capture_slots(&self, CompiledFunction* ready, Comp
                 if (cell) return false;
         }
     }
+    ready.capture_names = names;
+    names = null;
+    ready.capture_count = stub.capture_count;
+    ready.capture_cells = stub.capture_cells;
+    ready.capture_parent_reg = stub.capture_parent_reg;
+    ready.capture_fixed = stub.capture_fixed;
+    stub.capture_cells = null;
     return true;
 }
 

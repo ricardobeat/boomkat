@@ -1,21 +1,14 @@
 // Native add-on ABI and loader.
 //
-// An add-on is a shared library exporting one symbol:
+// An add-on is a shared library exporting a single symbol:
 //
 //     int bk_init_addon(BkAddonCtx* ctx, const BkAddonApi* api);
 //
-// It receives every entry point it needs through `api`, a versioned vtable, and
-// links against no engine symbols. That is what makes the surface reviewable:
-// the whole contract is one struct, and adding a feature to the engine cannot
-// silently become part of the ABI.
+// All engine entry points are passed via the versioned `api` vtable; add-ons do
+// not link against engine symbols. Payloads that hold JS values register a
+// `gc_mark` callback via `class_register` to trace them during GC.
 //
-// The design loads a shared object with dlopen and calls one init entry
-// point, with one addition that matters for anything holding state:
-// BkAddonApi.class_register takes a gc_mark callback, so a payload can hold JS
-// values safely. Without it an add-on can only expose stateless functions.
-//
-// Loading is opt-in per Runtime (see bk_addon_enable_loading); a build that
-// never calls it links the loader but never opens anything.
+// Loading is opt-in per runtime (see `enable_loading`).
 module boomkat::addon;
 
 import boomkat::heap;
@@ -27,9 +20,7 @@ import boomkat::embed;
 import boomkat::env;
 import libc;
 
-// Bump when the vtable changes shape. An add-on compiled against a different
-// major version is rejected rather than called: the alternative is a wild jump
-// through a moved function pointer.
+// Bump when the vtable layout changes incompatibly.
 const uint BK_ADDON_ABI_VERSION = 3;
 
 const int BK_ADDON_OK          = 0;
@@ -67,8 +58,6 @@ alias BkAddonFn = fn void(void* bctx, void* udata);
 // The vtable
 // ============================================================================
 
-// Function-pointer types for the vtable. Named aliases, not inline signatures,
-// so the ABI is greppable.
 alias FnClassRegister    = fn long(BkAddonCtx*, char*, void*, void*, void*, void*);
 alias FnProtoNew         = fn void*(BkAddonCtx*);
 alias FnObjectNew        = fn void*(BkAddonCtx*);
@@ -395,17 +384,13 @@ fn void api_mem_free(BkAddonCtx* ctx, void* p) @private {
 // Handles
 // ============================================================================
 
-// Handles are indices into a per-heap table of TVals, not raw value bits.
+// Handles are 1-based indices into a per-heap table of TVals (0 is "no value").
+// Using table indices instead of raw TVal bits keeps the ABI identical across
+// NaN-boxed (8-byte TVal) and NONANBOX (16-byte tagged union) builds.
 //
-// The obvious encoding -- bitcast the TVal into a ulong -- works only in the
-// NaN-boxed build, where TVal is 8 bytes. The NONANBOX build (see
-// types::USE_NANBOX) uses a 16-byte tagged union, so raw bits would silently
-// truncate. Indices are the same width either way, which keeps one add-on
-// binary working against both builds.
-//
-// The table owns strings and roots traced values for the duration of a call.
-// Returning releases this call's handles. Payload slots acquire independent
-// ownership through handle_store and trace their objects through gc_mark.
+// The table owns strings and roots traced values for the duration of a call;
+// returning releases the call's handles. Payload slots acquire independent
+// ownership via handle_store and trace their objects via gc_mark.
 fn ulong tval_to_handle(heap::Heap* h, types::TVal v) @private {
     if (h == null) return 0;
     long slot = h.addon_handle_push(v);
@@ -472,12 +457,11 @@ BkAddonApi g_addon_api = {
 // Loading
 // ============================================================================
 
-// Open `path`, find bk_init_addon, check the ABI version, and run it.
+// Open `path`, resolve `bk_init_addon`, and run it.
 //
-// The library is intentionally never dlclose()d on success: its code stays
-// mapped for as long as any object it registered can be reached, and the
-// engine has no way to know when that is. Closing on failure is safe because
-// nothing was registered.
+// Loaded libraries are never closed on success so registered callbacks and
+// finalizers remain mapped for the lifetime of the process. Closing on failure
+// is safe because nothing was registered.
 fn int load_addon(heap::Heap* h, env::EnvRecord* global_env, char[] path) {
     if (h == null || global_env == null) return BK_ADDON_ERR_INIT;
 

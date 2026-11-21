@@ -18,7 +18,7 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
     SourceBuf* source = idx.share_source(self.lexer.source);
     if (source == null) return COMPILE_ERROR~;
     if (source.line_starts.len == 0) {
-        source.line_starts = mem::new_array(uint, idx.tree.line_starts.len)[:idx.tree.line_starts.len];
+        source.line_starts = mem::alloc_array(uint, idx.tree.line_starts.len);
         mem::copy(source.line_starts.ptr, idx.tree.line_starts.data,
             idx.tree.line_starts.len * uint::size);
     }
@@ -42,12 +42,7 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
     f.lazy_paren = idx.tree.field(rec, ast::FN_PAREN) + 1;
     attach_function_info(f, name, false, idx.tree.field(rec, ast::FN_SRC_START),
         idx.tree.field(rec, ast::FN_SRC_END), false, self.lexer.source);
-    if (self.lexer.source_name.len > 0) {
-        char[] file = mem::new_array(char, self.lexer.source_name.len + 1);
-        mem::copy(file.ptr, self.lexer.source_name.ptr, self.lexer.source_name.len);
-        f.filename_ptr = file.ptr;
-        f.filename_len = (uint)self.lexer.source_name.len;
-    }
+    f.set_filename_owned(self.lexer.source_name);
     f.lazy_outer_with = self.in_with();
     self.record_outer_names(f, scope);
     h.track_compiled_func(f);
@@ -215,6 +210,7 @@ fn void? materialize_function(CompiledFunction* f, Heap* h, char[] why = {}) @no
     ctx.index_outer_names(idx, f);
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
+    defer catch h.free_compiled_func(ready);
     if (!ctx.adopt_capture_slots(ready, f)) return ctx.fail("internal: a deferred body reads a cell by name")~;
     CompiledFunction saved = *f;
     *f = *ready;

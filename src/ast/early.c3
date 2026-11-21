@@ -1,4 +1,4 @@
-// Early errors over the flat AST (plan 101, stage 6).
+// Early errors over the flat AST.
 //
 // The parser accepts what the grammar allows and the contextual rules it can decide while
 // streaming tokens. This pass walks the finished tree top-down with the context those rules need
@@ -108,12 +108,10 @@ fn void Early.init(&self, Ast* ast) {
     // stable and each id indexes inside its bitset.
     sz atom_cap = (sz)ast.atoms.count();
     self.strict_bits = mem::new_array(bool, atom_cap);
-    mem::clear(self.strict_bits.ptr, atom_cap * bool::size);
     for (usz i = 0; i < 9; i++) {
         self.strict_bits[sr_atoms[i]] = true;
     }
     self.keyword_bits = mem::new_array(bool, atom_cap);
-    mem::clear(self.keyword_bits.ptr, atom_cap * bool::size);
     for (uint i = 0; i < kw_count; i++) {
         self.keyword_bits[kw_atoms[i]] = true;
     }
@@ -316,7 +314,6 @@ fn void Early.target(&self, uint n) {
 
 // Whether the names collected from `from` on repeat.
 fn bool Early.has_duplicate(&self, uint from) {
-    // A short list is compared in place, a long one through a table by atom.
     if (self.names.len - from <= 16) {
         for (sz i = (sz)from + 1; i < self.names.len; i++) {
             for (sz j = (sz)from; j < i; j++) {
@@ -462,7 +459,6 @@ fn void Early.class_(&self, uint n) {
     uint name = self.ast.lhs.data[n];
     EarlyCtx outer = self.ctx;
     defer self.ctx = outer;
-    // Everything in a class is strict code.
     self.ctx.strict = true;
     if (name != 0) self.check_ident(name, IdRole.BIND);
     uint heritage = self.ast.field(rec, CLS_HERITAGE);
@@ -1140,62 +1136,63 @@ fn bool Early.is_plain_sloppy_function(&self, Resolver* r, Site* s) {
 // lexical name that is also var-declared in its scope or a parameter, and the
 // catch-parameter rules of Annex B.3.4.
 fn bool Early.conflicts(&self, Resolver* r) {
-    sz nb = (sz)r.bindings.len + 1;
-    char[] flags = mem::new_array(char, nb)[:nb];
-    defer mem::free(flags.ptr);
-    // Pass 1: lexical duplicates, parameters and catch parameters.
-    for (sz i = 1; i < (sz)r.sites.len && !self.failed; i++) {
-        Site* s = &r.sites.data[i];
-        uint at = self.ast.main_tok.data[s.node];
-        if (s.kind == DeclKind.PARAM) {
-            flags[s.binding] |= BF_PARAM;
-        } else if (s.kind == DeclKind.CATCH) {
-            flags[s.binding] |= BF_CATCH;
-            if (s.pattern) flags[s.binding] |= BF_CATCH_PATTERN;
-        } else if (self.site_is_lexical(r, s)) {
-            char f = flags[s.binding];
-            bool plain = self.is_plain_sloppy_function(r, s);
-            if ((f & BF_LEX) != 0) {
-                // Annex B.3.3.4: sloppy plain function declarations may repeat in a block.
-                if (!(plain && (f & BF_PLAIN_FUNC) != 0)) { self.fail_at(at, "redeclaration of a lexical name"); return false; }
-            } else {
-                f |= BF_LEX;
-                if (plain) f |= BF_PLAIN_FUNC;
-                flags[s.binding] = f;
-            }
-            if ((f & BF_PARAM) != 0 && r.scopes.data[s.scope].kind == ScopeKind.FUNCTION) {
-                { self.fail_at(at, "redeclaration of a parameter name"); return false; }
-            }
-            Scope* sc = &r.scopes.data[s.scope];
-            if (sc.kind == ScopeKind.BLOCK && sc.parent != 0 && r.scopes.data[sc.parent].kind == ScopeKind.CATCH) {
-                uint cb = r.lookup(sc.parent, self.ast.lhs.data[s.node]);
-                if (cb != 0 && (flags[cb] & BF_CATCH) != 0) { self.fail_at(at, "redeclaration of a catch parameter"); return false; }
-            }
-        }
-    }
-    // A parameter declared after a lexical binding of the same function scope (parameters come
-    // first in source order, so only the var-like pass below needs the full picture).
-    // Pass 2: var-like declarations against the lexical names of the scopes between them and
-    // their function.
-    for (sz i = 1; i < (sz)r.sites.len && !self.failed; i++) {
-        Site* s = &r.sites.data[i];
-        if (!self.site_is_var_like(r, s)) continue;
-        uint name = self.ast.lhs.data[s.node];
-        uint at = self.ast.main_tok.data[s.node];
-        uint x = s.scope;
-        while (x != 0) {
-            uint b = r.lookup(x, name);
-            if (b != 0) {
-                char f = flags[b];
-                if ((f & BF_LEX) != 0) { self.fail_at(at, "var and lexical declarations cannot share a name"); return false; }
-                if ((f & BF_CATCH) != 0 && s.kind == DeclKind.VAR && (f & BF_CATCH_PATTERN) != 0) {
-                    { self.fail_at(at, "redeclaration of a catch parameter"); return false; }
+    @pool() {
+        sz nb = r.bindings.len + 1;
+        char[] flags = mem::temp_array(char, nb);
+        // Pass 1: lexical duplicates, parameters and catch parameters.
+        for (sz i = 1; i < (sz)r.sites.len && !self.failed; i++) {
+            Site* s = &r.sites.data[i];
+            uint at = self.ast.main_tok.data[s.node];
+            if (s.kind == DeclKind.PARAM) {
+                flags[s.binding] |= BF_PARAM;
+            } else if (s.kind == DeclKind.CATCH) {
+                flags[s.binding] |= BF_CATCH;
+                if (s.pattern) flags[s.binding] |= BF_CATCH_PATTERN;
+            } else if (self.site_is_lexical(r, s)) {
+                char f = flags[s.binding];
+                bool plain = self.is_plain_sloppy_function(r, s);
+                if ((f & BF_LEX) != 0) {
+                    // Annex B.3.3.4: sloppy plain function declarations may repeat in a block.
+                    if (!(plain && (f & BF_PLAIN_FUNC) != 0)) { self.fail_at(at, "redeclaration of a lexical name"); return false; }
+                } else {
+                    f |= BF_LEX;
+                    if (plain) f |= BF_PLAIN_FUNC;
+                    flags[s.binding] = f;
+                }
+                if ((f & BF_PARAM) != 0 && r.scopes.data[s.scope].kind == ScopeKind.FUNCTION) {
+                    self.fail_at(at, "redeclaration of a parameter name");
+                    return false;
+                }
+                Scope* sc = &r.scopes.data[s.scope];
+                if (sc.kind == ScopeKind.BLOCK && sc.parent != 0 && r.scopes.data[sc.parent].kind == ScopeKind.CATCH) {
+                    uint cb = r.lookup(sc.parent, self.ast.lhs.data[s.node]);
+                    if (cb != 0 && (flags[cb] & BF_CATCH) != 0) { self.fail_at(at, "redeclaration of a catch parameter"); return false; }
                 }
             }
-            if (r.scopes.data[x].func == x) break;
-            x = r.scopes.data[x].parent;
         }
-    }
+        // Pass 2: var-like declarations against lexical names of enclosing scopes up to their
+        // function. (Parameters precede body bindings in source order, so Pass 1 already checked them.)
+        for (sz i = 1; i < (sz)r.sites.len && !self.failed; i++) {
+            Site* s = &r.sites.data[i];
+            if (!self.site_is_var_like(r, s)) continue;
+            uint name = self.ast.lhs.data[s.node];
+            uint at = self.ast.main_tok.data[s.node];
+            uint x = s.scope;
+            while (x != 0) {
+                uint b = r.lookup(x, name);
+                if (b != 0) {
+                    char f = flags[b];
+                    if ((f & BF_LEX) != 0) { self.fail_at(at, "var and lexical declarations cannot share a name"); return false; }
+                    if ((f & BF_CATCH) != 0 && s.kind == DeclKind.VAR && (f & BF_CATCH_PATTERN) != 0) {
+                        self.fail_at(at, "redeclaration of a catch parameter");
+                        return false;
+                    }
+                }
+                if (r.scopes.data[x].func == x) break;
+                x = r.scopes.data[x].parent;
+            }
+        }
+    };
     if (self.is_module && !self.failed) self.module_exports(r);
     return !self.failed;
 }

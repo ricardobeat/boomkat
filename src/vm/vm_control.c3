@@ -1191,13 +1191,10 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 break;
             }
 
-            // EnumerateObjectProperties / ForIn/OfBodyEvaluation semantics
-            // (plan 062 group N): a key whose property was deleted from the
-            // target before its turn must be skipped, and is not replaced
-            // by undefined, because the key is no longer addressable on the
-            // target.  Walk the pre-collected key list, advancing the index
-            // past any key that no longer resolves.  Properties added during
-            // enumeration are not visited (we only walk the snapshot).
+            // EnumerateObjectProperties / ForIn/OfBodyEvaluation: a key whose
+            // property was deleted from the target before its turn is skipped,
+            // not replaced by undefined. Properties added during enumeration
+            // are not visited (only the snapshot is walked).
             // Exotic-keyed targets (TypedArray,
             // String wrapper) and proxy targets get a dedicated existence
             // path inside `forin_key_still_exists` because their integer

@@ -150,8 +150,8 @@ The default release files come in several build profiles, allowing you to trade 
 
 ```sh
 just build-tiny
-./out/boomkat_tiny_compile --compile program.bkbc program.js
-./out/boomkat_tiny program.bkbc
+./out/boomkat_tiny_compile --compile program.bk program.js
+./out/boomkat_tiny program.bk
 ```
 
 <details>

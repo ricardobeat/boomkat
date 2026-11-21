@@ -106,6 +106,10 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
     return c;
 }
 
+<*
+ @param [&inout] c
+ @param [drop] c
+*>
 fn void index_end(AstIndex* c) {
     index_state = c.prev;
     bytecode::source_buf_release(c.src_buf);
