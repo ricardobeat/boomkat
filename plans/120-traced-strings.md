@@ -226,10 +226,12 @@ Each phase lands as reviewable commits with the suites green.
      branch, same tests, only the reclamation changed.
    - **Gate:**
      - Fixed-iteration instructions geomean ≤ 1.00 against `jit` at phase 0.
-     - Peak RSS on default, slim and tiny: the target is no increase, and
-       no build may exceed +30%.
-     - If memory is the binding constraint on small devices, stop here and
-       give `main` the ZCT instead.
+     - Peak RSS on default, slim and tiny, against phase 0. The target is no
+       increase. +30% is a rough tolerance, not a hard limit; revisit it once
+       phase 0 shows how peak memory varies today.
+     - The decision weighs the memory change against the instruction change
+       and the code phase 4 removes. If memory is the binding constraint on
+       small devices, stop here and give `main` the ZCT instead.
 4. **Delete counts.**
    - `tval_copy_ref` becomes a plain copy; `incref`, `decref` for strings,
      `release_string`, the ZCT, segment counting, string teardown bits and
@@ -256,8 +258,8 @@ as soon as phase 1 passes. Traced strings go to `main` after phase 5, so
   GC-stress build and `GC_VERIFY`.
 - Fixed-iteration Octane instructions geomean ≤ 1.00 against `jit` at
   phase 0.
-- Peak RSS no higher than at phase 0 as the target, and never above +30%
-  on any build.
+- Peak RSS no higher than at phase 0 as the target. A rise is weighed at
+  the phase 3 gate.
 - Tiny binary no larger than at phase 0.
 - Net source lines down.
 
@@ -280,7 +282,9 @@ as soon as phase 1 passes. Traced strings go to `main` after phase 5, so
 
 Settled 2026-11-21:
 
-- **Peak RSS.** The target is no increase; the ceiling is +30% on any build.
+- **Peak RSS.** The target is no increase. +30% is a rough tolerance until
+  phase 0 measures how peak memory varies today; the expected change is
+  unknown.
 - **`GC_SIMPLE` on slim.** Only if it shrinks the binary significantly
   without a large slowdown.
 - **String pages.** Prototype both layouts and decide by benchmark.
