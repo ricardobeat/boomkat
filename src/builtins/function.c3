@@ -395,6 +395,9 @@ fn bool is_intrinsic_apply(TVal callee) {
     return (*obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.FUNCTION_PROTO_APPLY.ordinal;
 }
 
+// Arguments apply_call extracts into a buffer on the C stack; a longer list takes the heap.
+const uint APPLY_STACK_ARGS = 16;
+
 // Stores apply's extracted arguments in the argument slots.
 fn void apply_place_args(BuiltinContext* ctx, TVal* args, uint count) @local {
     for (uint i = 0; i < count; i++) ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg + i], &args[i]);
@@ -499,10 +502,13 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     // accessor getter and propagating an abrupt completion immediately.
     uint max_extract = len;
     uint actual_count = 0;
-    TVal* extracted_args = null;
-    if (max_extract > 0) {
+    // A short list, as nearly every apply passes, stays on the C stack.
+    TVal[APPLY_STACK_ARGS] stack_args;
+    TVal* extracted_args = &stack_args;
+    if (max_extract > APPLY_STACK_ARGS) {
         extracted_args = (TVal*)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal::size * max_extract);
     }
+    defer if (extracted_args != &stack_args) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
 
     // Fast path for plain Arrays: check the dense array part directly without
     // interning the numeric key string.  This avoids 10000 intern lookups per
@@ -529,10 +535,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
 
         if (is_typed_array_src) {
             if (!arr_get_elem_vm(arr_obj, (ulong)i, ctx.heap, ctx, &elem)) {
-                if (ctx.should_throw) {
-                    if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
-                    return;
-                }
+                if (ctx.should_throw) return;
                 elem.set_undefined();
             }
             if (actual_count < max_extract) extracted_args[actual_count++] = elem;
@@ -568,10 +571,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             TVal gs_slot = arr_obj.prop_values()[own_idx].get();
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
             elem = arr_invoke_getter_ctx(arr_obj, getter_fn, ctx.heap, ctx);
-            if (ctx.should_throw) {
-                if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
-                return;
-            }
+            if (ctx.should_throw) return;
         } else if (own_idx >= 0) {
             elem = arr_obj.prop_values()[own_idx].get();
         } else if (!is_plain_array && arr_obj.get_class() == hobject::ObjClass.ARRAY && arr_obj.array_part() != null
@@ -581,10 +581,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key_hstr, true, ctx.heap);
             if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 elem = arr_invoke_getter_ctx(arr_obj, res.acc.accessor_fn, ctx.heap, ctx);
-                if (ctx.should_throw) {
-                    if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
-                    return;
-                }
+                if (ctx.should_throw) return;
             } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
                 elem = res.data_val;
             } else {
@@ -595,7 +592,6 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     }
 
     if (ctx.regs != ((Vm*)ctx.vm).valstack) {
-        defer if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         bool ok;
         TVal result = host_call(ctx, target, extracted_args, actual_count, this_arg, &ok);
         if (ok) ctx.copy_result(result);
@@ -610,7 +606,6 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         Vm* vm = (Vm*)ctx.vm;
         TVal* old_vs = vm.valstack;
         if (!vm::ensure_valstack(vm, (uint)ctx.base_reg + actual_count + 8)) {
-            if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
             ctx.result_undefined();
             return;
         }
@@ -644,7 +639,6 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         // Lightfunc callees read their receiver from regs[base_reg - 1].
         ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 1], &this_arg);
         apply_place_args(ctx, extracted_args, actual_count);
-        if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         dispatch_retargeted(fn_idx, &inner_ctx);
         // A re-entrant builtin (Generator.prototype.throw/return/next) does not
         // finish synchronously: it rewrites the callee slot and asks the VM to
@@ -678,11 +672,9 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 2], &target);
         ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 1], &this_arg);
         apply_place_args(ctx, extracted_args, actual_count);
-        if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         ctx.needs_re_dispatch = true;
         ctx.re_nargs = (ushort)actual_count;
     } else {
-        if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         ctx.result_undefined();
     }
 }
