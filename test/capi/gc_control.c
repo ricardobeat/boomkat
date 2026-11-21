@@ -61,10 +61,17 @@ int main(void) {
     }
 
     /* Crossing the budget terminates uncatchably with BK_ERR_NOMEM. */
-    v = eval(ctx, "let keep = []; try { for (;;) keep.push({ a: 1, b: 2, c: [1, 2, 3] }) } catch (e) { 'caught' }");
+    v = eval(ctx, "{ let keep = []; try { for (;;) keep.push({ a: 1, b: 2, c: [1, 2, 3] }) } catch (e) { 'caught' } }");
     assert(v == 0 && bk_get_error_code(ctx) == BK_ERR_NOMEM);
     printf("over limit: %s\n", bk_get_error_message(ctx));
     /* The runtime stays usable. */
+    v = eval(ctx, "6 * 7");
+    assert(v && bk_to_number(ctx, v) == 42);
+
+    /* Objects held in pool pages count too: a list of small objects, with no
+     * array storage behind it, crosses the budget as well. */
+    v = eval(ctx, "{ let head = null; for (let i = 0; i < 2000000; i++) head = { next: head }; 'done' }");
+    assert(v == 0 && bk_get_error_code(ctx) == BK_ERR_NOMEM);
     v = eval(ctx, "6 * 7");
     assert(v && bk_to_number(ctx, v) == 42);
     s = stats(rt);

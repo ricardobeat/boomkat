@@ -26,6 +26,21 @@ const sz PAGE_SIZE = $feat(SMALL_VM) ? 4 * 1024 : 64 * 1024;
 // next stretch of allocation is likely to take again.
 const uint EMPTY_RESERVE = 4;
 
+// Pages come from the system allocator, aligned to their size, which an
+// embedder's allocator callbacks cannot provide. A meter reports each page a
+// pool takes and returns, so an owner with a byte budget still counts them; a
+// pool without one is uncounted.
+alias PageCharge = fn void(void* owner, sz bytes);
+
+struct PageMeter {
+    PageCharge charge;
+    void* owner;
+}
+
+macro void @charge(PageMeter* meter, sz bytes) {
+    if (meter != null) meter.charge(meter.owner, bytes);
+}
+
 struct PoolPage {
     PoolPage* prev;       // all pages
     PoolPage* next;
@@ -50,6 +65,7 @@ struct PagePool {
     uint empty_count;
     uint page_count;
     uint taken;           // pages added since the last trim
+    PageMeter* meter;
 }
 
 fn void PagePool.init(&self, sz block_size) {
@@ -64,15 +80,15 @@ fn void PagePool.init(&self, sz block_size) {
 fn void PagePool.free(&self) {
     for (PoolPage* p = self.pages; p != null;) {
         PoolPage* next = p.next;
-        release_page(p);
+        release_page(self.meter, p);
         p = next;
     }
     for (PoolPage* p = self.empty; p != null;) {
         PoolPage* next = p.next;
-        release_page(p);
+        release_page(self.meter, p);
         p = next;
     }
-    *self = { .block_size = self.block_size, .capacity = self.capacity };
+    *self = { .block_size = self.block_size, .capacity = self.capacity, .meter = self.meter };
 }
 
 <*
@@ -121,6 +137,7 @@ fn PoolPage* PagePool.add_page(&self) {
     } else {
         p = alloc::calloc_aligned(&allocators::LIBC_ALLOCATOR, PAGE_SIZE, PAGE_SIZE)!!;
         p.zeroed = true;
+        @charge(self.meter, PAGE_SIZE);
     }
     self.taken++;
     p.bump = (void*)p + PAGE_HEADER;
@@ -150,15 +167,15 @@ fn void PagePool.retire_page(&self, PoolPage* p) {
     self.empty_count++;
 }
 
-// Release the empty pages beyond the reserve and the pages taken since the
-// last trim.
-fn void PagePool.trim(&self) {
-    uint keep = max(self.taken, EMPTY_RESERVE);
+// Release the empty pages beyond the reserve and, unless `lean`, the pages
+// taken since the last trim.
+fn void PagePool.trim(&self, bool lean = false) {
+    uint keep = lean ? EMPTY_RESERVE : max(self.taken, EMPTY_RESERVE);
     while (self.empty_count > keep) {
         PoolPage* p = self.empty;
         self.empty = p.next;
         self.empty_count--;
-        release_page(p);
+        release_page(self.meter, p);
     }
     self.taken = 0;
 }
@@ -190,8 +207,9 @@ fn void PagePool.avail_unlink(&self, PoolPage* p) {
     }
 }
 
-fn void release_page(void* p) @local {
+fn void release_page(PageMeter* meter, void* p) @local {
     alloc::free_aligned(&allocators::LIBC_ALLOCATOR, p);
+    @charge(meter, -PAGE_SIZE);
 }
 
 // Pages of traced objects, reclaimed by the collector rather than freed one by
@@ -286,6 +304,7 @@ struct ObjectPool {
     uint capacity;        // blocks per page
     sz end;               // the offset where the last block ends
     Bitmap starts;        // the granules where blocks start
+    PageMeter* meter;
 }
 
 fn void ObjectPool.init(&self, sz block_size) {
@@ -305,16 +324,17 @@ fn void ObjectPool.init(&self, sz block_size) {
 fn void ObjectPool.free(&self) {
     for (ObjPage* p = self.pages; p != null;) {
         ObjPage* next = p.next;
-        release_page(p);
+        release_page(self.meter, p);
         p = next;
     }
     for (ObjPage* p = self.empty; p != null;) {
         ObjPage* next = p.link;
-        release_page(p);
+        release_page(self.meter, p);
         p = next;
     }
-    sz block_size = self.block_size;
-    self.init(block_size);
+    PageMeter* meter = self.meter;
+    self.init(self.block_size);
+    self.meter = meter;
 }
 
 fn ObjPage* page_of(void* block) @inline {
@@ -413,6 +433,7 @@ fn ObjPage* ObjectPool.add_page(&self) {
     } else {
         p = alloc::malloc_aligned(&allocators::LIBC_ALLOCATOR, PAGE_SIZE, PAGE_SIZE) ?? null;
         if (p == null) return null;
+        @charge(self.meter, PAGE_SIZE);
     }
     self.taken++;
     self.page_count++;
@@ -442,15 +463,15 @@ fn void ObjectPool.retire(&self, ObjPage* p) {
     self.empty_count++;
 }
 
-// Release the empty pages beyond the reserve and the pages taken since the
-// last trim.
-fn void ObjectPool.trim(&self) {
-    uint keep = max(self.taken, EMPTY_RESERVE);
+// Release the empty pages beyond the reserve and, unless `lean`, the pages
+// taken since the last trim.
+fn void ObjectPool.trim(&self, bool lean = false) {
+    uint keep = lean ? EMPTY_RESERVE : max(self.taken, EMPTY_RESERVE);
     while (self.empty_count > keep) {
         ObjPage* p = self.empty;
         self.empty = p.link;
         self.empty_count--;
-        release_page(p);
+        release_page(self.meter, p);
     }
     self.taken = 0;
 }

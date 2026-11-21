@@ -97,7 +97,8 @@ BK_API void bk_destroy(bk_ctx ctx);
  * receive alloc_opaque. realloc behaves as C realloc: a NULL pointer
  * allocates, and a zero size frees and returns NULL. fatal must not return; NULL prints the message and aborts. The
  * compiler, lexer, regexp and shared-memory blocks still allocate through
- * libc. */
+ * libc, and so do the 64 KiB pages that hold objects and small strings, which
+ * must be aligned to their size; heap_limit counts those pages too. */
 typedef struct {
     void *(*alloc)(void *opaque, size_t size);
     void *(*realloc)(void *opaque, void *ptr, size_t size);

@@ -303,8 +303,9 @@ fn void Heap.gc_finish_cycle(&self) {
     // RSS includes memory the collector cannot reclaim, so the check is coarse.
     // One read is cheap next to a cycle. Checking minor cycles too keeps the
     // overshoot small while a growing heap spaces its majors out.
-    foreach (pool : self.obj_pools) pool.trim();
-    foreach (&pool : self.small_pools) pool.trim();
+    // The pages taken since the last trim are kept for the next stretch of
+    // allocation, unless they would hold the heap past its budget.
+    self.trim_pools(self.accounting && self.heap_bytes > self.heap_limit);
     self.check_mem_limit(0);
     if (self.accounting) self.plan_limit_gc();
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;

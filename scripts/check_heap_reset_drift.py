@@ -48,6 +48,7 @@ ALLOWED_NOT_RESET = {
     "rnd_state",           # xorshift32 PRNG state, set at creation, evolves
 
     "mem_limit",          # Host-selected memory limit survives reset
+    "page_meter",         # Points at this heap; installed on the pools once
     "string_sweep_safe",   # Caller-set guard flag, false by default
 
     # ── VM callbacks — set by vm_create(), not by heap.reset() ──

@@ -9,8 +9,10 @@ import std::time;
 // Byte accounting is chosen when the heap is created: the allocator callbacks
 // are wrapped so that each block carries its size in a header in front of it,
 // and `heap_bytes` follows every allocation, reallocation and free made
-// through the heap allocator. The size-class pools and page pools draw their
-// memory through the same callbacks, so they are counted by the block.
+// through the heap allocator. The pools take their pages from the system
+// allocator instead, since the pages must be aligned to their size; a page
+// meter adds each page to `heap_bytes` when a pool takes it and removes it
+// when the pool returns it.
 //
 // The limit is a budget, not a cap on each allocation: crossing it sets
 // `heap_limit_hit`, which the interrupt poll turns into an uncatchable
@@ -55,6 +57,14 @@ fn void Heap.plan_limit_gc(&self) {
     } else {
         self.heap_limit_gc_at = self.heap_bytes + (self.heap_limit - self.heap_bytes) / 2;
     }
+}
+
+// A pool page is never refused: it is far below MEM_LIMIT_LARGE_BLOCK, so one
+// that crosses the limit only ends the script at the next poll.
+fn void charge_pool_pages(void* owner, sz bytes) {
+    Heap* h = (Heap*)owner;
+    if (bytes > 0) h.account_admit((usz)bytes);
+    h.heap_bytes += (ulong)bytes;
 }
 
 fn void* accounted_alloc(void* udata, usz size) {
@@ -141,11 +151,14 @@ fn void Heap.host_collect(&self, bool minor) {
     // without a count, and the flush keeps those a register holds. Freeing a
     // rope queues its parts behind the scanned range, so repeat while that
     // frees more.
-    if (self.native_frame_depth != 0) return;
-    for (uint queued = uint::max; self.zct_count != 0 && self.zct_count < queued;) {
-        queued = self.zct_count;
-        self.zct_flush(true);
+    if (self.native_frame_depth == 0) {
+        for (uint queued = uint::max; self.zct_count != 0 && self.zct_count < queued;) {
+            queued = self.zct_count;
+            self.zct_flush(true);
+        }
     }
+    // The host asked for memory back, so the pools keep only their reserve.
+    self.trim_pools(true);
 }
 
 // Joint collection with an embedder's tracing collector. The embedder's heap

@@ -1268,6 +1268,9 @@ struct Heap {
     void*               user_udata;
     ulong               heap_bytes;
     ulong               heap_limit;
+    // Counts the pool pages into heap_bytes; installed on every pool when
+    // accounting is on.
+    pagepool::PageMeter page_meter;
     // heap_bytes past which a full collection is requested before the limit.
     ulong               heap_limit_gc_at;
     long                external_bytes;
@@ -5905,9 +5908,19 @@ fn void Heap.init_pools(&self) {
     self.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
     self.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
     foreach (i, &pool : self.small_pools) pool.init((sz)POOL_CLASS_SIZES[i]);
+    if (self.accounting) {
+        self.page_meter = { &charge_pool_pages, self };
+        foreach (pool : self.obj_pools) pool.meter = &self.page_meter;
+        foreach (&pool : self.small_pools) pool.meter = &self.page_meter;
+    }
 }
 
 // Every pool page goes back to libc; the pools stay usable.
+fn void Heap.trim_pools(&self, bool lean) {
+    foreach (pool : self.obj_pools) pool.trim(lean);
+    foreach (&pool : self.small_pools) pool.trim(lean);
+}
+
 fn void Heap.free_pools(&self) {
     foreach (pool : self.obj_pools) pool.free();
     foreach (&pool : self.small_pools) pool.free();
