@@ -367,10 +367,10 @@ fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name,
 
 // NodeNext twin probe: a `.js`/`.mjs`/`.cjs` specifier written in a TS
 // source names the matching `.ts`/`.mts`/`.cts` file. Modern library
-// sources (zod 3.25+, 4.x) are published that way. Returns a malloc'd twin
-// path when that file exists, null when the specifier carries no JS
-// extension or the twin is absent. The caller owns the returned buffer.
-fn char[]? probe_ts_twin(char[] path) {
+// sources (zod 3.25+, 4.x) are published that way. Allocates the twin path
+// in `tmem` (caller's `@pool()`) when that file exists; faults when the
+// specifier carries no JS extension or the twin is absent.
+fn char[]? tprobe_ts_twin(char[] path) @local {
     usz base_len;
     String ext;
     if (path.len >= 3 && path[^3..] == ".js") {
@@ -390,21 +390,24 @@ fn char[]? probe_ts_twin(char[] path) {
     } else {
         return MODULE_ERROR~;
     }
-    usz total = base_len + ext.len;
-    void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
-    if (raw == null) {
-        return MODULE_ERROR~;
-    }
-    mem::copy(raw, path.ptr, (sz)base_len);
-    mem::copy((char*)raw + base_len, ext.ptr, (sz)ext.len);
-    ((char*)raw)[total] = 0;
-    char[] twin = ((char*)raw)[:total];
-    if (try data = file::load(mem, (String)twin)) {
-        mem::free(data.ptr);
-        return twin;
-    }
-    mem::free(raw);
+    char[] twin = tconcat(path[:base_len], ext);
+    if (module_file_exists(twin)) return twin;
     return MODULE_ERROR~;
+}
+
+// Concatenate byte slices into one buffer on `tmem`. A spare trailing NUL
+// leaves room for normalize_module_path_in_place to terminate in place.
+fn char[] tconcat(char[]... parts) @local {
+    usz total = 0;
+    foreach (part : parts) total += part.len;
+    char[] buf = mem::temp_array(char, (sz)(total + 1));
+    usz at = 0;
+    foreach (part : parts) {
+        if (part.len > 0) mem::copy(buf.ptr + at, part.ptr, (sz)part.len);
+        at += part.len;
+    }
+    buf[total] = 0;
+    return buf[:total];
 }
 
 // ============================================================================
@@ -441,24 +444,35 @@ fn DefinedModule* find_defined_module(Heap* heap, char[] name) @local {
 // replaces its source for later loads; a module already loaded under that name
 // stays as it is. Returns false when out of memory.
 fn bool define_module(Heap* heap, char[] name, char[] source) {
-    char[]? src_copy = copy_bytes(source);
-    if (catch err = src_copy) return false;
     DefinedModule* existing = find_defined_module(heap, name);
     if (existing != null) {
+        char[]? src_copy = copy_bytes(source);
+        if (catch src_copy) return false;
         mem::free(existing.source.ptr);
         existing.source = src_copy;
         return true;
     }
-    char[]? name_copy = copy_bytes(name);
-    if (catch err = name_copy) { mem::free(src_copy.ptr); return false; }
+    return append_defined_module(heap, name, source, false);
+}
+
+// Appends a definition owning copies of `name` and `source`. The table grows
+// first, so a failed copy leaves nothing to undo but the copy before it.
+fn bool append_defined_module(Heap* heap, char[] name, char[] source, bool native) @local {
     if (heap.defined_module_count >= heap.defined_module_cap) {
         uint new_cap = heap.defined_module_cap == 0 ? 8 : heap.defined_module_cap * 2;
         void* grown = mem::realloc(heap.defined_modules, (sz)new_cap * DefinedModule::size);
-        if (grown == null) { mem::free(src_copy.ptr); mem::free(name_copy.ptr); return false; }
+        if (grown == null) return false;
         heap.defined_modules = grown;
         heap.defined_module_cap = new_cap;
     }
-    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, src_copy, false };
+    char[]? name_copy = copy_bytes(name);
+    if (catch name_copy) return false;
+    char[]? src_copy = copy_bytes(source);
+    if (catch src_copy) {
+        mem::free(name_copy.ptr);
+        return false;
+    }
+    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, src_copy, native };
     return true;
 }
 
@@ -493,18 +507,7 @@ fn bool invalidate_module(Heap* heap, char[] name) {
 fn bool define_native_module(Heap* heap, char[] name, char[][] names, TVal[] values) {
     invalidate_module(heap, name);
     undefine_module(heap, name);
-    char[]? name_copy = copy_bytes(name);
-    if (catch name_copy) return false;
-    char[]? empty = copy_bytes("");
-    if (catch empty) { mem::free(name_copy.ptr); return false; }
-    if (heap.defined_module_count >= heap.defined_module_cap) {
-        uint new_cap = heap.defined_module_cap == 0 ? 8 : heap.defined_module_cap * 2;
-        void* grown = mem::realloc(heap.defined_modules, (sz)new_cap * DefinedModule::size);
-        if (grown == null) { mem::free(name_copy.ptr); mem::free(empty.ptr); return false; }
-        heap.defined_modules = grown;
-        heap.defined_module_cap = new_cap;
-    }
-    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, empty, true };
+    if (!append_defined_module(heap, name, "", true)) return false;
 
     // The record keeps its own name, separate from the definition table's.
     char[]? mod_name = copy_bytes(name);
@@ -574,41 +577,31 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
         }
         return data;
     }
-    // A `.js` specifier in a TS source names its `.ts` twin; read it when the
-    // exact path is absent (NodeNext resolution, zod and friends).
-    if (try twin_opt = probe_ts_twin(normalized_name)) {
-        char[] twin = twin_opt;
-        char[]? probe = file::load(mem, (String)twin);
-        mem::free(twin);
-        if (try loaded = probe) {
-            if (loaded.len == 0) {
-                mem::free(loaded.ptr);
-                return MODULE_ERROR~;
+    @pool() {
+        // A `.js` specifier in a TS source names its `.ts` twin; read it when the
+        // exact path is absent (NodeNext resolution, zod and friends).
+        if (try twin = tprobe_ts_twin(normalized_name)) {
+            if (try loaded = file::load(mem, (String)twin)) {
+                if (loaded.len == 0) {
+                    mem::free(loaded.ptr);
+                    return MODULE_ERROR~;
+                }
+                return loaded;
             }
-            return loaded;
         }
-    }
-    // Probe common extensions: `.ts`/`.mts`/`.cts` before `.js`/`.mjs`/`.cjs`
-    // so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
-    for (usz e = 0; e < 6; e++) {
-        String ext = PROBE_EXTS[e];
-        usz total = normalized_name.len + ext.len;
-        void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
-        if (raw == null) return MODULE_ERROR~;
-        mem::copy(raw, normalized_name.ptr, (sz)(normalized_name.len));
-        mem::copy((char*)raw + normalized_name.len, ext.ptr, (sz)(ext.len));
-        ((char*)raw)[total] = 0;
-        char[] candidate = ((char*)raw)[:total];
-        char[]? probe = file::load(mem, (String)candidate);
-        mem::free(raw);
-        if (try loaded = probe) {
-            if (loaded.len == 0) {
-                mem::free(loaded.ptr);
-                return MODULE_ERROR~;
+        // Probe common extensions: `.ts`/`.mts`/`.cts` before `.js`/`.mjs`/`.cjs`
+        // so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
+        for (usz e = 0; e < 6; e++) {
+            char[] candidate = tconcat(normalized_name, PROBE_EXTS[e]);
+            if (try loaded = file::load(mem, (String)candidate)) {
+                if (loaded.len == 0) {
+                    mem::free(loaded.ptr);
+                    return MODULE_ERROR~;
+                }
+                return loaded;
             }
-            return loaded;
         }
-    }
+    };
     return MODULE_ERROR~;
 }
 
@@ -638,46 +631,21 @@ fn bool has_module_ext(char[] name) {
 }
 
 // Try appending common extensions to `path` until one of the resulting
-// files exists. Returns the full path (with extension) or the original if
-// nothing matched. The returned buffer is heap-owned when different from
-// input, otherwise input is returned as-is.
-fn char[] resolve_extension(char[] path) {
+// files exists. Returns a `tmem`-allocated path (or `path` itself) within
+// the caller's `@pool()`.
+fn char[] tresolve_extension(char[] path) @local {
     if (has_module_ext(path)) {
         // A missing exact file with a JS extension may name the TS twin of a
         // NodeNext-style source (`./x.js` in a .ts file means `./x.ts`).
         if (module_file_exists(path)) return path;
-        char[]? twin = probe_ts_twin(path);
-        if (try t = twin) return t;
+        if (try t = tprobe_ts_twin(path)) return t;
         return path;
     }
-    // Check if bare path exists.
-    usz plen = path.len;
-    void* pbuf = alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
-    if (pbuf == null) return path;
-    mem::copy(pbuf, path.ptr, (sz)(plen));
-    ((char*)pbuf)[plen] = 0;
-    char[] bare = ((char*)pbuf)[:plen];
-    if (try bare_load = file::load(mem, (String)bare)) {
-        mem::free(pbuf);
-        mem::free(bare_load.ptr);
-        return path;
-    }
-    mem::free(pbuf);
+    if (module_file_exists(path)) return path;
 
     for (usz e = 0; e < 6; e++) {
-        String ext = PROBE_EXTS[e];
-        usz total = plen + ext.len;
-        void* buf = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
-        if (buf == null) return path;
-        mem::copy(buf, path.ptr, (sz)(plen));
-        mem::copy((char*)buf + plen, ext.ptr, (sz)(ext.len));
-        ((char*)buf)[total] = 0;
-        char[] candidate = ((char*)buf)[:total];
-        if (try probe = file::load(mem, (String)candidate)) {
-            mem::free(probe.ptr);
-            return candidate;
-        }
-        mem::free(buf);
+        char[] candidate = tconcat(path, PROBE_EXTS[e]);
+        if (module_file_exists(candidate)) return candidate;
     }
     return path;
 }
@@ -698,9 +666,9 @@ fn bool module_file_exists(char[] path) {
 // probed as: a subpath file when the specifier has one ('pkg/sub/mod'),
 // else package.json's "main" entry, else an index file (extension probing
 // applies, .ts before .js). No "exports" field support; vendored source
-// trees do not use it. Returns null when nothing matched, so the caller
-// falls back to plain extension probing of the specifier itself.
-fn char[]? resolve_node_modules(char[] base_name, char[] specifier) {
+// trees do not use it. Allocates intermediates and result in the caller's
+// `@pool()` (`tmem`).
+fn char[]? tresolve_node_modules(char[] base_name, char[] specifier) @local {
     usz name_len = 0;
     while (name_len < specifier.len && specifier[name_len] != '/') name_len++;
     if (name_len == 0) return MODULE_ERROR~;
@@ -717,88 +685,30 @@ fn char[]? resolve_node_modules(char[] base_name, char[] specifier) {
     for (usz i = 0; i < base_name.len; i++) {
         if (base_name[i] == '/') dir_end = i + 1;
     }
-    char[] nm = "node_modules/";
     for (;;) {
-        usz plen = dir_end + nm.len + pkg_name.len;
-        void* buf = alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
-        if (buf == null) return MODULE_ERROR~;
-        mem::copy(buf, base_name.ptr, (sz)(dir_end));
-        mem::copy((char*)buf + dir_end, nm.ptr, (sz)(nm.len));
-        mem::copy((char*)buf + dir_end + nm.len, pkg_name.ptr, (sz)(pkg_name.len));
-        ((char*)buf)[plen] = 0;
-        char[] pkg_dir = ((char*)buf)[:plen];
+        char[] pkg_dir = tconcat(base_name[:dir_end], "node_modules/", pkg_name);
 
-        bool resolved = false;
-        char[] resolved_path = (char[])"";
         if (sub.len > 0) {
             // 'pkg/sub/path': address a file inside the package directly.
-            // resolve_extension returns a NEW buffer on a hit and the input
-            // unchanged on a miss; a specifier that already carries a module
-            // extension comes back as-is without an existence check, so probe
-            // that case explicitly.
-            usz flen = plen + sub.len;
-            void* fbuf = alloc::malloc_try(mem, (sz)(flen + 1)) ?? null;
-            if (fbuf != null) {
-                mem::copy(fbuf, pkg_dir.ptr, (sz)(plen));
-                mem::copy((char*)fbuf + plen, sub.ptr, (sz)(sub.len));
-                ((char*)fbuf)[flen] = 0;
-                char[] full = ((char*)fbuf)[:flen];
-                char[] r = resolve_extension(full);
-                if (r.ptr != full.ptr || module_file_exists(r)) {
-                    resolved_path = r;
-                    resolved = true;
-                } else {
-                    mem::free(fbuf);
-                }
-            }
+            // A specifier that already carries a module extension comes back
+            // as-is from tresolve_extension without an existence check, so
+            // probe that case explicitly.
+            char[] full = tconcat(pkg_dir, sub);
+            char[] r = tresolve_extension(full);
+            if (r.ptr != full.ptr || module_file_exists(r)) return r;
         } else {
             // Package root: package.json "main", then index.<ext>.
-            usz pj_len = plen + 13;  // "/package.json"
-            void* pjbuf = alloc::malloc_try(mem, (sz)(pj_len + 1)) ?? null;
-            bool have_main = false;
-            char[] main_path = (char[])"";
-            if (pjbuf != null) {
-                mem::copy(pjbuf, pkg_dir.ptr, (sz)(plen));
-                char[] pj = "/package.json";
-                mem::copy((char*)pjbuf + plen, pj.ptr, (sz)(pj.len));
-                ((char*)pjbuf)[pj_len] = 0;
-                char[] pj_path = ((char*)pjbuf)[:pj_len];
-                if (try body = file::load(mem, (String)pj_path)) {
-                    if (try m = package_json_main(body, pkg_dir)) {
-                        main_path = m;
-                        have_main = true;
-                    }
-                    mem::free(body.ptr);
-                }
-                mem::free(pjbuf);
-            }
-            if (have_main) {
-                resolved_path = resolve_extension(main_path);
-                resolved = true;
-            } else {
-                usz ilen = plen + 6;  // "/index"
-                void* ibuf = alloc::malloc_try(mem, (sz)(ilen + 1)) ?? null;
-                if (ibuf != null) {
-                    mem::copy(ibuf, pkg_dir.ptr, (sz)(plen));
-                    char[] idx = "/index";
-                    mem::copy((char*)ibuf + plen, idx.ptr, (sz)(idx.len));
-                    ((char*)ibuf)[ilen] = 0;
-                    char[] index_path = ((char*)ibuf)[:ilen];
-                    char[] r = resolve_extension(index_path);
-                    if (r.ptr != index_path.ptr) {
-                        resolved_path = r;
-                        resolved = true;
-                    } else {
-                        mem::free(ibuf);
-                    }
+            char[] pj_path = tconcat(pkg_dir, "/package.json");
+            if (try body = file::load(mem, (String)pj_path)) {
+                defer mem::free(body.ptr);
+                if (try main_path = tpackage_json_main(body, pkg_dir)) {
+                    return tresolve_extension(main_path);
                 }
             }
+            char[] index_path = tconcat(pkg_dir, "/index");
+            char[] r = tresolve_extension(index_path);
+            if (r.ptr != index_path.ptr) return r;
         }
-        if (resolved) {
-            mem::free(buf);
-            return resolved_path;
-        }
-        mem::free(buf);
 
         // Walk up one directory: drop the last path segment of the prefix.
         if (dir_end == 0) return MODULE_ERROR~;
@@ -812,9 +722,9 @@ fn char[]? resolve_node_modules(char[] base_name, char[] specifier) {
 }
 
 // Extract the "main" field from a package.json body and join it with the
-// package directory, ready for extension probing. Returns null when the
+// package directory in `tmem`, ready for extension probing. Faults when the
 // file has no "main" or the field is not a plain string.
-fn char[]? package_json_main(char[] body, char[] pkg_dir) {
+fn char[]? tpackage_json_main(char[] body, char[] pkg_dir) @local {
     char[] needle = "\"main\"";
     usz match = 0;
     usz i = 0;
@@ -845,47 +755,54 @@ fn char[]? package_json_main(char[] body, char[] pkg_dir) {
     } else if (main.len >= 1 && main[0] == '/') {
         main = main[1..];
     }
-    usz total = pkg_dir.len + 1 + main.len;
-    void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
-    if (raw == null) return MODULE_ERROR~;
-    mem::copy(raw, pkg_dir.ptr, (sz)(pkg_dir.len));
-    ((char*)raw)[pkg_dir.len] = '/';
-    mem::copy((char*)raw + pkg_dir.len + 1, main.ptr, (sz)(main.len));
-    ((char*)raw)[total] = 0;
-    return ((char*)raw)[:total];
+    return tconcat(pkg_dir, "/", main);
 }
 
+// Returns a `mem`-owned name. A host hook that answers with a view into
+// `specifier` (which a dynamic import() may let the GC free) gets copied.
 fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     // A host-defined module wins over the host hook and the filesystem, so a
     // file on disk with a matching name cannot shadow it.
     if (heap.defined_module_count > 0) {
-        char[] name = specifier;
-        if (specifier.len > 0 && specifier[0] == '.') name = join_relative(base_name, specifier)!;
-        if (find_defined_module(heap, name) != null) return name;
-        // A relative name is a fresh join_relative allocation; a bare name is specifier itself.
-        bool joined = name.ptr < specifier.ptr || name.ptr >= specifier.ptr + specifier.len;
-        if (joined) mem::free(name.ptr);
+        if (specifier.len > 0 && specifier[0] == '.') {
+            @pool() {
+                char[] name = tjoin_relative(base_name, specifier);
+                if (find_defined_module(heap, name) != null) return copy_bytes(name);
+            };
+        } else if (find_defined_module(heap, specifier) != null) {
+            return copy_bytes(specifier);
+        }
     }
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
         if (hooks.resolve_name != null) {
-            return hooks.resolve_name(base_name, specifier, hooks.udata);
+            char[] name = hooks.resolve_name(base_name, specifier, hooks.udata)!;
+            if (name.ptr >= specifier.ptr && name.ptr < specifier.ptr + specifier.len) return copy_bytes(name);
+            return name;
         }
     }
     return default_resolve_name(base_name, specifier);
 }
 
 // The filesystem resolution used when no host hook resolves names.
+// Always returns a `mem`-owned, NUL-terminated path.
 fn char[]? default_resolve_name(char[] base_name, char[] specifier) {
-    // A bare specifier names a package: resolve it through node_modules
-    // directories first (Node-style), falling back to treating it as a
-    // plain path (plus an extension probe so `import 'x'` can find `x.ts`).
-    if (specifier.len > 0 && specifier[0] != '.') {
-        char[]? pkg = resolve_node_modules(base_name, specifier);
-        if (try pkg_path = pkg) return pkg;
-        return resolve_extension(normalize_module_path(specifier)!);
-    }
-    return resolve_extension(join_relative(base_name, specifier)!);
+    @pool() {
+        char[] resolved;
+        // A bare specifier names a package: resolve it through node_modules
+        // directories first (Node-style), falling back to treating it as a
+        // plain path (plus an extension probe so `import 'x'` can find `x.ts`).
+        if (specifier.len > 0 && specifier[0] != '.') {
+            if (try pkg_path = tresolve_node_modules(base_name, specifier)) {
+                resolved = pkg_path;
+            } else {
+                resolved = tresolve_extension(tnormalize_module_path(specifier));
+            }
+        } else {
+            resolved = tresolve_extension(tjoin_relative(base_name, specifier));
+        }
+        return copy_bytes(resolved);
+    };
 }
 
 // Lexical path normalization keeps exports shared across importers whose
@@ -922,26 +839,18 @@ fn char[] normalize_module_path_in_place(char[] name) @local {
     return name[:written];
 }
 
-fn char[]? normalize_module_path(char[] name) @local {
-    void* raw = alloc::malloc_try(mem, (sz)(name.len + 1)) ?? null;
-    if (!raw) return MODULE_ERROR~;
-    mem::copy(raw, name.ptr, (sz)name.len);
-    return normalize_module_path_in_place(((char*)raw)[:name.len]);
+fn char[] tnormalize_module_path(char[] name) @local {
+    return normalize_module_path_in_place(tconcat(name, ""));
 }
 
-// Resolve relative names into an owned, normalized cache key.
-fn char[]? join_relative(char[] base_name, char[] specifier) @local {
+// Resolve relative names into a normalized path in `tmem`.
+fn char[] tjoin_relative(char[] base_name, char[] specifier) @local {
     int last_slash = -1;
     for (usz i = 0; i < base_name.len; i++) {
         if (base_name[i] == '/') last_slash = (int)i;
     }
     char[] dir = last_slash >= 0 ? base_name[:last_slash + 1] : { };
-    usz total  = dir.len + specifier.len;
-    void* raw  = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
-    if (!raw) return MODULE_ERROR~;
-    mem::copy(raw, dir.ptr, (sz)dir.len);
-    mem::copy((char*)raw + dir.len, specifier.ptr, (sz)specifier.len);
-    return normalize_module_path_in_place(((char*)raw)[:total]);
+    return normalize_module_path_in_place(tconcat(dir, specifier));
 }
 
 // Call the host's read_source hook, or use the default.
@@ -1076,6 +985,8 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     // 2. Check engine cache
     ModuleDef* cached = heap_find_loaded_module(heap, normalized, attr_type);
     if (cached != null) {
+        // The cached record keeps its own name; this resolution's copy is spare.
+        defer mem::free(normalized.ptr);
         if (cached.status == ModuleStatus.LOAD_PENDING) return load_dependencies(heap, cached, normalized, quiet);
         return cached;
     }
@@ -1083,6 +994,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     // 3. Read source via host hook
     char[]? source_opt = call_read_source(heap, normalized, attr_type);
     if (catch err = source_opt) {
+        defer mem::free(normalized.ptr);
         if (err == MODULE_PENDING) return MODULE_PENDING~;
         // A host loader may have answered with a native module instead.
         ModuleDef* native = heap_find_loaded_module(heap, normalized, attr_type);
@@ -1096,21 +1008,20 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     // A synthetic module names its file exactly -- no probing, no extension
     // guessing -- so an empty file is genuinely an empty text or bytes module
     // (test262 text-empty, bytes-from-empty) and must not be an error.
-    if (source.len == 0 && attr_type == compiler::ModuleAttrType.NONE) return module_not_found(heap, specifier, base_name, quiet);
-
-    // 4. Create ModuleDef (marks as LOADING for cycle detection)
-    // The resolved name keys the module cache for the life of the heap, but it
-    // can be a view into `specifier` (a defined module named by a bare
-    // specifier, or a host resolve hook that returns its input), and a dynamic
-    // `import()` passes a runtime string the GC may free. The module owns a copy.
-    if (normalized.ptr >= specifier.ptr && normalized.ptr < specifier.ptr + specifier.len) {
-        char[]? owned_name = copy_bytes(normalized);
-        if (catch owned_name) return MODULE_ERROR~;
-        normalized = owned_name;
+    if (source.len == 0 && attr_type == compiler::ModuleAttrType.NONE) {
+        mem::free(normalized.ptr);
+        return module_not_found(heap, specifier, base_name, quiet);
     }
+
+    // 4. Create ModuleDef (marks as LOADING for cycle detection). The new
+    // record takes ownership of `normalized` as its cache key.
     ModuleDef*? mod_opt = heap_ensure_module(heap, normalized, attr_type);
-    if (catch err = mod_opt) return MODULE_ERROR~;
+    if (catch err = mod_opt) {
+        mem::free(normalized.ptr);
+        return MODULE_ERROR~;
+    }
     ModuleDef* mod = mod_opt;
+    if (mod.module_name.ptr != normalized.ptr) mem::free(normalized.ptr);
     mod.status = ModuleStatus.LOADING;
 
     // 4a. Synthetic module: turn the file contents into one value and export it
