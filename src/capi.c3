@@ -416,7 +416,7 @@ fn char[]? loader_resolve(char[] base_name, char[] specifier, void* udata) {
     ModuleRequest req = { .rt = rt };
     int rc = ((BkResolveFn)l.resolve)(rt.active, ref, spec, &req, l.opaque);
     if (rc == BK_OK && req.name.ptr != null) return req.name;
-    if (req.name.ptr != null) libc::free(req.name.ptr);
+    if (req.name.ptr != null) mem::free(req.name.ptr);
     if (rc == BK_OK && !req.failed && fallback) return esm::default_resolve_name(base_name, specifier);
     park_module_error(rt, &req);
     return esm::MODULE_ERROR~;
@@ -456,20 +456,20 @@ fn char[]? loader_load(char[] name, void* udata) {
         if (!req.answered) return esm::MODULE_PENDING~;
         return take_module_answer(rt, req, fallback, name);
     }
-    char* n = cstr_copy(name);
-    if (n == null) return esm::MODULE_ERROR~;
+    char[]? owned_name = esm::copy_bytes(name);
+    if (catch owned_name) return esm::MODULE_ERROR~;
     ModuleRequest local = { .rt = rt, .for_name = name };
     req = &local;
     if (async) {
         // The request outlives this call and owns the name the host answers for.
-        req = mem::new(ModuleRequest);
-        if (req == null) { libc::free(n); return esm::MODULE_ERROR~; }
-        *req = { .rt = rt, .for_name = n[:name.len], .deferred = true, .next = rt.module_requests };
+        req = alloc::new_try(mem, ModuleRequest) ?? null;
+        if (req == null) { mem::free(owned_name.ptr); return esm::MODULE_ERROR~; }
+        *req = { .rt = rt, .for_name = owned_name, .deferred = true, .next = rt.module_requests };
         rt.module_requests = req;
     }
-    defer if (!async) libc::free(n);
+    defer if (!async) mem::free(owned_name.ptr);
     req.in_call = true;
-    int rc = ((BkLoadFn)l.load)(rt.active, n, req, l.opaque);
+    int rc = ((BkLoadFn)l.load)(rt.active, owned_name.ptr, req, l.opaque);
     req.in_call = false;
     // An asynchronous loader that returned without answering will answer later.
     if (async && rc == BK_OK && !req.answered) return esm::MODULE_PENDING~;
@@ -497,9 +497,9 @@ fn int bk_set_module_loader(void* runtime, embed::ModuleLoader* loader) @export(
 
 fn int bk_module_set_name(ModuleRequest* req, char* name, usz len) @export("bk_module_set_name") {
     if (req == null || name == null || len == 0 || req.answered || req.for_name.ptr != null) return BK_ERR_INVALID;
-    char* copy = cstr_copy(name[:len]);
-    if (copy == null) return BK_ERR_NOMEM;
-    req.name = copy[:len];
+    char[]? copy = esm::copy_bytes(name[:len]);
+    if (catch copy) return BK_ERR_NOMEM;
+    req.name = copy;
     req.answered = true;
     return BK_OK;
 }

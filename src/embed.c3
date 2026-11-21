@@ -1169,9 +1169,9 @@ struct ModuleLoader {
 // Runtime.module_requests, until the engine takes its answer.
 struct ModuleRequest {
     Runtime* rt;
-    char[]   name;        // set by bk_module_set_name; malloc'd
+    char[]   name;        // set by bk_module_set_name; owned on `mem`
     char[]   source;      // set by bk_module_provide; heap payload memory
-    char[]   for_name;    // the module a load asks for
+    char[]   for_name;    // module name asked for; owned on `mem` when `deferred`, borrowed when sync
     bool     answered;
     bool     failed;
     bool     deferred;    // an asynchronous load: lives on rt.module_requests

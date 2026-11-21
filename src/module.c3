@@ -321,6 +321,9 @@ struct ModuleDef {
     AsyncEvalOrder                 async_eval_order;
     uint                           async_eval_index;
 
+    // Owned copies created by `retain_name`, released in `module_release_buffers`.
+    // Kept past `func_decls` so `CompModuleDef`'s prefix layout stays unchanged.
+    Vec{char*}                     retained_names;
 }
 
 // ============================================================================
@@ -423,7 +426,7 @@ struct DefinedModule {
     bool   native;    // built by define_native_module; `source` is empty
 }
 
-fn char[]? copy_bytes(char[] bytes) @local {
+fn char[]? copy_bytes(char[] bytes) {
     void* raw = alloc::malloc_try(mem, (sz)(bytes.len + 1)) ?? null;
     if (raw == null) return MODULE_ERROR~;
     if (bytes.len > 0) mem::copy(raw, bytes.ptr, (sz)bytes.len);
@@ -513,7 +516,10 @@ fn bool define_native_module(Heap* heap, char[] name, char[][] names, TVal[] val
     char[]? mod_name = copy_bytes(name);
     if (catch mod_name) return false;
     ModuleDef*? mod_opt = heap_new_module(heap, mod_name);
-    if (catch mod_opt) return false;
+    if (catch mod_opt) {
+        mem::free(mod_name.ptr);
+        return false;
+    }
     ModuleDef* mod = mod_opt;
     mod.is_synthetic = true;
     mod.synth_value.set_undefined();
@@ -917,9 +923,8 @@ fn ModuleDef*? heap_new_module(Heap* heap, char[] name,
     mod.module_name = name;
     mod.attr_type = attr_type;
     mod.status = ModuleStatus.UNLOADED;
-    // The metadata lists grow on the malloc-backed default allocator (the one
-    // the compiler uses for its own growable sets); ModuleDefs live until the
-    // process exits, so the list storage is never freed.
+    // Metadata Vecs grow on `mem` and are released in `module_release_buffers`
+    // when the module cache is torn down or reset.
 
     if (heap.module_cache_count >= heap.module_cache_cap) {
         uint new_cap = heap.module_cache_cap == 0 ? INITIAL_MODULE_CAP : heap.module_cache_cap * 2;
@@ -969,9 +974,17 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     // its source. Confined to the test262 host, which is the only thing that
     // defines the specifier.
     if (vm::test262_host_enabled && char_slice_eq(specifier, "<module source>")) {
-        ModuleDef*? synth_opt = heap_ensure_module(heap, specifier);
-        if (catch err = synth_opt) return MODULE_ERROR~;
-        ModuleDef* synth = synth_opt;
+        ModuleDef* synth = heap_find_loaded_module(heap, specifier);
+        if (synth == null) {
+            char[]? owned_spec = copy_bytes(specifier);
+            if (catch owned_spec) return MODULE_ERROR~;
+            ModuleDef*? synth_opt = heap_new_module(heap, owned_spec);
+            if (catch synth_opt) {
+                mem::free(owned_spec.ptr);
+                return MODULE_ERROR~;
+            }
+            synth = synth_opt;
+        }
         if (synth.status == ModuleStatus.UNLOADED) synth.status = ModuleStatus.LOADED;
         synth.has_source_repr = true;
         return synth;
@@ -1144,6 +1157,7 @@ fn char[] retain_name(Heap* heap, ModuleDef* mod, char[] name) @local {
     char* copy = (char*)heap.alloc_func(heap.heap_udata, len);
     if (copy == null) return name; // out of memory: keep the borrowed slice
     hstring::canonical_cesu8(name, copy);
+    mod.retained_names.push(copy);
     return copy[:len];
 }
 
@@ -1998,6 +2012,19 @@ fn bool module_batch_push(Heap* heap, ModuleDef* mod) {
 fn void module_release_buffers(Heap* heap, void* raw) {
     if (raw == null) return;
     ModuleDef* mod = (ModuleDef*)raw;
+    if (mod.module_name.ptr != null) {
+        mem::free(mod.module_name.ptr);
+        mod.module_name = {};
+    }
+    foreach (p : mod.retained_names.array_view()) {
+        heap.free_func(heap.heap_udata, (void*)p);
+    }
+    mod.retained_names.free();
+    mod.imports.free();
+    mod.exports.free();
+    mod.star_exports.free();
+    mod.req_modules.free();
+    mod.func_decls.free();
     if (mod.async_parents != null) {
         heap.free_func(heap.heap_udata, (void*)mod.async_parents);
         mod.async_parents = null;
@@ -3748,6 +3775,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     // never re-exported by a star. Names already contributed by a
     // nearer export win (star names are only added if not already present).
     Vec{NsExportItem} items;
+    defer items.free();
     for (uint i = 0; i < (uint)source_mod.exports.len; i++) {
         ExportEntry* ee = &source_mod.exports[(sz)i];
         ns_add_export_item(&items, ee.export_name, source_mod, ee);
