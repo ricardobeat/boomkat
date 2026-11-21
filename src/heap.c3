@@ -3215,6 +3215,8 @@ fn void Heap.reset(&self) {
         }
     }
     self.host_class_count = 0;
+    // No class is left with exotic hooks; the next one defined sets the table again.
+    self.host_exotic_ops = null;
     self.tearing_down = false;
 }
 
