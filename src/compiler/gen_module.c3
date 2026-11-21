@@ -136,9 +136,16 @@ fn void CompilerContext.gen_module_slots(&self) {
         }
         for (uint i = idx.res.func_start.data[1]; i < idx.res.func_start.data[2]; i++) {
             ast::Binding* b = &idx.res.bindings.data[idx.res.func_items.data[i]];
-            if (b.scope != 1 || b.kind != ast::DeclKind.VAR || b.captured) continue;
+            if (b.scope != 1 || b.captured) continue;
+            bool lexical = b.kind == ast::DeclKind.LET || b.kind == ast::DeclKind.CONST || b.kind == ast::DeclKind.CLASS;
+            if (b.kind != ast::DeclKind.VAR && !lexical) continue;
             char[] name = self.gen_name(b.name);
-            if (!exported.contains((String)name)) self.slot_global_name_idxs.push(self.add_string_constant(name));
+            if (exported.contains((String)name)) continue;
+            if (lexical) {
+                self.private_lex_name_idxs.push(self.add_string_constant(name));
+            } else {
+                self.slot_global_name_idxs.push(self.add_string_constant(name));
+            }
         }
     };
 }

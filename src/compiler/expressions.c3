@@ -459,20 +459,14 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
         // Bare `for (b of ...)` assigns to an existing binding. If that binding
         // is a register-cached local, bind straight into its home register so
         // the body's register read sees the value (PUTVAR alone desyncs it).
-        if (!self.is_global) {
-            if (try home = self.resolve_var(var_name)) {
-                loop_var = home;
-                reg_resident = true;
-            } else {
-                loop_var = self.alloc_reg();
-            }
-        } else if (try slot_home = self.resolve_slot_global(var_name)) {
-            // A top-level `var` proven register-resident by
-            // resolution lives in a home register, not the
-            // global object. `for (x of ...)` / `for ((x) of ...)` must write
-            // straight into that home; a PUTVAR would update the env slot while
-            // the body reads the stale register, so x stays undefined.
-            loop_var = slot_home;
+        // A register-resident top-level `var` (resolve_slot_global) lives in a home register,
+        // not the global object, the same way. A `const` takes the by-name store, which throws.
+        ushort? home = self.resolve_var(var_name);
+        if (catch home) {
+            if (self.is_global) home = self.resolve_slot_global(var_name);
+        }
+        if (try h = home && self.find_const_name_idx(h) == uint::max) {
+            loop_var = h;
             reg_resident = true;
         } else {
             loop_var = self.alloc_reg();

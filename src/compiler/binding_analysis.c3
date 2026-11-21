@@ -96,17 +96,24 @@ fn bool arguments_observes_bindings(CompilerContext* ctx) {
 //
 // Returns whether the scope push/pop instructions were removed, which leaves
 // the function with no scope of its own.
+//
+// In global code only private lexical bindings (BindingInfo.is_private) are pruned: a name any
+// other binding of the program also spells keeps every producer, and the declarations of vars and
+// the sloppy assignments to globals stay as they are.
 fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
                                              bool can_remove_empty_arrow_scopes) {
+    // A module body compiles as an async function; one that never awaits runs straight through.
+    bool global = ctx.is_global && !ctx.in_eval_code && (!ctx.is_async || (ctx.is_module && !ctx.saw_top_level_await))
+        && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with && !ctx.capture_all;
     bool ordinary_ok = !ctx.is_global && !ctx.is_arrow
         && !ctx.is_generator && !ctx.is_async
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
         && !arguments_observes_bindings(ctx)
         && !ctx.has_thunk_defaults() && ctx.destruct_defaults.len == 0;
     if (ctx.disable_optimize || ctx.has_wide
-        || (!ordinary_ok && !can_remove_empty_arrow_scopes)) return false;
+        || (!ordinary_ok && !global && !can_remove_empty_arrow_scopes)) return false;
 
-    usz map_bytes = (usz)ctx.const_count * 2;
+    usz map_bytes = (usz)ctx.const_count * 3;
     if (map_bytes == 0) map_bytes = 1;
     bool* maps = (bool*)heap.alloc_func(heap.heap_udata, map_bytes);
     if (maps == null) return false;
@@ -114,18 +121,24 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
     mem::clear(maps, (sz)map_bytes);
     bool* known = maps;
     bool* retain = maps + ctx.const_count;
+    // Names global code may declare in a nested block (global only).
+    bool* in_block = maps + (usz)ctx.const_count * 2;
 
     foreach (binding : ctx.bindings) {
         if (binding.name_idx >= ctx.const_count) continue;
         known[binding.name_idx] = true;
         if (binding.is_captured) retain[binding.name_idx] = true;
+        if (global) {
+            if (!binding.is_private) retain[binding.name_idx] = true;
+            if (binding.in_block) in_block[binding.name_idx] = true;
+        }
     }
 
     // A PUTVAR/GETVAR pair on one register only mirrors a register-resident
     // variable into the environment. It is dead when nothing can observe that
     // variable by name: always in a capture-free, closure-free function, and
     // per name when no closure captures or reads it.
-    bool all_reg_pairs = !ctx.has_captured_local && !ctx.has_closures;
+    bool all_reg_pairs = !global && !ctx.has_captured_local && !ctx.has_closures;
     bool retain_all = ctx.capture_all;
     for (uint i = 0; i < ctx.inner_func_count; i++) {
         retain_inner_consumers(ctx, ctx.inner_funcs[i], retain, &retain_all);
@@ -134,7 +147,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
     for (uint i = 0; i < ctx.code_count; i++) {
         // The matching rewrite below removes both consumers together, so they
         // do not make their name observable to the producer-retention pass.
-        if (op_is_reg_pair(ctx, i) && (all_reg_pairs || !retain[ctx.code[i].get_bc()])) {
+        if (!global && op_is_reg_pair(ctx, i) && (all_reg_pairs || !retain[ctx.code[i].get_bc()])) {
             i++;
             continue;
         }
@@ -158,6 +171,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
         if (op == Opcode.DECLVAR || op == Opcode.DECLVAR_HOIST
             || op == Opcode.PUTLEX || op == Opcode.INITTZ || op == Opcode.PUTLEX_C) {
             uint name_idx = ctx.code[i].get_bc();
+            if (global && (op == Opcode.DECLVAR || op == Opcode.DECLVAR_HOIST)) continue;
             if (!retain_all && name_idx < ctx.const_count
                 && known[name_idx] && !retain[name_idx]) {
                 ctx.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
@@ -165,7 +179,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
             continue;
         }
 
-        if (op_is_reg_pair(ctx, i)
+        if (!global && op_is_reg_pair(ctx, i)
             && (all_reg_pairs || (!retain_all && !retain[ctx.code[i].get_bc()]))) {
             ctx.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
             ctx.code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
@@ -176,16 +190,24 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
     // Scope depth is structural. One surviving lexical producer, depth-based
     // lookup, special lexical scope, or ordinary variable scope keeps every
     // push/pop so abrupt exits retain the same layout.
+    // In global code the producers of the program's own bindings write the program's scope, which
+    // removing the blocks' does not move; any other name's (in_block, or with no binding recorded,
+    // as a block function's) keeps the layout.
     bool needs_scope_layout = false;
     for (uint i = 0; i < ctx.code_count; i++) {
         switch (ctx.code[i].op) {
             case Opcode.INITTZ:
             case Opcode.PUTLEX:
             case Opcode.PUTLEX_C:
+                uint name_idx = ctx.code[i].get_bc();
+                if (!global || name_idx >= ctx.const_count || !known[name_idx] || in_block[name_idx]) {
+                    needs_scope_layout = true;
+                }
             case Opcode.GETBOUND:
                 needs_scope_layout = true;
             case Opcode.DECLVAR:
             case Opcode.DECLVAR_HOIST:
+                if (global) break;
                 // A surviving declaration must land in the arrow's own scope.
                 if (can_remove_empty_arrow_scopes) needs_scope_layout = true;
             case Opcode.PUSH_VAR:

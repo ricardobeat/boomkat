@@ -40,12 +40,12 @@ fn void? CompilerContext.emit_deferred_computed_key(&self, DestructBind* bind)
 fn void CompilerContext.resolve_assign_targets(&self, DestructBind[] binds) {
     foreach (&b : binds) {
         if (b.is_synthetic || b.is_member_target) continue;
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(self.bind_name(b))
-                && self.find_const_name_idx(existing) == uint::max) {
-                b.binding_reg = existing;
-                continue;
-            }
+        // As gen_target: resolve_var refuses what must be written by name (captured, in its dead
+        // zone, under `with`), in global code too.
+        if (try existing = self.resolve_var(self.bind_name(b))
+            && self.find_const_name_idx(existing) == uint::max) {
+            b.binding_reg = existing;
+            continue;
         }
         b.binding_reg = self.alloc_reg();
         b.assign_needs_putvar = true;
