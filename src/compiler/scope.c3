@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast;
 import boomkat::types;
 import boomkat::lexer;
 import boomkat::bytecode;
@@ -171,8 +172,15 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         // direct eval) must be env-resident: force every access through
         // GETVAR/PUTVAR so closure and eval reads/writes stay coherent
         // (the resolver supplies the capture set).
+        // A lexical binding of a block nested in global code, or a module's own private one, is as
+        // private as a function's: no other Script, importer or indirect eval reaches it, only the
+        // closures the resolver saw.
+        bool lexical_global = self.is_global && kind != VAR && kind != SCOPEMARK && !self.in_eval_code;
+        LexPlace place = lexical_global ? self.global_lex_place(name) : PROGRAM;
+        bool in_block = place != PROGRAM;
+        bool is_private = place == BLOCK || (place == PROGRAM && lexical_global && self.is_module && self.is_private_lex_name(name));
         bool captured = kind != SCOPEMARK
-                     && (self.is_global ? !(kind == VAR && self.is_slot_global_name(name)) : self.is_captured_name(name));
+                     && (self.is_global && !is_private ? !(kind == VAR && self.is_slot_global_name(name)) : self.is_captured_name(name));
         // A `let`/`const` enters its temporal dead zone the moment the binding
         // is declared: any read before the declaration's `PUTLEX`/`PUTLEX_C`
         // emits must throw ReferenceError.  Marking the entry here forces
@@ -188,6 +196,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
             .is_captured = captured,
             .is_param = is_param,
             .is_catch_param = false,
+            .in_block = in_block,
+            .is_private = is_private,
         });
         self.scope_stack[self.scope_depth].name = stable_name;
         self.scope_stack[self.scope_depth].reg = reg;
@@ -210,21 +220,17 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
     return reg;
 }
 
-// Capture status is mirrored into the persistent declaration record so later
-// analyses retain the decision after scope pop and register reuse.
-// Mark captured the bindings named `name` under stack index `depth`: the
-// lowest one, or with `all` each of them. A scope opening at `depth` shadows
-// the name, and code in it may still reach the outer binding by name.
-fn void CompilerContext.capture_outer_name(&self, char[] name, uint depth, bool all = false) {
-    ScopeEntry* lowest = null;
+// Mark captured every binding named `name` under stack index `depth`, which code in a scope
+// opening there writes by name (an Annex B block function's var). capture_shadowed_names has
+// already put them in the environment from their start, as every access must agree.
+fn void CompilerContext.capture_outer_name(&self, char[] name, uint depth) {
     for (ScopeEntry* e = self.scope_entry(name); e != null; e = self.shadowed_by(e)) {
-        if (e >= &self.scope_stack[depth]) continue;
-        if (all) self.mark_scope_captured((uint)(e - self.scope_stack));
-        lowest = e;
+        if (e < &self.scope_stack[depth]) self.mark_scope_captured((uint)(e - self.scope_stack));
     }
-    if (lowest != null && !all) self.mark_scope_captured((uint)(lowest - self.scope_stack));
 }
 
+// Capture status is mirrored into the persistent declaration record so later
+// analyses retain the decision after scope pop and register reuse.
 fn void CompilerContext.mark_scope_captured(&self, uint index) {
     if (index >= self.scope_depth) return;
     ScopeEntry* entry = &self.scope_stack[index];
@@ -278,6 +284,16 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
     return e.reg;
 }
 
+// Put the `let`, `const` and class bindings declared since scope depth `depth` back in their dead
+// zone, for code that control flow can reach before their initializers ran: reads and writes take
+// the checked environment route (resolve_var) until a store clears the mark again.
+fn void CompilerContext.reenter_tdz(&self, uint depth) {
+    for (uint i = depth; i < self.scope_depth; i++) {
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == LET || e.kind == CONST) e.is_tdz = true;
+    }
+}
+
 // Resolve a REGISTER-RESIDENT top-level `var` (is_slot_global) to its home
 // register. Walks the whole scope stack (a `var` is function/global scoped,
 // never block scoped), skipping SCOPEMARKs but yielding to any matching
@@ -303,6 +319,32 @@ fn ushort? CompilerContext.resolve_slot_global(&self, char[] name) {
         return SCOPE_ERROR~;
     }
     return SCOPE_ERROR~;
+}
+
+// Record where the program declares each name (LexPlace). Nothing is classified when direct eval or
+// `with` can reach the program's bindings by name.
+fn void CompilerContext.classify_global_lexicals(&self) {
+    ast::AstIndex* idx = ast::index_state;
+    if (self.in_eval_code
+        || (idx.res.scopes.data[1].flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_CAPTURE_ALL | ast::SCOPE_HAS_WITH)) != 0) return;
+    self.global_lex_places.init_zero((sz)idx.tree.atoms.count() + 1);
+    for (uint i = idx.res.func_start.data[1]; i < idx.res.func_start.data[2]; i++) {
+        ast::Binding* b = &idx.res.bindings.data[idx.res.func_items.data[i]];
+        bool program = b.scope == 1 || b.kind == ast::DeclKind.VAR || b.kind == ast::DeclKind.ANNEXB_VAR;
+        LexPlace* p = &self.global_lex_places.data[b.name];
+        LexPlace place = program ? PROGRAM : BLOCK;
+        *p = *p == UNKNOWN || *p == place ? place : BOTH;
+    }
+}
+
+fn LexPlace CompilerContext.global_lex_place(&self, char[] name) {
+    uint atom = ast::index_state.tree.atoms.find(name);
+    return atom < self.global_lex_places.len ? self.global_lex_places[atom] : UNKNOWN;
+}
+
+// True when `name` is one of the module's private top-level lexical bindings (gen_module_slots).
+fn bool CompilerContext.is_private_lex_name(&self, char[] name) {
+    return self.private_lex_name_idxs.len != 0 && self.private_lex_name_idxs.contains(self.add_string_constant(name));
 }
 
 // True when `name` was kept in a register by module binding resolution.

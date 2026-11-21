@@ -4,6 +4,7 @@ import boomkat::bytecode;
 import boomkat::lexer;
 import boomkat::ast;
 import std::io;
+import std::collections::map;
 
 // Captured bindings and dynamic scopes use environment-backed storage.
 
@@ -56,7 +57,41 @@ fn bool CompilerContext.index_captures_of(&self, uint scope) {
             self.scan_arguments_declared = true;
         }
     }
+    self.capture_shadowed_names(scope);
     return true;
+}
+
+// A binding that a nested scope of the same function shadows stays in the environment: code in
+// that scope reaches the name through it (a read in the inner binding's dead zone must find the
+// inner scope's uninitialized slot, not the outer register), and the choice must hold for every
+// access, not only those compiled after the inner scope opens.
+fn void CompilerContext.capture_shadowed_names(&self, uint func) {
+    ast::AstIndex* idx = ast::index_state;
+    uint start = idx.res.func_start.data[func];
+    uint end = idx.res.func_start.data[func + 1];
+    if (self.capture_all || end - start < 2) return;
+    @pool() {
+        // Each binding's predecessor of the same name, through `last`.
+        HashMap{uint, uint} last;
+        last.init(tmem);
+        uint[] prev = mem::temp_array(uint, (usz)(end - start));
+        for (uint i = start; i < end; i++) {
+            ast::Binding* b = &idx.res.bindings.data[idx.res.func_items.data[i]];
+            if (b.kind == ast::DeclKind.ARGUMENTS) {
+                prev[i - start] = uint::max;
+                continue;
+            }
+            prev[i - start] = last.get(b.name) ?? uint::max;
+            last.set(b.name, i);
+            for (uint j = prev[i - start]; j != uint::max; j = prev[j - start]) {
+                ast::Binding* c = &idx.res.bindings.data[idx.res.func_items.data[j]];
+                if (idx.res.scope_encloses(c.scope, b.scope) || idx.res.scope_encloses(b.scope, c.scope)) {
+                    self.add_captured_name(idx.tree.atoms.get(b.name));
+                    break;
+                }
+            }
+        }
+    };
 }
 
 // Act on the captured-name set a scan produced.

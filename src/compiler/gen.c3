@@ -546,6 +546,9 @@ fn void? CompilerContext.gen_switch(&self, uint n) {
             self.gen_line(tree.field(tree.rhs.data[c], 1));
             skip = self.emit_jump(Opcode.JUMP);
         }
+        // A clause is entered from its own test, past the initializers of the clauses before it,
+        // as well as by falling through: their lexical bindings may be uninitialized again.
+        if (has_lex) self.reenter_tdz(saved_depth);
         uint body_pc = self.code_count;
         uint stmts = tree.field(tree.rhs.data[c], 0);
         for (uint j = 0; j < tree.list_len(stmts); j++) self.gen_stmt(tree.list_item(stmts, j))!;
@@ -847,6 +850,17 @@ fn void? CompilerContext.gen_for(&self, uint n) {
             ushort reg;
             bool env_resident = false;
             if (i == 0) {
+                // The head's scope first, so its bindings are declared in it (declare_var).
+                if (lexical) {
+                    self.gen_line_main(tree.lhs.data[d]);
+                    self.emit_simple(Opcode.PUSH_LEX);
+                    self.cur_lex_depth++;
+                    for (uint j = 0; j < tree.list_len(decls); j++) {
+                        uint id = tree.lhs.data[tree.list_item(decls, j)];
+                        char[] head_name = self.gen_name(tree.lhs.data[id]);
+                        self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(head_name));
+                    }
+                }
                 if (try existing = (lexical ? SCOPE_ERROR~ : self.find_local_reg(name))) {
                     reg = existing;
                     env_resident = self.is_existing_local_env_resident(name);
@@ -859,17 +873,6 @@ fn void? CompilerContext.gen_for(&self, uint n) {
                 }
                 for_var_reg = reg;
                 for_var_name_idx = self.add_string_constant(name);
-                if (lexical) {
-                    self.gen_line_main(tree.lhs.data[d]);
-                    self.emit_simple(Opcode.PUSH_LEX);
-                    self.cur_lex_depth++;
-                    for (uint j = 0; j < tree.list_len(decls); j++) {
-                        uint id = tree.lhs.data[tree.list_item(decls, j)];
-                        char[] head_name = self.gen_name(tree.lhs.data[id]);
-                        self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(head_name));
-                        self.capture_outer_name(head_name, saved_scope);
-                    }
-                }
             } else if (try existing = (lexical ? SCOPE_ERROR~ : self.resolve_var(name))) {
                 reg = existing;
             } else {
@@ -1036,7 +1039,6 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
     }
     if (lexical) {
         // RHS closures retain the head's uninitialised environment, separately from iterations.
-        self.capture_outer_name(name, saved_scope);
         if (!of) self.mark_scope_captured(self.scope_depth - 1);
         self.emit_simple(Opcode.PUSH_LEX);
         self.cur_lex_depth++;
@@ -1075,7 +1077,9 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
     if (name_idx == uint::max && !member) name_idx = self.add_string_constant(name);
     ushort key = declared ? REG_NONE : self.alloc_reg();
     ushort home = REG_NONE;
-    if (!declared && !member && !self.is_global) home = self.resolve_var(name) ?? REG_NONE;
+    // A `const` takes the by-name store, which throws before the binding changes.
+    if (!declared && !member) home = self.resolve_var(name) ?? REG_NONE;
+    if (home != REG_NONE && self.find_const_name_idx(home) != uint::max) home = REG_NONE;
     ushort state = self.alloc_reg();
     self.emit_abc(Opcode.INITFOR, (uint)source.reg, (uint)state, 0);
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
@@ -1093,8 +1097,6 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
         self.emit_var_store(binding, name_idx, lexical, constant, walk_chain);
     } else if (home != REG_NONE) {
         self.emit_abc(Opcode.LDREG, (uint)home, (uint)key, 0);
-        uint const_name = self.find_const_name_idx(home);
-        if (const_name != uint::max) self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)home, const_name);
     } else {
         self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)key, name_idx);
     }
@@ -3178,7 +3180,6 @@ fn void CompilerContext.gen_tdz_pattern(&self, uint n, uint outer_depth) {
         case IDENT:
             char[] name = self.gen_name(tree.lhs.data[n]);
             self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name));
-            self.capture_outer_name(name, outer_depth);
         case ARRAY_PAT:
         case OBJECT_PAT:
             uint items = tree.lhs.data[n];
@@ -3752,7 +3753,7 @@ fn void? CompilerContext.gen_block_function(&self, uint n, uint outer_depth) {
     // staging/sm/regress/regress-602621.js expects.
     bool skip = name == "arguments" && (owner.flags & ast::SCOPE_HAS_EVAL) == 0;
     bool publish = !skip && (idx.tree.flags.data[ident] & ast::IDENT_ANNEXB_VAR) != 0;
-    if (publish) self.capture_outer_name(name, outer_depth, all: true);
+    if (publish) self.capture_outer_name(name, outer_depth);
     self.has_lexical_bindings = true;
     self.has_local_bindings = true;
     ushort home;
@@ -3854,6 +3855,7 @@ fn void? CompilerContext.gen_program(&self, bool global_checks = true) {
     if (self.is_module) self.gen_module_metadata(stmts)!;
     self.hoist_global_fn_decls_indexed(false)!;
     if (self.is_module) self.gen_module_slots();
+    self.classify_global_lexicals();
     self.hoist_decls_in(1, true, false)!;
     self.index_captures_of(1);
     self.apply_capture_set();

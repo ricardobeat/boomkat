@@ -132,6 +132,20 @@ struct BindingInfo {
     bool is_captured;
     bool is_param;
     bool is_catch_param;
+    // A lexical binding of global code not known to be the program's own (LexPlace): its producers
+    // write a block's scope.
+    bool in_block;
+    // A lexical binding of global code no other code reaches by name: one of a nested block, or
+    // a module's own that it neither exports nor lets a closure capture (gen_module_slots).
+    bool is_private;
+}
+
+// Where global code declares a lexical name, by the resolver's scopes (classify_global_lexicals).
+enum LexPlace : char {
+    UNKNOWN,   ///< not classified: a synthetic name, or eval or `with` can reach the bindings
+    PROGRAM,   ///< only by the program itself, or as a var
+    BLOCK,     ///< only by nested blocks
+    BOTH,
 }
 
 struct ScopeEntry {
@@ -697,6 +711,10 @@ int  cur_with_depth;
     // resolution keeps in registers: reads and writes
     // compile to the name's home register, a live slot for the whole body.
     Vec{uint} slot_global_name_idxs;
+    // The module's top-level `let`, `const` and class names that are private (BindingInfo.is_private).
+    Vec{uint} private_lex_name_idxs;
+    // The LexPlace of each name of global code, by its AST atom.
+    Vec{LexPlace} global_lex_places;
 
     // Direct eval tracking, when true, the CALL path must create a fresh env.
     bool has_direct_eval;
@@ -923,6 +941,8 @@ fn void CompilerContext.cleanup(&self) {
     self.hoisted_defers.free();
     self.eval_var_coll_idxs.free();
     self.slot_global_name_idxs.free();
+    self.private_lex_name_idxs.free();
+    self.global_lex_places.free();
     self.direct_eval_offsets.free();
     self.far_offsets.free();
     self.tail_nodes.free();

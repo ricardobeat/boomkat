@@ -186,6 +186,17 @@ fn uint map_hash(uint scope, uint name) @inline {
     return (uint)(k >> 32);
 }
 
+// Whether `inner` is nested in `outer` within one function: `outer` is `inner`'s own function
+// scope or a block between them.
+fn bool Resolver.scope_encloses(&self, uint outer, uint inner) {
+    if (outer == inner) return false;
+    for (uint s = inner; s != 0 && s != self.scopes.data[s].func; ) {
+        s = self.scopes.data[s].parent;
+        if (s == outer) return true;
+    }
+    return false;
+}
+
 fn uint Resolver.lookup(&self, uint scope, uint name) {
     uint mask = (uint)self.slots.len - 1;
     uint i = map_hash(scope, name) & mask;

@@ -45,6 +45,8 @@ TESTS=(
   "t31_using_declarations:module disposal, and release before iterator close"
   "t32_dependency_order:eager upgrades preserve dependency order, tied positions, and deferred evaluation"
   "t33_syntax_error_location:import() of a module that fails to parse rejects with its location"
+  "t34_private_bindings:private top-level and block bindings keep TDZ, const and live-export semantics"
+  "t35_private_bindings_await:top-level await and eval keep block bindings reachable"
 )
 
 for entry in "${TESTS[@]}"; do
