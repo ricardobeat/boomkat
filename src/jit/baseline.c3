@@ -1447,6 +1447,17 @@ fn bool Asm.emit_call(&self) {
         leaf_done.bind(sljit_emit_label(c));
         return true;
     }
+    // super() of a simple base constructor completes in vm::jit_super_simple; anything else takes
+    // the thunk, which runs it as op_calls does.
+    if (self.w.op == Opcode.SUPER_CALL) {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+        self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_super_simple);
+        void* built = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+        self.emit_thunk_call(self.i);
+        sljit_set_label(built, sljit_emit_label(c));
+        return true;
+    }
     switch (self.w.op) {
         case CALL:
         case CALL_UNDEF_THIS:
@@ -1487,6 +1498,7 @@ fn bool Asm.emit_call(&self) {
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
         self.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
         done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_NEW_THUNK));
         generic.bind(sljit_emit_label(c));
     }
     if (self.forward_site()) {

@@ -23,6 +23,10 @@ const usz JIT_CALL_DONE = 1;
 // A call site's result when the call takes its thunk.
 const long JIT_CALL_SLOW = -1;
 
+// jit_new_simple's result for a construction jit_call cannot take either (a derived constructor's),
+// which goes straight to the thunk.
+const long JIT_NEW_THUNK = -3;
+
 // jit_call_builtin's `raw` when the call left no status of its own for the thunk to return.
 const long JIT_NO_RAW = -2;
 
@@ -633,9 +637,11 @@ $endif
 
 // NEW_OBJ of a simple constructor, completed in place as th_new_obj does:
 // 0 when the object is built and stored, JIT_CALL_SLOW to leave the
-// instruction to jit_call. `site`, when the emitted code has an inline path for this
-// instruction, is armed once the object is built; for another plain constructor the site can
-// enter through its call entry, it is armed to allocate and call from the next construction on.
+// instruction to jit_call, JIT_NEW_THUNK to leave it to the thunk. `site`,
+// when the emitted code has an inline path for this instruction, is armed once
+// the object is built; for another plain constructor the site can enter
+// through its call entry, it is armed to allocate and call from the next
+// construction on.
 fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     Instruction* pc = next - 1;
     Instruction insn = *pc;
@@ -647,6 +653,8 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
         || ctor.callable_kind() != hobject::CallableKind.COMPILED_FN) return JIT_CALL_SLOW;
     CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
     if (target == null) return JIT_CALL_SLOW;
+    // A derived constructor's frame is op_calls's to push, with its `this` unbound.
+    if (target.is_derived_ctor()) return JIT_NEW_THUNK;
     target.classify_lean_call();
     // simple_constructor is only set for a constructable, non-derived function without a brand
     // or field initializers. Any other is left to jit_call, once the site is armed for the
@@ -682,6 +690,56 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     TVal* ra = regs + insn.a;
     ra.set_object(obj);
     track_heap_store(ds.act, ra, (uint)insn.a);
+    ds.heap.jit_stats.calls_trivial++;
+    return 0;
+}
+
+// SUPER_CALL of a simple base constructor (CompiledFunction.call_flags.simple_constructor) from the
+// derived constructor's own frame, before its `this` is bound, completed in place as op_calls
+// completes it: the object built from new.target's prototype (init_simple_constructor) becomes the
+// call's value and the constructor's `this` (super_init_this_chain). 0 when it is built and bound,
+// JIT_CALL_SLOW, with nothing the instruction's thunk reads written, for a super() an arrow makes or
+// repeats, a derived class with fields or a brand to initialize on the new object, a constructor of
+// another realm, and anything init_simple_constructor does not cover.
+fn long jit_super_simple(Dispatch* ds, Instruction* next) {
+    Instruction* pc = next - 1;
+    Vm* vm = ds.vm;
+    Activation* act = ds.act;
+    const uint KIND = ACT_FLAG_CONSTRUCT | ACT_FLAG_DERIVED | ACT_FLAG_SUPER_CTOR;
+    if ((act.flags & KIND) != (ACT_FLAG_CONSTRUCT | ACT_FLAG_DERIVED) || act.new_target == null
+        || !env::is_tdz_sentinel(&act.this_binding) || ds.ic_base == null) return JIT_CALL_SLOW;
+    CompiledFunction* derived = (CompiledFunction*)act.func;
+    if (derived.brand_name_hstr != null || derived.field_init_func != null) return JIT_CALL_SLOW;
+    TVal* regs = ds.regs_base;
+    TVal callee = regs[pc.b];
+    if (!callee.is_object()) return JIT_CALL_SLOW;
+    HObject* ctor = (HObject*)callee.get_heapptr();
+    if (!ctor.is_callable() || !ctor.is_constructable()
+        || ctor.callable_kind() != hobject::CallableKind.COMPILED_FN) return JIT_CALL_SLOW;
+    CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
+    if (target == null || target.realm != vm.heap.realm) return JIT_CALL_SLOW;
+    target.classify_lean_call();
+    if (!target.call_flags.simple_constructor) return JIT_CALL_SLOW;
+    // new.target's `prototype` as a data property of an ordinary function, which reading runs no code.
+    HObject* new_target = act.new_target;
+    if (new_target.is_proxy() || new_target.get_class() != hobject::ObjClass.FUNCTION) return JIT_CALL_SLOW;
+    hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
+    TVal proto = constructor_prototype_cached(vm, ic, new_target, (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE]) ?? types::make_undefined();
+    if (!proto.is_object()) return JIT_CALL_SLOW;
+    ds.curr_pc = next;
+    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    if (obj == null) return JIT_CALL_SLOW;
+    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
+    // The receiver slot holds the object while its properties are reserved, as op_calls keeps it.
+    TVal* this_slot = regs + pc.b + 1;
+    this_slot.set_object(obj);
+    track_heap_store(act, this_slot, pc.b + 1);
+    if (!init_simple_constructor(vm, target, obj, regs + pc.b + 2, pc.c)) return JIT_CALL_SLOW;
+    TVal* ra = regs + pc.a;
+    ra.set_object(obj);
+    track_heap_store(act, ra, pc.a);
+    Activation* bound = null;
+    super_init_this_chain(vm, act, ra, &bound);
     ds.heap.jit_stats.calls_trivial++;
     return 0;
 }
