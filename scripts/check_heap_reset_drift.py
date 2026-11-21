@@ -135,6 +135,18 @@ ALLOWED_NOT_RESET = {
     "heap_limit",
     "external_bytes",      # Host-reported; the host releases it
 
+    # ── String release queue — reset zeroes its count; scratch kept ──
+    "zct",                 # Backing array kept for reuse
+    "zct_capacity",
+    "zct_set",             # Scratch set the frame scan probes
+    "zct_set_mask",
+    "zct_flushing",        # False outside a flush
+    "scan_activation_slots_fn", # vm_create sets this
+
+    # ── Optimized-code epochs — monotonic, compared against saved copies ──
+    "observed_death_cycle", # Paired with gc_cycles, which is kept too
+    "folded_epoch",
+
     # ── Job hook — installed by the host, kept like the rejection tracker ──
     "job_hook",
     "job_hook_runtime",
