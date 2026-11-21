@@ -35,41 +35,8 @@
       <p class="label">Modules</p>
       <ul>
         <li><a href="index.html">Overview</a></li>
-        <li><a href="boomkat.html">boomkat</a></li>
-        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
-        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
-        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
-        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
-        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
-        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
-        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
-        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
-        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
-        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
-        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
         <li><a href="boomkat-embed.html" aria-current="page">boomkat::embed</a></li>
-        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
-        <li><a href="boomkat-env.html">boomkat::env</a></li>
-        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
-        <li><a href="boomkat-features.html">boomkat::features</a></li>
-        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
-        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
-        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
-        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
-        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
-        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
-        <li><a href="boomkat-image.html">boomkat::image</a></li>
-        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
-        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
-        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
-        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
-        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
-        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
-        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
-        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
-        <li><a href="boomkat-types.html">boomkat::types</a></li>
-        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
-        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+        <li><a href="boomkat-capi.html">boomkat::capi</a></li>
       </ul>
       <p class="label">Other Reference</p>
       <ul>
@@ -85,7 +52,7 @@
       <div class="band" aria-hidden="true"></div>
       <h2 id="sec-types">Types</h2>
 <div class="api-item" id="AtomEntry"><pre><code>struct AtomEntry {
-  <a href="boomkat-hstring.html#HString">HString*</a> key;
+  HString* key;
   uint refs;
   uint next_free;
 }</code></pre><p class="api-src">src/embed.c3:454:8</p></div>
@@ -114,7 +81,7 @@
 <div class="api-item" id="Ctx"><pre><code>struct Ctx {
   <a href="#Runtime">Runtime*</a> rt;
   void* bctx;
-  <a href="boomkat-heap.html#Realm">Realm*</a> realm;
+  Realm* realm;
   <a href="#Ctx">Ctx*</a> next;
   <a href="#ContextState">ContextState</a> saved;
   bool released;
@@ -150,8 +117,8 @@
 }</code></pre><p class="api-src">src/embed.c3:1170:8</p></div>
 <div class="api-item" id="Runtime"><pre><code>struct Runtime {
   <a href="#ContextState">ContextState</a> state;
-  <a href="boomkat-heap.html#Heap">Heap*</a> heap;
-  <a href="boomkat-vm.html#Vm">Vm*</a> vm;
+  Heap* heap;
+  Vm* vm;
   uint rt_id;
   <a href="#SlotEntry">SlotEntry*</a> slots;
   uint slot_cap;
@@ -178,7 +145,7 @@
   uint script_class;
   uint pending_global_class;
   <a href="#ModuleLoader">ModuleLoader</a> module_loader;
-  <a href="boomkat-esm.html#ModuleHostHooks">ModuleHostHooks</a> module_hooks;
+  ModuleHostHooks module_hooks;
   <a href="#ModuleRequest">ModuleRequest*</a> module_requests;
   <a href="#AtomEntry">AtomEntry*</a> atoms;
   uint atom_cap;
@@ -189,7 +156,7 @@
   uint atom_live;
 }</code></pre><p class="api-src">src/embed.c3:176:8</p></div>
 <div class="api-item" id="SlotEntry"><pre><code>struct SlotEntry {
-  <a href="boomkat-types.html#TVal">TVal</a> v;
+  TVal v;
   uint gen;
   uint next_free;
   bool used;
@@ -202,7 +169,7 @@
   bool full;
 }</code></pre><p class="api-src">src/embed.c3:658:8</p></div>
 <div class="api-item" id="TextOut.bytes"><p class="api-sig"><code>fn void TextOut.bytes(<a href="#TextOut">TextOut*</a> self, char[] s)</code></p><p class="api-src">src/embed.c3:666:17</p></div>
-<div class="api-item" id="TextOut.str"><p class="api-sig"><code>fn void TextOut.str(<a href="#TextOut">TextOut*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> s)</code></p><p class="api-src">src/embed.c3:674:17</p></div>
+<div class="api-item" id="TextOut.str"><p class="api-sig"><code>fn void TextOut.str(<a href="#TextOut">TextOut*</a> self, HString* s)</code></p><p class="api-src">src/embed.c3:674:17</p></div>
       <h2 id="sec-variables">Constants & globals</h2>
 <div class="api-item" id="ATOM_FREE_END"><p class="api-sig"><code>const uint ATOM_FREE_END = 4294967295;</code></p><p class="api-src">src/embed.c3:450:12</p></div>
 <div class="api-item" id="BK_ERR_ENCODING"><p class="api-sig"><code>const int BK_ERR_ENCODING = -9;</code></p><p class="api-src">src/embed.c3:36:11</p></div>
@@ -255,86 +222,86 @@
       <h2 id="sec-functions">Functions</h2>
 <div class="api-item" id="activate_context"><p class="api-sig"><code>fn void activate_context(<a href="#Runtime">Runtime*</a> rt, <a href="#Ctx">Ctx*</a> ctx) @noinline</code></p><p class="api-src">src/embed.c3:302:9</p></div>
 <div class="api-item" id="atom_dup"><p class="api-sig"><code>fn bool atom_dup(<a href="#Runtime">Runtime*</a> rt, uint atom)</code></p><p class="api-src">src/embed.c3:527:9</p></div>
-<div class="api-item" id="atom_hash"><p class="api-sig"><code>fn uint atom_hash(<a href="boomkat-hstring.html#HString">HString*</a> key) @inline</code></p><p class="api-src">src/embed.c3:460:9</p></div>
+<div class="api-item" id="atom_hash"><p class="api-sig"><code>fn uint atom_hash(HString* key) @inline</code></p><p class="api-src">src/embed.c3:460:9</p></div>
 <div class="api-item" id="atom_index_grow"><p class="api-sig"><code>fn bool atom_index_grow(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:473:9</p></div>
-<div class="api-item" id="atom_intern"><p class="api-sig"><code>fn uint atom_intern(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/embed.c3:490:9</p></div>
-<div class="api-item" id="atom_key"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> atom_key(<a href="#Runtime">Runtime*</a> rt, uint atom) @inline</code></p><p class="api-src">src/embed.c3:522:13</p></div>
-<div class="api-item" id="atom_probe"><p class="api-sig"><code>fn uint atom_probe(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/embed.c3:466:9</p></div>
+<div class="api-item" id="atom_intern"><p class="api-sig"><code>fn uint atom_intern(<a href="#Runtime">Runtime*</a> rt, HString* key)</code></p><p class="api-src">src/embed.c3:490:9</p></div>
+<div class="api-item" id="atom_key"><p class="api-sig"><code>fn HString* atom_key(<a href="#Runtime">Runtime*</a> rt, uint atom) @inline</code></p><p class="api-src">src/embed.c3:522:13</p></div>
+<div class="api-item" id="atom_probe"><p class="api-sig"><code>fn uint atom_probe(<a href="#Runtime">Runtime*</a> rt, HString* key)</code></p><p class="api-src">src/embed.c3:466:9</p></div>
 <div class="api-item" id="atom_release"><p class="api-sig"><code>fn void atom_release(<a href="#Runtime">Runtime*</a> rt, uint atom)</code></p><p class="api-src">src/embed.c3:534:9</p></div>
 <div class="api-item" id="atoms_destroy"><p class="api-sig"><code>fn void atoms_destroy(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:563:9</p></div>
-<div class="api-item" id="call_c_function"><p class="api-sig"><code>fn ulong call_c_function(<a href="#Runtime">Runtime*</a> rt, <a href="#Ctx">Ctx*</a> ctx, <a href="boomkat-builtins.html#BuiltinContext">BuiltinContext*</a> bctx, <a href="#HostReg">HostReg*</a> reg)</code></p><p class="api-src">src/embed.c3:1268:10</p></div>
+<div class="api-item" id="call_c_function"><p class="api-sig"><code>fn ulong call_c_function(<a href="#Runtime">Runtime*</a> rt, <a href="#Ctx">Ctx*</a> ctx, BuiltinContext* bctx, <a href="#HostReg">HostReg*</a> reg)</code></p><p class="api-src">src/embed.c3:1268:10</p></div>
 <div class="api-item" id="cfn_data_finalize"><p class="api-sig"><code>fn void cfn_data_finalize(void* payload, void* udata)</code></p><p class="api-src">src/embed.c3:1195:9</p></div>
-<div class="api-item" id="cfn_data_of"><p class="api-sig"><code>fn void* cfn_data_of(<a href="boomkat-builtins.html#BuiltinContext">BuiltinContext*</a> bctx)</code></p><p class="api-src">src/embed.c3:1203:10</p></div>
+<div class="api-item" id="cfn_data_of"><p class="api-sig"><code>fn void* cfn_data_of(BuiltinContext* bctx)</code></p><p class="api-src">src/embed.c3:1203:10</p></div>
 <div class="api-item" id="cfn_reg"><p class="api-sig"><code>fn <a href="#HostReg">HostReg*</a> cfn_reg(<a href="#Runtime">Runtime*</a> rt, void* cfn, bool constructable, uint class_plus1)</code></p><p class="api-src">src/embed.c3:1300:13</p></div>
-<div class="api-item" id="classify"><p class="api-sig"><code>fn int classify(<a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/embed.c3:984:8</p></div>
+<div class="api-item" id="classify"><p class="api-sig"><code>fn int classify(TVal v)</code></p><p class="api-src">src/embed.c3:984:8</p></div>
 <div class="api-item" id="clear_err"><p class="api-sig"><code>fn void clear_err(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:618:9</p></div>
 <div class="api-item" id="clear_exception"><p class="api-sig"><code>fn void clear_exception(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:580:9</p></div>
-<div class="api-item" id="compile_script"><p class="api-sig"><code>fn int compile_script(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, bool strict, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction**</a> out)</code></p><p class="api-src">src/embed.c3:1388:8</p></div>
-<div class="api-item" id="create"><p class="api-sig"><code>fn <a href="#Runtime">Runtime*</a> create(<a href="boomkat-heap.html#AllocFunc">AllocFunc</a> alloc = null, <a href="boomkat-heap.html#ReallocFunc">ReallocFunc</a> realloc = null, <a href="boomkat-heap.html#FreeFunc">FreeFunc</a> free = null, void* udata = null, <a href="boomkat-heap.html#FatalFunc">FatalFunc</a> fatal = null, ulong heap_limit = 0)</code></p><p class="api-src">src/embed.c3:250:13</p></div>
+<div class="api-item" id="compile_script"><p class="api-sig"><code>fn int compile_script(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, bool strict, CompiledFunction** out)</code></p><p class="api-src">src/embed.c3:1388:8</p></div>
+<div class="api-item" id="create"><p class="api-sig"><code>fn <a href="#Runtime">Runtime*</a> create(AllocFunc alloc = null, ReallocFunc realloc = null, FreeFunc free = null, void* udata = null, FatalFunc fatal = null, ulong heap_limit = 0)</code></p><p class="api-src">src/embed.c3:250:13</p></div>
 <div class="api-item" id="cstr_slot"><p class="api-sig"><code>fn char* cstr_slot(<a href="#Runtime">Runtime*</a> rt, usz need)</code></p><p class="api-src">src/embed.c3:1284:10</p></div>
 <div class="api-item" id="ctx_runtime"><p class="api-sig"><code>fn <a href="#Runtime">Runtime*</a> ctx_runtime(void* ctxp) @inline</code></p><p class="api-src">src/embed.c3:971:13</p></div>
-<div class="api-item" id="declare_global"><p class="api-sig"><code>fn int declare_global(<a href="#Runtime">Runtime*</a> rt, char[] name, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/embed.c3:1619:8</p></div>
-<div class="api-item" id="describe_error"><p class="api-sig"><code>fn void describe_error(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal*</a> ev)</code></p><p class="api-src">src/embed.c3:767:9</p></div>
-<div class="api-item" id="describe_value"><p class="api-sig"><code>fn void describe_value(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal*</a> v, <a href="#TextOut">TextOut*</a> out)</code></p><p class="api-src">src/embed.c3:691:9</p></div>
+<div class="api-item" id="declare_global"><p class="api-sig"><code>fn int declare_global(<a href="#Runtime">Runtime*</a> rt, char[] name, TVal v)</code></p><p class="api-src">src/embed.c3:1619:8</p></div>
+<div class="api-item" id="describe_error"><p class="api-sig"><code>fn void describe_error(<a href="#Runtime">Runtime*</a> rt, TVal* ev)</code></p><p class="api-src">src/embed.c3:767:9</p></div>
+<div class="api-item" id="describe_value"><p class="api-sig"><code>fn void describe_value(<a href="#Runtime">Runtime*</a> rt, TVal* v, <a href="#TextOut">TextOut*</a> out)</code></p><p class="api-src">src/embed.c3:691:9</p></div>
 <div class="api-item" id="destroy"><p class="api-sig"><code>fn void destroy(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:407:9</p></div>
 <div class="api-item" id="drain_microtasks"><p class="api-sig"><code>fn int drain_microtasks(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1527:8</p></div>
 <div class="api-item" id="ensure_engine_init"><p class="api-sig"><code>fn void ensure_engine_init()</code></p><p class="api-src">src/embed.c3:243:9</p></div>
 <div class="api-item" id="err_slice"><p class="api-sig"><code>fn char[] err_slice(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:628:11</p></div>
-<div class="api-item" id="eval_module"><p class="api-sig"><code>fn int eval_module(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/embed.c3:1480:8</p></div>
-<div class="api-item" id="eval_source"><p class="api-sig"><code>fn int eval_source(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, <a href="boomkat-types.html#TVal">TVal*</a> out, bool* out_owned, bool strict = false)</code></p><p class="api-src">src/embed.c3:1468:8</p></div>
+<div class="api-item" id="eval_module"><p class="api-sig"><code>fn int eval_module(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, TVal* out)</code></p><p class="api-src">src/embed.c3:1480:8</p></div>
+<div class="api-item" id="eval_source"><p class="api-sig"><code>fn int eval_source(<a href="#Runtime">Runtime*</a> rt, char[] src, char[] name, TVal* out, bool* out_owned, bool strict = false)</code></p><p class="api-src">src/embed.c3:1468:8</p></div>
 <div class="api-item" id="finish_interrupt"><p class="api-sig"><code>fn void finish_interrupt(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1667:9</p></div>
 <div class="api-item" id="free_context"><p class="api-sig"><code>fn void free_context(<a href="#Ctx">Ctx*</a> ctx)</code></p><p class="api-src">src/embed.c3:341:9</p></div>
-<div class="api-item" id="free_context_state"><p class="api-sig"><code>fn void free_context_state(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="#ContextState">ContextState*</a> state)</code></p><p class="api-src">src/embed.c3:389:9</p></div>
+<div class="api-item" id="free_context_state"><p class="api-sig"><code>fn void free_context_state(Heap* hp, <a href="#ContextState">ContextState*</a> state)</code></p><p class="api-src">src/embed.c3:389:9</p></div>
 <div class="api-item" id="free_module_request"><p class="api-sig"><code>fn void free_module_request(<a href="#Runtime">Runtime*</a> rt, <a href="#ModuleRequest">ModuleRequest*</a> req)</code></p><p class="api-src">src/embed.c3:395:9</p></div>
-<div class="api-item" id="host_trampoline"><p class="api-sig"><code>fn void host_trampoline(<a href="boomkat-builtins.html#BuiltinContext">BuiltinContext*</a> bctx, void* udata)</code></p><p class="api-src">src/embed.c3:1217:9</p></div>
-<div class="api-item" id="immediate_get"><p class="api-sig"><code>fn bool immediate_get(ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out) @inline</code></p><p class="api-src">src/embed.c3:132:9</p></div>
-<div class="api-item" id="immediate_of"><p class="api-sig"><code>fn ulong immediate_of(<a href="boomkat-types.html#TVal">TVal</a> v) @inline</code></p><p class="api-src">src/embed.c3:124:10</p></div>
+<div class="api-item" id="host_trampoline"><p class="api-sig"><code>fn void host_trampoline(BuiltinContext* bctx, void* udata)</code></p><p class="api-src">src/embed.c3:1217:9</p></div>
+<div class="api-item" id="immediate_get"><p class="api-sig"><code>fn bool immediate_get(ulong id, TVal* out) @inline</code></p><p class="api-src">src/embed.c3:132:9</p></div>
+<div class="api-item" id="immediate_of"><p class="api-sig"><code>fn ulong immediate_of(TVal v) @inline</code></p><p class="api-src">src/embed.c3:124:10</p></div>
 <div class="api-item" id="install_fn"><p class="api-sig"><code>fn int install_fn(<a href="#Runtime">Runtime*</a> rt, char[] name, void* trampoline, void* payload, int arity, bool constructable)</code></p><p class="api-src">src/embed.c3:1612:8</p></div>
-<div class="api-item" id="intern_builder"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> intern_builder(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-builtins.html#StrBuf">StrBuf*</a> sb)</code></p><p class="api-src">src/embed.c3:1132:13</p></div>
-<div class="api-item" id="intern_or_fail"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> intern_or_fail(<a href="#Runtime">Runtime*</a> rt, char[] text)</code></p><p class="api-src">src/embed.c3:1126:13</p></div>
+<div class="api-item" id="intern_builder"><p class="api-sig"><code>fn HString* intern_builder(<a href="#Runtime">Runtime*</a> rt, StrBuf* sb)</code></p><p class="api-src">src/embed.c3:1132:13</p></div>
+<div class="api-item" id="intern_or_fail"><p class="api-sig"><code>fn HString* intern_or_fail(<a href="#Runtime">Runtime*</a> rt, char[] text)</code></p><p class="api-src">src/embed.c3:1126:13</p></div>
 <div class="api-item" id="interrupt_status"><p class="api-sig"><code>fn int interrupt_status(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1687:8</p></div>
-<div class="api-item" id="local_scope"><p class="api-sig"><code>fn <a href="boomkat-heap.html#HostScope">HostScope*</a> local_scope(<a href="#Runtime">Runtime*</a> rt) @inline</code></p><p class="api-src">src/embed.c3:912:21</p></div>
-<div class="api-item" id="make_c_function"><p class="api-sig"><code>fn int make_c_function(<a href="#Runtime">Runtime*</a> rt, char[] name, void* cfn, void* data, <a href="#BkFinalizer">BkFinalizer</a> finalize, void* finalize_opaque, int arity, bool constructable, <a href="boomkat-types.html#TVal">TVal*</a> out, uint class_plus1 = 0)</code></p><p class="api-src">src/embed.c3:1322:8</p></div>
-<div class="api-item" id="make_fn_value"><p class="api-sig"><code>fn int make_fn_value(<a href="#Runtime">Runtime*</a> rt, char[] name, void* trampoline, void* reg_udata, int arity, bool constructable, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/embed.c3:1591:8</p></div>
+<div class="api-item" id="local_scope"><p class="api-sig"><code>fn HostScope* local_scope(<a href="#Runtime">Runtime*</a> rt) @inline</code></p><p class="api-src">src/embed.c3:912:21</p></div>
+<div class="api-item" id="make_c_function"><p class="api-sig"><code>fn int make_c_function(<a href="#Runtime">Runtime*</a> rt, char[] name, void* cfn, void* data, <a href="#BkFinalizer">BkFinalizer</a> finalize, void* finalize_opaque, int arity, bool constructable, TVal* out, uint class_plus1 = 0)</code></p><p class="api-src">src/embed.c3:1322:8</p></div>
+<div class="api-item" id="make_fn_value"><p class="api-sig"><code>fn int make_fn_value(<a href="#Runtime">Runtime*</a> rt, char[] name, void* trampoline, void* reg_udata, int arity, bool constructable, TVal* out)</code></p><p class="api-src">src/embed.c3:1591:8</p></div>
 <div class="api-item" id="mark_slots"><p class="api-sig"><code>fn void mark_slots(void* rtp)</code></p><p class="api-src">src/embed.c3:349:9</p></div>
 <div class="api-item" id="mark_slots_slice"><p class="api-sig"><code>fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget)</code></p><p class="api-src">src/embed.c3:368:9</p></div>
 <div class="api-item" id="module_failure"><p class="api-sig"><code>fn int module_failure(<a href="#Runtime">Runtime*</a> rt, int code)</code></p><p class="api-src">src/embed.c3:1510:8 · private</p></div>
-<div class="api-item" id="new_context"><p class="api-sig"><code>fn <a href="#Ctx">Ctx*</a> new_context(<a href="#Runtime">Runtime*</a> rt, uint flags = 0, <a href="boomkat-hobject.html#HObject">HObject*</a> global = null, <a href="boomkat-hobject.html#HObject">HObject*</a> global_proto = null)</code></p><p class="api-src">src/embed.c3:316:9</p></div>
-<div class="api-item" id="read_utf16"><p class="api-sig"><code>fn int read_utf16(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> s, ushort* buf, usz cap, usz* length)</code></p><p class="api-src">src/embed.c3:1048:8</p></div>
-<div class="api-item" id="read_utf8"><p class="api-sig"><code>fn int read_utf8(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> s, bool strict, char* buf, usz cap, usz* length)</code></p><p class="api-src">src/embed.c3:1030:8</p></div>
-<div class="api-item" id="realm_context"><p class="api-sig"><code>fn <a href="#Ctx">Ctx*</a> realm_context(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-heap.html#Realm">Realm*</a> realm)</code></p><p class="api-src">src/embed.c3:333:9</p></div>
-<div class="api-item" id="record_stack"><p class="api-sig"><code>fn void record_stack(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal*</a> ev)</code></p><p class="api-src">src/embed.c3:747:9</p></div>
-<div class="api-item" id="release_parked_result"><p class="api-sig"><code>fn void release_parked_result(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v) @inline</code></p><p class="api-src">src/embed.c3:922:9</p></div>
-<div class="api-item" id="resolve_handle"><p class="api-sig"><code>fn bool resolve_handle(<a href="#Runtime">Runtime*</a> rt, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/embed.c3:901:9</p></div>
-<div class="api-item" id="run_script"><p class="api-sig"><code>fn int run_script(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-bytecode.html#CompiledFunction">CompiledFunction*</a> f, <a href="boomkat-types.html#TVal">TVal*</a> out, bool* out_owned)</code></p><p class="api-src">src/embed.c3:1420:8</p></div>
+<div class="api-item" id="new_context"><p class="api-sig"><code>fn <a href="#Ctx">Ctx*</a> new_context(<a href="#Runtime">Runtime*</a> rt, uint flags = 0, HObject* global = null, HObject* global_proto = null)</code></p><p class="api-src">src/embed.c3:316:9</p></div>
+<div class="api-item" id="read_utf16"><p class="api-sig"><code>fn int read_utf16(<a href="#Runtime">Runtime*</a> rt, HString* s, ushort* buf, usz cap, usz* length)</code></p><p class="api-src">src/embed.c3:1048:8</p></div>
+<div class="api-item" id="read_utf8"><p class="api-sig"><code>fn int read_utf8(<a href="#Runtime">Runtime*</a> rt, HString* s, bool strict, char* buf, usz cap, usz* length)</code></p><p class="api-src">src/embed.c3:1030:8</p></div>
+<div class="api-item" id="realm_context"><p class="api-sig"><code>fn <a href="#Ctx">Ctx*</a> realm_context(<a href="#Runtime">Runtime*</a> rt, Realm* realm)</code></p><p class="api-src">src/embed.c3:333:9</p></div>
+<div class="api-item" id="record_stack"><p class="api-sig"><code>fn void record_stack(<a href="#Runtime">Runtime*</a> rt, TVal* ev)</code></p><p class="api-src">src/embed.c3:747:9</p></div>
+<div class="api-item" id="release_parked_result"><p class="api-sig"><code>fn void release_parked_result(<a href="#Runtime">Runtime*</a> rt, TVal v) @inline</code></p><p class="api-src">src/embed.c3:922:9</p></div>
+<div class="api-item" id="resolve_handle"><p class="api-sig"><code>fn bool resolve_handle(<a href="#Runtime">Runtime*</a> rt, ulong id, TVal* out)</code></p><p class="api-src">src/embed.c3:901:9</p></div>
+<div class="api-item" id="run_script"><p class="api-sig"><code>fn int run_script(<a href="#Runtime">Runtime*</a> rt, CompiledFunction* f, TVal* out, bool* out_owned)</code></p><p class="api-src">src/embed.c3:1420:8</p></div>
 <div class="api-item" id="scope_close"><p class="api-sig"><code>fn bool scope_close(<a href="#Runtime">Runtime*</a> rt, uint id)</code></p><p class="api-src">src/embed.c3:957:9</p></div>
 <div class="api-item" id="scope_handle"><p class="api-sig"><code>fn ulong scope_handle(<a href="#Runtime">Runtime*</a> rt, uint depth, ulong index) @inline</code></p><p class="api-src">src/embed.c3:894:10</p></div>
 <div class="api-item" id="scope_open"><p class="api-sig"><code>fn uint scope_open(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:945:9</p></div>
 <div class="api-item" id="select_context"><p class="api-sig"><code>fn void select_context(<a href="#Ctx">Ctx*</a> ctx) @inline</code></p><p class="api-src">src/embed.c3:296:9</p></div>
 <div class="api-item" id="set_err"><p class="api-sig"><code>fn void set_err(<a href="#Runtime">Runtime*</a> rt, int code, char[] msg)</code></p><p class="api-src">src/embed.c3:593:9</p></div>
 <div class="api-item" id="set_err_at"><p class="api-sig"><code>fn void set_err_at(<a href="#Runtime">Runtime*</a> rt, int code, char[] msg, int line, int col)</code></p><p class="api-src">src/embed.c3:606:9</p></div>
-<div class="api-item" id="set_exception"><p class="api-sig"><code>fn void set_exception(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> value)</code></p><p class="api-src">src/embed.c3:587:9</p></div>
+<div class="api-item" id="set_exception"><p class="api-sig"><code>fn void set_exception(<a href="#Runtime">Runtime*</a> rt, TVal value)</code></p><p class="api-src">src/embed.c3:587:9</p></div>
 <div class="api-item" id="set_script_name"><p class="api-sig"><code>fn void set_script_name(<a href="#Runtime">Runtime*</a> rt, char* name, usz len)</code></p><p class="api-src">src/embed.c3:612:9</p></div>
 <div class="api-item" id="settle_stale_limit"><p class="api-sig"><code>fn void settle_stale_limit(<a href="#Runtime">Runtime*</a> rt) @inline</code></p><p class="api-src">src/embed.c3:1681:9</p></div>
-<div class="api-item" id="slot_alloc"><p class="api-sig"><code>fn ulong slot_alloc(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/embed.c3:800:10</p></div>
+<div class="api-item" id="slot_alloc"><p class="api-sig"><code>fn ulong slot_alloc(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/embed.c3:800:10</p></div>
 <div class="api-item" id="slot_entry"><p class="api-sig"><code>fn <a href="#SlotEntry">SlotEntry*</a> slot_entry(<a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/embed.c3:828:15</p></div>
-<div class="api-item" id="slot_get"><p class="api-sig"><code>fn bool slot_get(<a href="#Runtime">Runtime*</a> rt, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/embed.c3:842:9</p></div>
+<div class="api-item" id="slot_get"><p class="api-sig"><code>fn bool slot_get(<a href="#Runtime">Runtime*</a> rt, ulong id, TVal* out)</code></p><p class="api-src">src/embed.c3:842:9</p></div>
 <div class="api-item" id="slot_grow"><p class="api-sig"><code>fn bool slot_grow(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:785:9</p></div>
 <div class="api-item" id="slot_release"><p class="api-sig"><code>fn void slot_release(<a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/embed.c3:850:9</p></div>
 <div class="api-item" id="status_name"><p class="api-sig"><code>fn char* status_name(int status)</code></p><p class="api-src">src/embed.c3:1633:10</p></div>
-<div class="api-item" id="store_value"><p class="api-sig"><code>fn ulong store_value(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/embed.c3:931:10</p></div>
-<div class="api-item" id="str_prop"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> str_prop(<a href="boomkat-hobject.html#HObject">HObject*</a> o, <a href="boomkat-hstring.html#HString">HString*</a> key, <a href="boomkat-heap.html#Heap">Heap*</a> h)</code></p><p class="api-src">src/embed.c3:637:13</p></div>
-<div class="api-item" id="string_external"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> string_external(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#Units">Units</a> data, <a href="boomkat-hstring.html#ExtRelease">ExtRelease</a> release, void* udata)</code></p><p class="api-src">src/embed.c3:1107:13</p></div>
-<div class="api-item" id="string_from_latin1"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> string_from_latin1(<a href="#Runtime">Runtime*</a> rt, char[] chars)</code></p><p class="api-src">src/embed.c3:1089:13</p></div>
-<div class="api-item" id="string_from_utf16"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> string_from_utf16(<a href="#Runtime">Runtime*</a> rt, ushort[] units)</code></p><p class="api-src">src/embed.c3:1096:13</p></div>
-<div class="api-item" id="string_from_utf8"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> string_from_utf8(<a href="#Runtime">Runtime*</a> rt, char[] utf8)</code></p><p class="api-src">src/embed.c3:1062:13</p></div>
+<div class="api-item" id="store_value"><p class="api-sig"><code>fn ulong store_value(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/embed.c3:931:10</p></div>
+<div class="api-item" id="str_prop"><p class="api-sig"><code>fn HString* str_prop(HObject* o, HString* key, Heap* h)</code></p><p class="api-src">src/embed.c3:637:13</p></div>
+<div class="api-item" id="string_external"><p class="api-sig"><code>fn HString* string_external(<a href="#Runtime">Runtime*</a> rt, Units data, ExtRelease release, void* udata)</code></p><p class="api-src">src/embed.c3:1107:13</p></div>
+<div class="api-item" id="string_from_latin1"><p class="api-sig"><code>fn HString* string_from_latin1(<a href="#Runtime">Runtime*</a> rt, char[] chars)</code></p><p class="api-src">src/embed.c3:1089:13</p></div>
+<div class="api-item" id="string_from_utf16"><p class="api-sig"><code>fn HString* string_from_utf16(<a href="#Runtime">Runtime*</a> rt, ushort[] units)</code></p><p class="api-src">src/embed.c3:1096:13</p></div>
+<div class="api-item" id="string_from_utf8"><p class="api-sig"><code>fn HString* string_from_utf8(<a href="#Runtime">Runtime*</a> rt, char[] utf8)</code></p><p class="api-src">src/embed.c3:1062:13</p></div>
 <div class="api-item" id="take_exception"><p class="api-sig"><code>fn ulong take_exception(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:58:10</p></div>
 <div class="api-item" id="take_pending_throw"><p class="api-sig"><code>fn int take_pending_throw(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1576:8</p></div>
 <div class="api-item" id="throw_status"><p class="api-sig"><code>fn int throw_status(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/embed.c3:1699:8 · private</p></div>
-<div class="api-item" id="to_string"><p class="api-sig"><code>fn int to_string(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v, <a href="boomkat-hstring.html#HString">HString**</a> out)</code></p><p class="api-src">src/embed.c3:1548:8</p></div>
+<div class="api-item" id="to_string"><p class="api-sig"><code>fn int to_string(<a href="#Runtime">Runtime*</a> rt, TVal v, HString** out)</code></p><p class="api-src">src/embed.c3:1548:8</p></div>
 <div class="api-item" id="type_name"><p class="api-sig"><code>fn char* type_name(int type)</code></p><p class="api-src">src/embed.c3:1650:10</p></div>
-<div class="api-item" id="utf8_len"><p class="api-sig"><code>fn usz utf8_len(<a href="boomkat-hstring.html#HString">HString*</a> s)</code></p><p class="api-src">src/embed.c3:1008:8</p></div>
-<div class="api-item" id="utf8_write"><p class="api-sig"><code>fn usz utf8_write(<a href="boomkat-hstring.html#HString">HString*</a> s, char* buf, usz cap)</code></p><p class="api-src">src/embed.c3:1015:8</p></div>
+<div class="api-item" id="utf8_len"><p class="api-sig"><code>fn usz utf8_len(HString* s)</code></p><p class="api-src">src/embed.c3:1008:8</p></div>
+<div class="api-item" id="utf8_write"><p class="api-sig"><code>fn usz utf8_write(HString* s, char* buf, usz cap)</code></p><p class="api-src">src/embed.c3:1015:8</p></div>
       <h2 id="sec-macros">Macros</h2>
 <div class="api-item" id="handle_rt_id"><p class="api-sig"><code>macro ulong handle_rt_id(ulong h)</code></p><p class="api-src">src/embed.c3:116:13</p></div>
     </main>
@@ -343,7 +310,7 @@
   <footer class="site-foot">
     <div class="wrap">
       <div class="foot-bar">
-        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span><a href="https://tomasi.studio/">&copy; 2026 tomasi.studio</a></span>
         <span class="eof">eof</span>
       </div>
     </div>

@@ -35,41 +35,8 @@
       <p class="label">Modules</p>
       <ul>
         <li><a href="index.html">Overview</a></li>
-        <li><a href="boomkat.html">boomkat</a></li>
-        <li><a href="boomkat-addon.html">boomkat::addon</a></li>
-        <li><a href="boomkat-agent.html">boomkat::agent</a></li>
-        <li><a href="boomkat-ast.html">boomkat::ast</a></li>
-        <li><a href="boomkat-ast-vec.html">boomkat::ast::vec</a></li>
-        <li><a href="boomkat-builtins.html">boomkat::builtins</a></li>
-        <li><a href="boomkat-builtins-growvec.html">boomkat::builtins::growvec</a></li>
-        <li><a href="boomkat-builtins-jsonparse.html">boomkat::builtins::jsonparse</a></li>
-        <li><a href="boomkat-bytecode.html">boomkat::bytecode</a></li>
-        <li><a href="boomkat-capi.html" aria-current="page">boomkat::capi</a></li>
-        <li><a href="boomkat-compiler.html">boomkat::compiler</a></li>
-        <li><a href="boomkat-dtoa_bindings.html">boomkat::dtoa_bindings</a></li>
         <li><a href="boomkat-embed.html">boomkat::embed</a></li>
-        <li><a href="boomkat-embed-abi.html">boomkat::embed::abi</a></li>
-        <li><a href="boomkat-env.html">boomkat::env</a></li>
-        <li><a href="boomkat-esm.html">boomkat::esm</a></li>
-        <li><a href="boomkat-features.html">boomkat::features</a></li>
-        <li><a href="boomkat-frontendstats.html">boomkat::frontendstats</a></li>
-        <li><a href="boomkat-gcprofile.html">boomkat::gcprofile</a></li>
-        <li><a href="boomkat-hbigint.html">boomkat::hbigint</a></li>
-        <li><a href="boomkat-heap.html">boomkat::heap</a></li>
-        <li><a href="boomkat-hobject.html">boomkat::hobject</a></li>
-        <li><a href="boomkat-hstring.html">boomkat::hstring</a></li>
-        <li><a href="boomkat-image.html">boomkat::image</a></li>
-        <li><a href="boomkat-jsx_config.html">boomkat::jsx_config</a></li>
-        <li><a href="boomkat-lexer.html">boomkat::lexer</a></li>
-        <li><a href="boomkat-lib-bigmath.html">boomkat::lib::bigmath</a></li>
-        <li><a href="boomkat-lib-temporal.html">boomkat::lib::temporal</a></li>
-        <li><a href="boomkat-pagepool.html">boomkat::pagepool</a></li>
-        <li><a href="boomkat-re_bindings.html">boomkat::re_bindings</a></li>
-        <li><a href="boomkat-relexstats.html">boomkat::relexstats</a></li>
-        <li><a href="boomkat-sync.html">boomkat::sync</a></li>
-        <li><a href="boomkat-types.html">boomkat::types</a></li>
-        <li><a href="boomkat-unicode_bindings.html">boomkat::unicode_bindings</a></li>
-        <li><a href="boomkat-vm.html">boomkat::vm</a></li>
+        <li><a href="boomkat-capi.html" aria-current="page">boomkat::capi</a></li>
       </ul>
       <p class="label">Other Reference</p>
       <ul>
@@ -145,11 +112,11 @@
 }</code></pre><p class="api-src">src/capi.c3:1411:8</p></div>
 <div class="api-item" id="BkResolveFn"><pre><code>alias BkResolveFn = fn int(void* ctx, char* referrer, char* specifier, <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> request, void* opaque)</code></pre><p class="api-src">src/capi.c3:382:7</p></div>
 <div class="api-item" id="BkRuntimeOptions"><pre><code>struct BkRuntimeOptions {
-  <a href="boomkat-heap.html#AllocFunc">AllocFunc</a> alloc;
-  <a href="boomkat-heap.html#ReallocFunc">ReallocFunc</a> realloc;
-  <a href="boomkat-heap.html#FreeFunc">FreeFunc</a> free;
+  AllocFunc alloc;
+  ReallocFunc realloc;
+  FreeFunc free;
   void* alloc_opaque;
-  <a href="boomkat-heap.html#FatalFunc">FatalFunc</a> fatal;
+  FatalFunc fatal;
   ulong heap_limit;
 }</code></pre><p class="api-src">src/capi.c3:110:8</p></div>
 <div class="api-item" id="BkTypedArrayInfo"><pre><code>struct BkTypedArrayInfo {
@@ -164,7 +131,7 @@
   <a href="#Runtime">Runtime*</a> rt;
   <a href="#Ctx">Ctx*</a> ctx;
   <a href="#Ctx">Ctx*</a> previous;
-  <a href="boomkat-heap.html#Realm">Realm*</a> realm;
+  Realm* realm;
   uint scope;
   ulong self;
   <a href="#BkExoticHooks">BkExoticHooks*</a> hooks;
@@ -261,14 +228,14 @@
 <div class="api-item" id="BK_UTF8_STRICT"><p class="api-sig"><code>const int BK_UTF8_STRICT = 1;</code></p><p class="api-src">src/capi.c3:37:11</p></div>
 <div class="api-item" id="CONTEXT_FLAGS"><p class="api-sig"><code>const uint CONTEXT_FLAGS = 7;</code></p><p class="api-src">src/capi.c3:175:12</p></div>
 <div class="api-item" id="ELEMENT_TYPE_COUNT"><p class="api-sig"><code>const uint ELEMENT_TYPE_COUNT = 12;</code></p><p class="api-src">src/capi.c3:3218:12</p></div>
-<div class="api-item" id="exotic_ops"><p class="api-sig"><code><a href="boomkat-builtins.html#HostExoticOps">HostExoticOps</a> exotic_ops = { .get_own = &amp;exotic_get_own, .define = &amp;exotic_define, .remove = &amp;exotic_remove, .own_keys = &amp;exotic_own_keys, .call = &amp;exotic_call, };</code></p><p class="api-src">src/capi.c3:2174:25</p></div>
+<div class="api-item" id="exotic_ops"><p class="api-sig"><code>HostExoticOps exotic_ops = { .get_own = &amp;exotic_get_own, .define = &amp;exotic_define, .remove = &amp;exotic_remove, .own_keys = &amp;exotic_own_keys, .call = &amp;exotic_call, };</code></p><p class="api-src">src/capi.c3:2174:25</p></div>
       <h2 id="sec-functions">Functions</h2>
-<div class="api-item" id="accessor_of"><p class="api-sig"><code>fn int accessor_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:1419:8</p></div>
+<div class="api-item" id="accessor_of"><p class="api-sig"><code>fn int accessor_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id, TVal* out)</code></p><p class="api-src">src/capi.c3:1419:8</p></div>
 <div class="api-item" id="answered"><p class="api-sig"><code>fn int answered(<a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req)</code></p><p class="api-src">src/capi.c3:527:8</p></div>
-<div class="api-item" id="api_class"><p class="api-sig"><code>fn <a href="boomkat-heap.html#HostClassEntry">HostClassEntry*</a> api_class(<a href="#Runtime">Runtime*</a> rt, uint cls)</code></p><p class="api-src">src/capi.c3:1954:26</p></div>
-<div class="api-item" id="as_object"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> as_object(void* ctxp, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:1134:13</p></div>
+<div class="api-item" id="api_class"><p class="api-sig"><code>fn HostClassEntry* api_class(<a href="#Runtime">Runtime*</a> rt, uint cls)</code></p><p class="api-src">src/capi.c3:1954:26</p></div>
+<div class="api-item" id="as_object"><p class="api-sig"><code>fn HObject* as_object(void* ctxp, ulong id, TVal* out)</code></p><p class="api-src">src/capi.c3:1134:13</p></div>
 <div class="api-item" id="bad_handle"><p class="api-sig"><code>fn ulong bad_handle(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/capi.c3:100:10</p></div>
-<div class="api-item" id="bigint_of"><p class="api-sig"><code>fn <a href="boomkat-hbigint.html#HBigInt">HBigInt*</a> bigint_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:1684:13</p></div>
+<div class="api-item" id="bigint_of"><p class="api-sig"><code>fn HBigInt* bigint_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:1684:13</p></div>
 <div class="api-item" id="bk_add_external_memory"><p class="api-sig"><code>fn void bk_add_external_memory(void* rtp, long delta) @export</code></p><p class="api-src">src/capi.c3:3144:9</p></div>
 <div class="api-item" id="bk_adopt_shared_block"><p class="api-sig"><code>fn ulong bk_adopt_shared_block(void* ctxp, void* data) @export</code></p><p class="api-src">src/capi.c3:3429:10</p></div>
 <div class="api-item" id="bk_alloc"><p class="api-sig"><code>fn void* bk_alloc(void* rtp, usz size) @export</code></p><p class="api-src">src/capi.c3:130:10</p></div>
@@ -358,9 +325,9 @@
 <div class="api-item" id="bk_new_c_function"><p class="api-sig"><code>fn ulong bk_new_c_function(void* ctxp, void* callback, char* name, int arity, uint flags, void* data, void* finalize, void* finalize_opaque) @export</code></p><p class="api-src">src/capi.c3:3053:10</p></div>
 <div class="api-item" id="bk_new_context"><p class="api-sig"><code>fn void* bk_new_context(void* rtp, <a href="#BkContextOptions">BkContextOptions*</a> options) @export</code></p><p class="api-src">src/capi.c3:179:10</p></div>
 <div class="api-item" id="bk_new_error"><p class="api-sig"><code>fn ulong bk_new_error(void* ctxp, int kind, char* msg) @export</code></p><p class="api-src">src/capi.c3:3014:10</p></div>
-<div class="api-item" id="bk_new_external_array_buffer"><p class="api-sig"><code>fn ulong bk_new_external_array_buffer(void* ctxp, void* data, usz length, <a href="boomkat-heap.html#ExternalReleaseFn">ExternalReleaseFn</a> release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:3294:10</p></div>
-<div class="api-item" id="bk_new_external_string_latin1"><p class="api-sig"><code>fn ulong bk_new_external_string_latin1(void* ctxp, char* chars, usz len, <a href="boomkat-hstring.html#ExtRelease">ExtRelease</a> release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:1047:10</p></div>
-<div class="api-item" id="bk_new_external_string_utf16"><p class="api-sig"><code>fn ulong bk_new_external_string_utf16(void* ctxp, ushort* units, usz len, <a href="boomkat-hstring.html#ExtRelease">ExtRelease</a> release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:1057:10</p></div>
+<div class="api-item" id="bk_new_external_array_buffer"><p class="api-sig"><code>fn ulong bk_new_external_array_buffer(void* ctxp, void* data, usz length, ExternalReleaseFn release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:3294:10</p></div>
+<div class="api-item" id="bk_new_external_string_latin1"><p class="api-sig"><code>fn ulong bk_new_external_string_latin1(void* ctxp, char* chars, usz len, ExtRelease release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:1047:10</p></div>
+<div class="api-item" id="bk_new_external_string_utf16"><p class="api-sig"><code>fn ulong bk_new_external_string_utf16(void* ctxp, ushort* units, usz len, ExtRelease release, void* opaque) @export</code></p><p class="api-src">src/capi.c3:1057:10</p></div>
 <div class="api-item" id="bk_new_instance"><p class="api-sig"><code>fn ulong bk_new_instance(void* ctxp, uint cls, void* payload, ulong new_target) @export</code></p><p class="api-src">src/capi.c3:2052:10</p></div>
 <div class="api-item" id="bk_new_number"><p class="api-sig"><code>fn ulong bk_new_number(void* ctxp, double d) @export</code></p><p class="api-src">src/capi.c3:1012:10</p></div>
 <div class="api-item" id="bk_new_object"><p class="api-sig"><code>fn ulong bk_new_object(void* ctxp) @export</code></p><p class="api-src">src/capi.c3:1067:10</p></div>
@@ -443,59 +410,59 @@
 <div class="api-item" id="bk_wait_events"><p class="api-sig"><code>fn int bk_wait_events(void* runtime, double timeout_ms) @export</code></p><p class="api-src">src/capi.c3:2477:8</p></div>
 <div class="api-item" id="bk_wake"><p class="api-sig"><code>fn void bk_wake(void* runtime) @export</code></p><p class="api-src">src/capi.c3:2482:9</p></div>
 <div class="api-item" id="bk_weak_get"><p class="api-sig"><code>fn ulong bk_weak_get(void* ctxp, ulong weak) @export</code></p><p class="api-src">src/capi.c3:3486:10</p></div>
-<div class="api-item" id="buffer_of"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> buffer_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:3222:13</p></div>
-<div class="api-item" id="call_builtin"><p class="api-sig"><code>fn int call_builtin(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-builtins.html#Builtin">Builtin</a> which, <a href="boomkat-types.html#TVal">TVal</a> this_value, <a href="boomkat-types.html#TVal">TVal*</a> args, uint argc, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:2501:8</p></div>
-<div class="api-item" id="capi_rejection_tracker"><p class="api-sig"><code>fn void capi_rejection_tracker(void* heap_raw, <a href="boomkat-types.html#TVal">TVal</a> promise, <a href="boomkat-types.html#TVal">TVal</a> reason, bool handled, void* udata)</code></p><p class="api-src">src/capi.c3:3183:9</p></div>
+<div class="api-item" id="buffer_of"><p class="api-sig"><code>fn HObject* buffer_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:3222:13</p></div>
+<div class="api-item" id="call_builtin"><p class="api-sig"><code>fn int call_builtin(<a href="#Runtime">Runtime*</a> rt, Builtin which, TVal this_value, TVal* args, uint argc, TVal* out)</code></p><p class="api-src">src/capi.c3:2501:8</p></div>
+<div class="api-item" id="capi_rejection_tracker"><p class="api-sig"><code>fn void capi_rejection_tracker(void* heap_raw, TVal promise, TVal reason, bool handled, void* udata)</code></p><p class="api-src">src/capi.c3:3183:9</p></div>
 <div class="api-item" id="class_is_a"><p class="api-sig"><code>fn bool class_is_a(<a href="#Runtime">Runtime*</a> rt, uint cls, uint want)</code></p><p class="api-src">src/capi.c3:1979:9</p></div>
-<div class="api-item" id="constructable"><p class="api-sig"><code>fn bool constructable(<a href="boomkat-types.html#TVal">TVal</a> v) @inline</code></p><p class="api-src">src/capi.c3:2685:9</p></div>
+<div class="api-item" id="constructable"><p class="api-sig"><code>fn bool constructable(TVal v) @inline</code></p><p class="api-src">src/capi.c3:2685:9</p></div>
 <div class="api-item" id="cstr_copy"><p class="api-sig"><code>fn char* cstr_copy(char[] bytes)</code></p><p class="api-src">src/capi.c3:386:10</p></div>
-<div class="api-item" id="define_native"><p class="api-sig"><code>fn int define_native(<a href="#Runtime">Runtime*</a> rt, char[] name, <a href="boomkat-types.html#TVal">TVal</a> exports)</code></p><p class="api-src">src/capi.c3:535:8</p></div>
-<div class="api-item" id="delete_key"><p class="api-sig"><code>fn int delete_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k, int* out)</code></p><p class="api-src">src/capi.c3:1262:8</p></div>
-<div class="api-item" id="desc_from_bk"><p class="api-sig"><code>fn int desc_from_bk(void* ctxp, <a href="#Runtime">Runtime*</a> rt, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> desc, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> out)</code></p><p class="api-src">src/capi.c3:1431:8</p></div>
-<div class="api-item" id="desc_to_bk"><p class="api-sig"><code>fn bool desc_to_bk(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> pd, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> out)</code></p><p class="api-src">src/capi.c3:2281:9</p></div>
-<div class="api-item" id="exotic_call"><p class="api-sig"><code>fn void exotic_call(<a href="boomkat-builtins.html#BuiltinContext">BuiltinContext*</a> bctx, <a href="boomkat-hobject.html#HObject">HObject*</a> self)</code></p><p class="api-src">src/capi.c3:2355:9</p></div>
-<div class="api-item" id="exotic_define"><p class="api-sig"><code>fn int exotic_define(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> key, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> desc, bool* res)</code></p><p class="api-src">src/capi.c3:2306:8</p></div>
-<div class="api-item" id="exotic_get_own"><p class="api-sig"><code>fn int exotic_get_own(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> key, <a href="boomkat-builtins.html#ProxyDesc">ProxyDesc*</a> out)</code></p><p class="api-src">src/capi.c3:2253:8</p></div>
-<div class="api-item" id="exotic_own_keys"><p class="api-sig"><code>fn int exotic_own_keys(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-types.html#TVal">TVal*</a> list_out)</code></p><p class="api-src">src/capi.c3:2338:8</p></div>
-<div class="api-item" id="exotic_remove"><p class="api-sig"><code>fn int exotic_remove(void* vm, <a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="boomkat-hstring.html#HString">HString*</a> key, bool* res)</code></p><p class="api-src">src/capi.c3:2323:8</p></div>
+<div class="api-item" id="define_native"><p class="api-sig"><code>fn int define_native(<a href="#Runtime">Runtime*</a> rt, char[] name, TVal exports)</code></p><p class="api-src">src/capi.c3:535:8</p></div>
+<div class="api-item" id="delete_key"><p class="api-sig"><code>fn int delete_key(void* ctxp, ulong obj_id, HString* k, int* out)</code></p><p class="api-src">src/capi.c3:1262:8</p></div>
+<div class="api-item" id="desc_from_bk"><p class="api-sig"><code>fn int desc_from_bk(void* ctxp, <a href="#Runtime">Runtime*</a> rt, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> desc, ProxyDesc* out)</code></p><p class="api-src">src/capi.c3:1431:8</p></div>
+<div class="api-item" id="desc_to_bk"><p class="api-sig"><code>fn bool desc_to_bk(<a href="#Runtime">Runtime*</a> rt, ProxyDesc* pd, <a href="#BkPropertyDescriptor">BkPropertyDescriptor*</a> out)</code></p><p class="api-src">src/capi.c3:2281:9</p></div>
+<div class="api-item" id="exotic_call"><p class="api-sig"><code>fn void exotic_call(BuiltinContext* bctx, HObject* self)</code></p><p class="api-src">src/capi.c3:2355:9</p></div>
+<div class="api-item" id="exotic_define"><p class="api-sig"><code>fn int exotic_define(void* vm, Heap* hp, HObject* self, HString* key, ProxyDesc* desc, bool* res)</code></p><p class="api-src">src/capi.c3:2306:8</p></div>
+<div class="api-item" id="exotic_get_own"><p class="api-sig"><code>fn int exotic_get_own(void* vm, Heap* hp, HObject* self, HString* key, ProxyDesc* out)</code></p><p class="api-src">src/capi.c3:2253:8</p></div>
+<div class="api-item" id="exotic_own_keys"><p class="api-sig"><code>fn int exotic_own_keys(void* vm, Heap* hp, HObject* self, TVal* list_out)</code></p><p class="api-src">src/capi.c3:2338:8</p></div>
+<div class="api-item" id="exotic_remove"><p class="api-sig"><code>fn int exotic_remove(void* vm, Heap* hp, HObject* self, HString* key, bool* res)</code></p><p class="api-src">src/capi.c3:2323:8</p></div>
 <div class="api-item" id="fail"><p class="api-sig"><code>fn int fail(<a href="#Runtime">Runtime*</a> rt, int code, String msg)</code></p><p class="api-src">src/capi.c3:60:8</p></div>
 <div class="api-item" id="fail_value"><p class="api-sig"><code>fn ulong fail_value(<a href="#Runtime">Runtime*</a> rt, int code, String msg)</code></p><p class="api-src">src/capi.c3:95:10</p></div>
 <div class="api-item" id="finalize_entries"><p class="api-sig"><code>fn void finalize_entries(<a href="#BkFnDef">BkFnDef*</a> defs, usz from)</code></p><p class="api-src">src/capi.c3:2892:9</p></div>
 <div class="api-item" id="find_module_request"><p class="api-sig"><code>fn <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> find_module_request(<a href="#Runtime">Runtime*</a> rt, char[] name)</code></p><p class="api-src">src/capi.c3:426:19</p></div>
-<div class="api-item" id="free_args"><p class="api-sig"><code>fn void free_args(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal*</a> args, <a href="boomkat-types.html#TVal">TVal*</a> local) @inline</code></p><p class="api-src">src/capi.c3:2681:9</p></div>
-<div class="api-item" id="get_key"><p class="api-sig"><code>fn ulong get_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k)</code></p><p class="api-src">src/capi.c3:1157:10</p></div>
-<div class="api-item" id="has_builtin"><p class="api-sig"><code>fn bool has_builtin(<a href="boomkat-builtins.html#Builtin">Builtin</a> which) @inline</code></p><p class="api-src">src/capi.c3:2496:9</p></div>
-<div class="api-item" id="has_key"><p class="api-sig"><code>fn int has_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k, int* out)</code></p><p class="api-src">src/capi.c3:1241:8</p></div>
-<div class="api-item" id="hold"><p class="api-sig"><code>fn void hold(<a href="boomkat-heap.html#Heap">Heap*</a> hp, uint i, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:2249:9</p></div>
-<div class="api-item" id="hook_atom"><p class="api-sig"><code>fn uint hook_atom(<a href="#HookFrame">HookFrame*</a> f, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/capi.c3:2242:9</p></div>
-<div class="api-item" id="hook_enter"><p class="api-sig"><code>fn bool hook_enter(<a href="boomkat-heap.html#Heap">Heap*</a> hp, <a href="boomkat-hobject.html#HObject">HObject*</a> self, <a href="#HookFrame">HookFrame*</a> f)</code></p><p class="api-src">src/capi.c3:2195:9</p></div>
+<div class="api-item" id="free_args"><p class="api-sig"><code>fn void free_args(<a href="#Runtime">Runtime*</a> rt, TVal* args, TVal* local) @inline</code></p><p class="api-src">src/capi.c3:2681:9</p></div>
+<div class="api-item" id="get_key"><p class="api-sig"><code>fn ulong get_key(void* ctxp, ulong obj_id, HString* k)</code></p><p class="api-src">src/capi.c3:1157:10</p></div>
+<div class="api-item" id="has_builtin"><p class="api-sig"><code>fn bool has_builtin(Builtin which) @inline</code></p><p class="api-src">src/capi.c3:2496:9</p></div>
+<div class="api-item" id="has_key"><p class="api-sig"><code>fn int has_key(void* ctxp, ulong obj_id, HString* k, int* out)</code></p><p class="api-src">src/capi.c3:1241:8</p></div>
+<div class="api-item" id="hold"><p class="api-sig"><code>fn void hold(Heap* hp, uint i, TVal v)</code></p><p class="api-src">src/capi.c3:2249:9</p></div>
+<div class="api-item" id="hook_atom"><p class="api-sig"><code>fn uint hook_atom(<a href="#HookFrame">HookFrame*</a> f, HString* key)</code></p><p class="api-src">src/capi.c3:2242:9</p></div>
+<div class="api-item" id="hook_enter"><p class="api-sig"><code>fn bool hook_enter(Heap* hp, HObject* self, <a href="#HookFrame">HookFrame*</a> f)</code></p><p class="api-src">src/capi.c3:2195:9</p></div>
 <div class="api-item" id="hook_leave"><p class="api-sig"><code>fn void hook_leave(<a href="#HookFrame">HookFrame*</a> f)</code></p><p class="api-src">src/capi.c3:2212:9</p></div>
 <div class="api-item" id="hook_threw"><p class="api-sig"><code>fn int hook_threw(<a href="#HookFrame">HookFrame*</a> f)</code></p><p class="api-src">src/capi.c3:2221:8</p></div>
-<div class="api-item" id="host_instance"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> host_instance(<a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:1963:13</p></div>
+<div class="api-item" id="host_instance"><p class="api-sig"><code>fn HObject* host_instance(TVal v)</code></p><p class="api-src">src/capi.c3:1963:13</p></div>
 <div class="api-item" id="illegal_constructor"><p class="api-sig"><code>fn ulong illegal_constructor(void* ctxp, ulong this_value, uint argc, ulong* argv, void* opaque)</code></p><p class="api-src">src/capi.c3:1990:10</p></div>
-<div class="api-item" id="install_function"><p class="api-sig"><code>fn int install_function(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hobject.html#HObject">HObject*</a> target, char[] name, void* cfn, void* udata, <a href="boomkat-embed.html#BkFinalizer">BkFinalizer</a> finalize, void* finalize_opaque, int arity, uint flags)</code></p><p class="api-src">src/capi.c3:2930:8</p></div>
-<div class="api-item" id="instance_class"><p class="api-sig"><code>fn uint instance_class(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:1971:9</p></div>
-<div class="api-item" id="intern_atom"><p class="api-sig"><code>fn uint intern_atom(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> key)</code></p><p class="api-src">src/capi.c3:1291:9</p></div>
+<div class="api-item" id="install_function"><p class="api-sig"><code>fn int install_function(<a href="#Runtime">Runtime*</a> rt, HObject* target, char[] name, void* cfn, void* udata, <a href="boomkat-embed.html#BkFinalizer">BkFinalizer</a> finalize, void* finalize_opaque, int arity, uint flags)</code></p><p class="api-src">src/capi.c3:2930:8</p></div>
+<div class="api-item" id="instance_class"><p class="api-sig"><code>fn uint instance_class(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/capi.c3:1971:9</p></div>
+<div class="api-item" id="intern_atom"><p class="api-sig"><code>fn uint intern_atom(<a href="#Runtime">Runtime*</a> rt, HString* key)</code></p><p class="api-src">src/capi.c3:1291:9</p></div>
 <div class="api-item" id="jsx_copy"><p class="api-sig"><code>fn char[] jsx_copy(char* s, char** at)</code></p><p class="api-src">src/capi.c3:325:11</p></div>
-<div class="api-item" id="length_of"><p class="api-sig"><code>fn int length_of(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hobject.html#HObject">HObject*</a> obj, ulong* out)</code></p><p class="api-src">src/capi.c3:2518:8</p></div>
+<div class="api-item" id="length_of"><p class="api-sig"><code>fn int length_of(<a href="#Runtime">Runtime*</a> rt, HObject* obj, ulong* out)</code></p><p class="api-src">src/capi.c3:2518:8</p></div>
 <div class="api-item" id="loader_load"><p class="api-sig"><code>fn char[]? loader_load(char[] name, void* udata)</code></p><p class="api-src">src/capi.c3:444:12</p></div>
 <div class="api-item" id="loader_resolve"><p class="api-sig"><code>fn char[]? loader_resolve(char[] base_name, char[] specifier, void* udata)</code></p><p class="api-src">src/capi.c3:404:12</p></div>
-<div class="api-item" id="new_array"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> new_array(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/capi.c3:1080:13</p></div>
-<div class="api-item" id="new_buffer_object"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> new_buffer_object(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hobject.html#HObject">HObject*</a> proto)</code></p><p class="api-src">src/capi.c3:3255:13</p></div>
+<div class="api-item" id="new_array"><p class="api-sig"><code>fn HObject* new_array(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/capi.c3:1080:13</p></div>
+<div class="api-item" id="new_buffer_object"><p class="api-sig"><code>fn HObject* new_buffer_object(<a href="#Runtime">Runtime*</a> rt, HObject* proto)</code></p><p class="api-src">src/capi.c3:3255:13</p></div>
 <div class="api-item" id="park_module_error"><p class="api-sig"><code>fn void park_module_error(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req)</code></p><p class="api-src">src/capi.c3:395:9</p></div>
-<div class="api-item" id="promise_of"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> promise_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:1791:13</p></div>
-<div class="api-item" id="property_key"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> property_key(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:1316:13</p></div>
-<div class="api-item" id="resolve"><p class="api-sig"><code>fn bool resolve(void* ctxp, ulong id, <a href="boomkat-types.html#TVal">TVal*</a> out)</code></p><p class="api-src">src/capi.c3:67:9</p></div>
-<div class="api-item" id="resolve_args"><p class="api-sig"><code>fn <a href="boomkat-types.html#TVal">TVal*</a> resolve_args(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong* argv, uint argc, <a href="boomkat-types.html#TVal">TVal*</a> local)</code></p><p class="api-src">src/capi.c3:2664:10</p></div>
+<div class="api-item" id="promise_of"><p class="api-sig"><code>fn HObject* promise_of(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong id)</code></p><p class="api-src">src/capi.c3:1791:13</p></div>
+<div class="api-item" id="property_key"><p class="api-sig"><code>fn HString* property_key(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/capi.c3:1316:13</p></div>
+<div class="api-item" id="resolve"><p class="api-sig"><code>fn bool resolve(void* ctxp, ulong id, TVal* out)</code></p><p class="api-src">src/capi.c3:67:9</p></div>
+<div class="api-item" id="resolve_args"><p class="api-sig"><code>fn TVal* resolve_args(void* ctxp, <a href="#Runtime">Runtime*</a> rt, ulong* argv, uint argc, TVal* local)</code></p><p class="api-src">src/capi.c3:2664:10</p></div>
 <div class="api-item" id="rt_of"><p class="api-sig"><code>fn <a href="#Runtime">Runtime*</a> rt_of(void* p) @inline</code></p><p class="api-src">src/capi.c3:47:13</p></div>
-<div class="api-item" id="set_key"><p class="api-sig"><code>fn int set_key(void* ctxp, ulong obj_id, <a href="boomkat-hstring.html#HString">HString*</a> k, ulong val_id)</code></p><p class="api-src">src/capi.c3:1200:8</p></div>
-<div class="api-item" id="store"><p class="api-sig"><code>fn ulong store(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:76:10</p></div>
-<div class="api-item" id="store_root"><p class="api-sig"><code>fn ulong store_root(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-types.html#TVal">TVal</a> v)</code></p><p class="api-src">src/capi.c3:85:10</p></div>
-<div class="api-item" id="store_string"><p class="api-sig"><code>fn ulong store_string(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-hstring.html#HString">HString*</a> s)</code></p><p class="api-src">src/capi.c3:1020:10</p></div>
-<div class="api-item" id="string_of"><p class="api-sig"><code>fn <a href="boomkat-hstring.html#HString">HString*</a> string_of(<a href="#Runtime">Runtime*</a> rt, void* ctxp, ulong id)</code></p><p class="api-src">src/capi.c3:831:13</p></div>
-<div class="api-item" id="symbol_is_registered"><p class="api-sig"><code>fn bool symbol_is_registered(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="boomkat-hstring.html#HString">HString*</a> sym)</code></p><p class="api-src">src/capi.c3:3455:9</p></div>
+<div class="api-item" id="set_key"><p class="api-sig"><code>fn int set_key(void* ctxp, ulong obj_id, HString* k, ulong val_id)</code></p><p class="api-src">src/capi.c3:1200:8</p></div>
+<div class="api-item" id="store"><p class="api-sig"><code>fn ulong store(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/capi.c3:76:10</p></div>
+<div class="api-item" id="store_root"><p class="api-sig"><code>fn ulong store_root(<a href="#Runtime">Runtime*</a> rt, TVal v)</code></p><p class="api-src">src/capi.c3:85:10</p></div>
+<div class="api-item" id="store_string"><p class="api-sig"><code>fn ulong store_string(<a href="#Runtime">Runtime*</a> rt, HString* s)</code></p><p class="api-src">src/capi.c3:1020:10</p></div>
+<div class="api-item" id="string_of"><p class="api-sig"><code>fn HString* string_of(<a href="#Runtime">Runtime*</a> rt, void* ctxp, ulong id)</code></p><p class="api-src">src/capi.c3:831:13</p></div>
+<div class="api-item" id="symbol_is_registered"><p class="api-sig"><code>fn bool symbol_is_registered(Heap* heap, HString* sym)</code></p><p class="api-src">src/capi.c3:3455:9</p></div>
 <div class="api-item" id="take_module_answer"><p class="api-sig"><code>fn char[]? take_module_answer(<a href="#Runtime">Runtime*</a> rt, <a href="boomkat-embed.html#ModuleRequest">ModuleRequest*</a> req, bool fallback, char[] name)</code></p><p class="api-src">src/capi.c3:435:12</p></div>
-<div class="api-item" id="typed_array_proto"><p class="api-sig"><code>fn <a href="boomkat-hobject.html#HObject">HObject*</a> typed_array_proto(<a href="boomkat-heap.html#Heap">Heap*</a> heap, <a href="boomkat-hobject.html#ObjClass">ObjClass</a> cls)</code></p><p class="api-src">src/capi.c3:3235:13</p></div>
+<div class="api-item" id="typed_array_proto"><p class="api-sig"><code>fn HObject* typed_array_proto(Heap* heap, ObjClass cls)</code></p><p class="api-src">src/capi.c3:3235:13</p></div>
 <div class="api-item" id="vm_fault"><p class="api-sig"><code>fn int vm_fault(<a href="#Runtime">Runtime*</a> rt)</code></p><p class="api-src">src/capi.c3:1149:8</p></div>
       <h2 id="sec-macros">Macros</h2>
 <div class="api-item" id="@store_bigint"><p class="api-sig"><code>macro ulong @store_bigint(<a href="#Runtime">Runtime*</a> rt, #b)</code></p><p class="api-src">src/capi.c3:1656:13</p></div>
@@ -507,7 +474,7 @@
   <footer class="site-foot">
     <div class="wrap">
       <div class="foot-bar">
-        <span><a href="../../index.html">boomkat docs</a> · generated by c3c docgen</span>
+        <span><a href="https://tomasi.studio/">&copy; 2026 tomasi.studio</a></span>
         <span class="eof">eof</span>
       </div>
     </div>
