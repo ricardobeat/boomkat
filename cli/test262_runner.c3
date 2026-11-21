@@ -71,8 +71,11 @@ fn int run_manifest_loop(char[] mpath) {
     int pass = 0;
     int fail = 0;
     int total = 0;
-    while (try line = io::treadline(&fp)) {
+    // Read inside @pool scope so line allocations are reclaimed per test.
+    for (;;) {
         @pool() {
+            String? line = io::treadline(&fp);
+            if (catch line) break;
             if (line.len == 0) { continue; }
 
             bool report = (total % 100 == 0);
