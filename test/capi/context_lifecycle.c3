@@ -1,8 +1,11 @@
 module context_lifecycle;
 
 import boomkat;
+import boomkat::ast::vec;
+import boomkat::bytecode;
 import boomkat::capi;
 import boomkat::embed;
+import boomkat::image;
 import std::io;
 
 fn double number(JsContext* context, String source) {
@@ -278,6 +281,52 @@ fn void call_and_deferred_lifecycle() {
     context.get_runtime().drain_microtasks()!!;
 }
 
+fn void bytecode_image_lifecycle() {
+    JsContext context;
+    context.create()!!;
+    defer context.destroy();
+
+    embed::Runtime* rt = context.rt;
+    // A deferred (lazy) inner function makes image::encode fault with
+    // UNSUPPORTED_CONSTANT, exercising `defer catch w.bytes.free()`.
+    bytecode::CompiledFunction* lazy_compiled = null;
+    int rc = embed::compile_script(rt, "function lazy_fn(x) { return x + 1; }", "lazy.js", true, &lazy_compiled);
+    if (rc != embed::BK_OK || lazy_compiled == null) unreachable("compile_script lazy failed");
+    if (catch err = image::encode(rt.heap, lazy_compiled, {})) {
+        if (err != image::UNSUPPORTED_CONSTANT) unreachable("expected UNSUPPORTED_CONSTANT on lazy function");
+    } else {
+        unreachable("lazy function encode must fail");
+    }
+
+    // Default parameter disables lazy deferral so the inner function is eagerly
+    // compiled. Exercises zero-copy encode, UTF-16 hstring decode, and rollback
+    // of multiple tracked functions when decoding a truncated image.
+    bytecode::CompiledFunction* compiled = null;
+    rc = embed::compile_script(rt, "const s = 'héllo 🚀'; function f(x = 0) { return x + s.length; } f(3);", "img.js", true, &compiled);
+    if (rc != embed::BK_OK || compiled == null) unreachable("compile_script failed");
+
+    char[] encoded = image::encode(rt.heap, compiled, {})!!;
+    defer mem::free(encoded.ptr);
+
+    Vec{image::ModuleDecl} decls;
+    defer decls.free();
+    uint before_ok = rt.heap.compiled_func_count;
+    bytecode::CompiledFunction* decoded = image::decode(rt.heap, encoded, &decls)!!;
+    if (decoded == null || rt.heap.compiled_func_count <= before_ok) unreachable("decode failed");
+
+    // Truncated image must fault and roll back every tracked function and decl.
+    uint before_bad = rt.heap.compiled_func_count;
+    sz before_decls = decls.len;
+    if (catch err = image::decode(rt.heap, encoded[:encoded.len - 8], &decls)) {
+        if (err != image::INVALID_IMAGE) unreachable("expected INVALID_IMAGE on truncated bytecode");
+    } else {
+        unreachable("truncated bytecode must fail");
+    }
+    if (rt.heap.compiled_func_count != before_bad || decls.len != before_decls) {
+        unreachable("failed decode did not roll back heap tracking");
+    }
+}
+
 fn void main() {
     // Prime one-time engine globals outside the leak scope, then assert that
     // full runtime/context/module lifecycles release every `mem` allocation.
@@ -294,6 +343,7 @@ fn void main() {
         async_loader_lifecycle();
         sort_lifecycle();
         call_and_deferred_lifecycle();
+        bytecode_image_lifecycle();
     };
     io::printn("C3 context lifecycle: PASS");
 }

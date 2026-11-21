@@ -1828,7 +1828,10 @@ fn SourceBuf* source_buf_new(char[] text) {
     return b;
 }
 
-// Takes ownership of `text`, which must have been allocated with `mem`.
+<*
+ Takes ownership of `text`, which must have been allocated with `mem`.
+ @param [own] text
+*>
 fn SourceBuf* source_buf_adopt(char[] text) {
     SourceBuf* b = (SourceBuf*)alloc::malloc_try(mem, (sz)SourceBuf::size) ?? null;
     if (b == null) return null;
@@ -1840,6 +1843,10 @@ fn SourceBuf* source_buf_adopt(char[] text) {
     return b;
 }
 
+<*
+ Decrements the reference count and frees `b` (and its owned buffer) on 0.
+ @param [drop] b
+*>
 fn void source_buf_release(SourceBuf* b) {
     if (b == null) return;
     b.refs--;
@@ -2370,10 +2377,11 @@ fn char[] CompiledFunction.get_filename(&self) {
 // releases it with mem::free.
 fn void CompiledFunction.set_filename_owned(&self, char[] name) {
     if (name.len == 0) return;
-    char* fname = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
+    char* fname = (char*)alloc::malloc_try(mem, (sz)name.len + 1) ?? null;
     if (fname == null) return;
-    for (usz i = 0; i < (usz)name.len; i++) fname[i] = name[i];
+    mem::copy(fname, name.ptr, (sz)name.len);
     fname[name.len] = 0;
+    if (self.filename_ptr != null) mem::free(self.filename_ptr);
     self.filename_ptr = fname;
     self.filename_len = (uint)name.len;
 }

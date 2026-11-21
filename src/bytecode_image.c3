@@ -125,7 +125,7 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
     }
     Writer w;
     defer w.functions.free();
-    defer w.bytes.free();
+    defer catch w.bytes.free();
     w.function_id(root);
     // Discover the graph before records: field initializers may share templates.
     for (sz i = 0; i < w.functions.len; i++) {
@@ -205,7 +205,12 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
         w.word(w.function_id(decl.template));
     }
     if ((usz)w.bytes.len > MAX_IMAGE_BYTES) return INVALID_IMAGE~;
-    return mem::@clone_slice(w.bytes.data[:w.bytes.len]);
+    if (w.bytes.len < w.bytes.cap) {
+        if (try shrunk = alloc::realloc_try(mem, w.bytes.data, w.bytes.len)) {
+            w.bytes.data = (char*)shrunk;
+        }
+    }
+    return w.bytes.array_view();
 }
 
 struct Reader {
@@ -246,11 +251,12 @@ fn HString*? Reader.hstring(&self) {
     if (!wide) {
         str = self.heap.str_intern_latin1(data);
     } else {
-        ushort* units = (ushort*)alloc::malloc_try(mem, (sz)(count * 2 + 2)) ?? null;
-        if (units == null) return IMAGE_NOMEM~;
-        defer mem::free(units);
-        for (uint i = 0; i < count; i++) units[i] = (ushort)data[i * 2] | (ushort)((ushort)data[i * 2 + 1] << 8);
-        str = self.heap.str_intern_utf16(units[:count]);
+        @stack_mem(256; Allocator smem) {
+            ushort[]? units = alloc::alloc_array_try(smem, ushort, (sz)count);
+            if (catch units) return IMAGE_NOMEM~;
+            for (uint i = 0; i < count; i++) units[i] = (ushort)data[i * 2] | (ushort)((ushort)data[i * 2 + 1] << 8);
+            str = self.heap.str_intern_utf16(units);
+        };
     }
     if (str == null) return IMAGE_NOMEM~;
     return str;
@@ -259,7 +265,8 @@ fn char*? Reader.owned_text(&self, uint* len) {
     char[] text = self.text()!;
     *len = (uint)text.len;
     if (text.len == 0) return (char*)null;
-    char* ptr = (char*)alloc::malloc_try(mem, (sz)text.len)!;
+    char* ptr = (char*)alloc::malloc_try(mem, (sz)text.len) ?? null;
+    if (ptr == null) return IMAGE_NOMEM~;
     mem::copy(ptr, text.ptr, (sz)text.len);
     return ptr;
 }
@@ -327,26 +334,41 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, Vec{ModuleDecl}* declarat
     if (capabilities != CAPABILITIES) return INVALID_IMAGE~;
     uint count = r.word()!;
     if (count == 0 || count > MAX_FUNCTIONS || count > bytes.len / 64) return INVALID_IMAGE~;
-    CompiledFunction** functions = mem::new_array(CompiledFunction*, (sz)count);
-    defer mem::free(functions);
-    r.functions = functions;
+    CompiledFunction*[]? functions = alloc::new_array_try(mem, CompiledFunction*, (sz)count);
+    if (catch functions) return IMAGE_NOMEM~;
+    defer mem::free(functions.ptr);
+    r.functions = functions.ptr;
     r.function_count = count;
     // Stop collection until all constants and cross-template references are rooted.
     bool in_step = heap.gc_in_step;
     heap.gc_in_step = true;
     defer heap.gc_in_step = in_step;
-    for (uint i = 0; i < count; i++) {
-        functions[i] = (CompiledFunction*)r.array(1, CompiledFunction::size)!;
-        functions[i].flags.htype = HType.OBJECT;
-        functions[i].realm = heap.realm;
-        uint tracked = heap.compiled_func_count;
-        heap.track_compiled_func(functions[i]);
-        if (heap.compiled_func_count == tracked) {
-            heap.free_func(heap.heap_udata, functions[i]);
-            return IMAGE_NOMEM~;
+    // Roll back every partially decoded function and declaration if decoding faults.
+    uint base_tracked = heap.compiled_func_count;
+    sz base_decls = declarations.len;
+    defer catch {
+        declarations.truncate(base_decls);
+        for (uint i = base_tracked; i < heap.compiled_func_count; i++) {
+            heap.free_compiled_func((CompiledFunction*)heap.compiled_funcs[i]);
+        }
+        heap.compiled_func_count = base_tracked;
+        if (heap.gc_new_compiled_pending && heap.gc_new_compiled_index >= base_tracked) {
+            heap.gc_new_compiled_pending = false;
         }
     }
-    foreach (f : functions[:count]) {
+    foreach (&slot : functions) {
+        CompiledFunction* fn_rec = (CompiledFunction*)r.array(1, CompiledFunction::size)!;
+        fn_rec.flags.htype = HType.OBJECT;
+        fn_rec.realm = heap.realm;
+        uint tracked = heap.compiled_func_count;
+        heap.track_compiled_func(fn_rec);
+        if (heap.compiled_func_count == tracked) {
+            heap.free_func(heap.heap_udata, fn_rec);
+            return IMAGE_NOMEM~;
+        }
+        *slot = fn_rec;
+    }
+    foreach (f : functions) {
         uint flags = r.word()!;
         if ((flags & 0x7F) != 0) return INVALID_IMAGE~;
         if (features::STRICT_ONLY && (flags & 0x80) == 0) return INVALID_IMAGE~;

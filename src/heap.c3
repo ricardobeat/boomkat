@@ -2387,54 +2387,57 @@ fn hobject::Shape* Heap.get_shape(&self, uint shape_id) {
  * and reset(): decref is unnecessary because the str_table sweep releases the
  * interned strings.
  */
+fn void Heap.free_compiled_func(&self, bytecode::CompiledFunction* cf) {
+    if (cf == null) return;
+    if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
+    if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
+    if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }
+    if (cf.capture_cells != null) { self.free_func(self.heap_udata, cf.capture_cells); }
+    if (cf.formal_names != null) { self.free_func(self.heap_udata, cf.formal_names); }
+    if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
+    if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
+    if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
+    if (cf.ic_entries != null) {
+        hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+        for (uint ii = 0; ii < cf.ic_count; ii++) {
+            if (entries[ii].chain != null) {
+                self.pool_free(entries[ii].chain, hobject::ICChain::size);
+            }
+        }
+        self.free_func(self.heap_udata, cf.ic_entries);
+    }
+    if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
+    if (cf.regexp_cache != null) {
+        for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
+            if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }
+        }
+        self.free_func(self.heap_udata, cf.regexp_cache);
+    }
+    // Private-name snapshot from compiler/context.c3 finish(), tracked when
+    // a function used direct eval and inherited names from a parent class.
+    if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
+    // Direct-eval call-site offsets from compiler/context.c3 finish().
+    if (cf.direct_eval_offsets != null) { self.free_func(self.heap_udata, cf.direct_eval_offsets); }
+    if (cf.eval_var_idxs != null) { self.free_func(self.heap_udata, cf.eval_var_idxs); }
+    // The function's name, source filename, and retained source text,
+    // copied out of the compiler's scratch buffers so they outlive the
+    // compile. All three come from `mem` rather than the heap allocator.
+    if (cf.name_ptr != null) { mem::free(cf.name_ptr); cf.name_ptr = null; }
+    if (cf.filename_ptr != null) { mem::free(cf.filename_ptr); cf.filename_ptr = null; }
+    if (cf.src_buf != null) {
+        bytecode::source_buf_release(cf.src_buf);
+        cf.src_buf = null;
+        cf.src_ptr = null;
+    } else if (cf.src_ptr != null) {
+        mem::free(cf.src_ptr);
+        cf.src_ptr = null;
+    }
+    self.free_func(self.heap_udata, cf);
+}
+
 fn void Heap.free_compiled_funcs(&self) {
     for (uint i = 0; i < self.compiled_func_count; i++) {
-        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
-        if (cf == null) continue;
-        if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
-        if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
-        if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }
-        if (cf.capture_cells != null) { self.free_func(self.heap_udata, cf.capture_cells); }
-        if (cf.formal_names != null) { self.free_func(self.heap_udata, cf.formal_names); }
-        if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
-        if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
-        if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
-        if (cf.ic_entries != null) {
-            hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
-            for (uint ii = 0; ii < cf.ic_count; ii++) {
-                if (entries[ii].chain != null) {
-                    self.pool_free(entries[ii].chain, hobject::ICChain::size);
-                }
-            }
-            self.free_func(self.heap_udata, cf.ic_entries);
-        }
-        if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
-        if (cf.regexp_cache != null) {
-            for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
-                if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }
-            }
-            self.free_func(self.heap_udata, cf.regexp_cache);
-        }
-        // Private-name snapshot from compiler/context.c3 finish(), tracked when
-        // a function used direct eval and inherited names from a parent class.
-        if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
-        // Direct-eval call-site offsets from compiler/context.c3 finish().
-        if (cf.direct_eval_offsets != null) { self.free_func(self.heap_udata, cf.direct_eval_offsets); }
-        if (cf.eval_var_idxs != null) { self.free_func(self.heap_udata, cf.eval_var_idxs); }
-        // The function's name, source filename, and retained source text,
-        // copied out of the compiler's scratch buffers so they outlive the
-        // compile. All three come from `mem` rather than the heap allocator.
-        if (cf.name_ptr != null) { mem::free(cf.name_ptr); cf.name_ptr = null; }
-        if (cf.filename_ptr != null) { mem::free(cf.filename_ptr); cf.filename_ptr = null; }
-        if (cf.src_buf != null) {
-            bytecode::source_buf_release(cf.src_buf);
-            cf.src_buf = null;
-            cf.src_ptr = null;
-        } else if (cf.src_ptr != null) {
-            mem::free(cf.src_ptr);
-            cf.src_ptr = null;
-        }
-        self.free_func(self.heap_udata, cf);
+        self.free_compiled_func((bytecode::CompiledFunction*)self.compiled_funcs[i]);
     }
 }
 
