@@ -1427,13 +1427,25 @@ fn bool OptBuild.fold_global(&self) {
     // A script's or module's declarative record, whose parent is the global one, is watched too.
     env::EnvRecord* e = vic.env;
     bool lexical = e.parent != null;
-    if ((lexical && (!e.flags.is_declarative || e.parent.parent != null)) || vic.prop_flags.is_accessor) return false;
+    if ((lexical && (!e.flags.is_declarative || (e.parent.parent != null && !e.flags.is_module))) || vic.prop_flags.is_accessor) return false;
     uint k = self.binding_entry((HObject*)vic.bindings, vic.slot_ptr, true);
     if (lexical && k != NO_NODE && !self.g.bindings[k].watch) return false;
     // Only a watch sees a configurable global deleted or redefined.
     if (k == NO_NODE || (vic.prop_flags.configurable && !self.g.bindings[k].watch)) return false;
     self.fold_binding(k);
     return true;
+}
+
+// GETVAR of a module's top-level binding, folded as fold_global folds a script's. Module code is
+// strict, so no `with` or direct eval can put a binding between the reading code and the module
+// record: a name its cache resolved there resolves there under any scope chain the code runs with.
+fn bool OptBuild.fold_module_var(&self) {
+    if (self.w.a >= self.nregs) return false;
+    CompiledFunction* f = self.cur_f();
+    if (f.var_ic_entries == null || !f.flags.is_strict) return false;
+    env::EnvRecord* e = ((hobject::VarICEntry*)f.var_ic_entries)[self.next_pc - 1].env;
+    if (e == null || !e.flags.is_module) return false;
+    return self.fold_global();
 }
 
 // GETCAP of the function being optimized, made into one closure only, of a binding the code can
@@ -1965,10 +1977,12 @@ fn bool OptBuild.cold_field(&self) {
     }
 }
 
-// Whether the call at word `at` of `f` has never run: its entry names no callee of any kind.
+// Whether the call at word `at` of `f` has never run: its entry names no callee of any kind. A tail
+// call (which an inlined body lowers as the call it shadows) records no JS callee, whose entry finds
+// the frame already reused: its empty entry proves nothing.
 fn bool cold_call_site(CompiledFunction* f, Opcode op, uint at) {
     if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && op != Opcode.CALL_VAR && op != Opcode.CALL_GLOBAL) return false;
-    if (f.ic_entries == null) return false;
+    if (f.ic_entries == null || at >= f.code_count || compiler::tailcall_base(f.code[at].op) != f.code[at].op) return false;
     return (((hobject::ICEntry*)f.ic_entries)[at].feedback & (hobject::FB_CALL | hobject::FB_POLY)) == 0;
 }
 
@@ -2292,12 +2306,13 @@ fn bool opt_math_of(uint builtin, OptMath* m) {
     return true;
 }
 
-// A CALL or CALL_UNDEF_THIS of the Math function the site has always called (hobject::IC_BUILTIN_TARGET) with as many
+// A CALL or CALL_UNDEF_THIS, or its tail form, of the Math function the site has always called (hobject::IC_BUILTIN_TARGET) with as many
 // arguments as it takes: a CHECK_BUILTIN of the callee, then a MATH node over the arguments as
 // numbers. FLOOR, CEIL and ROUND of an INT32 are the INT32 itself; ABS, MIN and MAX of INT32s stay
 // INT32 until ABS has overflowed there.
 fn bool OptBuild.math_call(&self) {
-    if ((self.w.op != Opcode.CALL && self.w.op != Opcode.CALL_UNDEF_THIS) || self.wide) return false;
+    Opcode op = compiler::tailcall_base(self.w.op);
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS) || self.wide) return false;
     CompiledFunction* f = self.cur_f();
     if (f.ic_entries == null) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
@@ -2309,7 +2324,15 @@ fn bool OptBuild.math_call(&self) {
     uint callee = self.w.b;
     uint ra = self.w.a;
     if (callee + 1 + m.args >= self.nregs || ra >= self.nregs) return false;
-    if (self.cur_fn != 0 && callee + 1 + m.args >= self.caller_regs) return false;
+    // Beyond the caller's frame a register has no window slot: there the callee must be a node and
+    // each argument a number.
+    if (self.cur_fn != 0 && callee + 1 + m.args >= self.caller_regs) {
+        if (callee >= self.caller_regs && !self.holds_value(callee)) return false;
+        for (uint k = 0; k < m.args; k++) {
+            uint node = self.cur[callee + 2 + k].node;
+            if (callee + 2 + k >= self.caller_regs && (node == NO_NODE || self.rep_of(node) == OptRep.VALUE)) return false;
+        }
+    }
     uint cnode = NO_NODE;
     if (self.holds_value(callee)) {
         cnode = self.cur[callee].node;
@@ -3385,8 +3408,15 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     uint base = (ps == null ? 0 : ps.base) + callee_reg + 2;
     *s = { .insn = i, .cf = cf, .base = base, .method = method, .construct = construct, .var_call = var_call, .forward = forward, .dotcall = dotcall,
            .nargs = nargs, .parent = parent, .depth = depth };
-    bool ok = compiler::bytecode_cfg_build(&s.cfg, cf.code, cf.code_count, self.h, forwarding: true);
+    bool ok = compiler::bytecode_cfg_build(&s.cfg, cf.code, cf.code_count, self.h, forwarding: true, tail_calls: true);
     if (ok) {
+        // An inlined body has no frame for a tail call to reuse: each is the call it shadows, then
+        // its RET. A spread call stays one, which the body does not hold.
+        for (uint k = 0; k < s.cfg.instruction_count; k++) {
+            Opcode t = s.cfg.nodes[k].view.insn.op;
+            Opcode base_op = compiler::tailcall_base(t);
+            if (base_op != t && base_op != Opcode.CALL_S) s.cfg.nodes[k].view.insn.op = base_op;
+        }
         uint count = s.cfg.instruction_count;
         uint words = (cf.num_regs + 32) / 32;
         s.live_sets = mem::new_array(RegSet, (usz)count * 2);
@@ -4676,6 +4706,7 @@ fn bool OptBuild.lower_op(&self) {
             if (self.cur_fn == 0 && opt_site_banned(self.f, self.f, self.next_pc - 1)) return self.generic();
             return self.get_global();
         case GETVAR:
+            if (self.fold_module_var()) return true;
             if (self.cur_fn == 0) return self.generic();
             return self.get_scoped();
         case PUTGLOBAL:
@@ -4750,6 +4781,8 @@ fn bool OptBuild.lower_op(&self) {
             return self.generic();
         case TAILCALL_CALL:
         case TAILCALL_UNDEF_THIS:
+            // A builtin never reuses the frame: the tail form falls through to its RET.
+            if (self.math_call()) return true;
             if (self.leaf_call()) return true;
             return self.generic();
         case CALL_S:

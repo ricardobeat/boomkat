@@ -46,6 +46,7 @@ TESTS=(
   "t32_dependency_order:eager upgrades preserve dependency order, tied positions, and deferred evaluation"
   "t33_syntax_error_location:import() of a module that fails to parse rejects with its location"
   "t34_closure_bindings:module, imported and cyclic bindings read from warmed closures"
+  "t35_jit_module_folds:module bindings folded by the optimizing tier, then changed"
 )
 
 for entry in "${TESTS[@]}"; do

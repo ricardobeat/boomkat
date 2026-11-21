@@ -593,9 +593,10 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 
 }
 
 // Whether the CALL at word `i` of `f` is one the optimizer builds as a node rather than a call:
-// a push (opt_push_site) or a RegExp exec or test (OptBuild.regexp_call).
+// a push (opt_push_site), a Math function (opt_math_site) or a RegExp exec or test
+// (OptBuild.regexp_call).
 fn bool opt_node_call_site(Heap* h, CompiledFunction* f, uint i) {
-    if (opt_push_site(h, f, i)) return true;
+    if (opt_push_site(h, f, i) || opt_math_site(f, i)) return true;
     if (f.ic_entries == null || i == 0 || i >= f.code_count) return false;
     Instruction w = f.code[i];
     if (w.op != Opcode.CALL || w.c != 1 || f.code[i - 1].op == Opcode.WIDE) return false;
@@ -603,6 +604,19 @@ fn bool opt_node_call_site(Heap* h, CompiledFunction* f, uint i) {
     if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
     uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
     return builtin == builtins::Builtin.REGEXP_PROTO_EXEC.ordinal || builtin == builtins::Builtin.REGEXP_PROTO_TEST.ordinal;
+}
+
+// Whether the CALL or CALL_UNDEF_THIS at word `i` of `f`, or its tail form, has always called a Math
+// function (opt_math_of) with as many arguments as it takes: OptBuild.math_call makes it a MATH node.
+fn bool opt_math_site(CompiledFunction* f, uint i) {
+    if (f.ic_entries == null || i == 0 || i >= f.code_count || f.code[i - 1].op == Opcode.WIDE) return false;
+    Instruction w = f.code[i];
+    Opcode op = compiler::tailcall_base(w.op);
+    if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    OptMath m;
+    return opt_math_of(ic.prop_idx & ~hobject::IC_BUILTIN_TARGET, &m) && w.c == m.args;
 }
 
 // Whether the CALL at word `i` of `f` passes one argument to Array.prototype.push as far as the

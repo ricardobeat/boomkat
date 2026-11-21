@@ -135,6 +135,36 @@
         "CONSOLE"
       ]
     },
+    "boomkat_jit_debug": {
+      "type": "executable",
+      "name": "boomkat_jit_debug",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "debug-info": "full",
+      "features": [
+        "PRINT",
+        "CONSOLE",
+        "THREADED_DISPATCH",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c",
+        "src/jit/pc_sampler.c"
+      ],
+      "cflags": "-O0 -g -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "boomkat_debug": {
       "type": "executable",
       "sources": [

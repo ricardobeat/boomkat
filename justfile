@@ -183,6 +183,13 @@ build-full-icu:
 build-trace:
     c3c build boomkat_debug
 
+# Unoptimized JIT build with debug info (out/boomkat_jit_debug) for lldb source breakpoints in
+# src/jit. The objects are kept so that dsymutil can collect the DWARF on macOS.
+build-jit-debug:
+    mkdir -p out/build/boomkat_jit_debug
+    c3c build boomkat_jit_debug --build-dir out/build/boomkat_jit_debug --keep-obj
+    if [ "$(uname)" = Darwin ]; then dsymutil out/boomkat_jit_debug; fi
+
 # Run golden-bytecode fusion test suite (test/golden_bytecode/)
 test-golden-bytecode: build-trace
     python3 scripts/run_golden_bytecode.py --check-noop

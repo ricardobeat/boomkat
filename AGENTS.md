@@ -109,6 +109,17 @@ make out/boomkat_gc_stress
 with `--jit --jit-stress` under `ulimit -s 65520`, since its interpreter overflows the
 default stack on long runs.
 
+For JIT bugs, run with `--opt-log` first: it prints each compile, exit, discard
+and inline rejection. To step through the optimizer, use `just build-jit-debug`
+and set lldb line breakpoints in `src/jit`. Release builds inline small
+functions away, so breakpoints and hit counts there can mislead. At `-O0`,
+a breakpoint on a `return` line fires on every pass through it, so print the
+locals rather than counting hits:
+
+```sh
+lldb -o "br set -f opt_build.c3 -l <line>" -o run -- ./out/boomkat_jit_debug --jit <file>
+```
+
 Debug targets use full debug info because the configured toolchain's Linux
 DWARF emitter crashes with `"debug-info": "line-tables"`.
 
