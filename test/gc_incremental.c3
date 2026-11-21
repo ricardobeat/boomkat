@@ -356,7 +356,7 @@ fn void test_black_owner_insert() {
     uint steps = 0;
     while (!owner_black && steps++ < 1000) {
         h.gc_step(1, true);
-        owner_black = ((HeapHeader*)owner).is_reachable() && !is_gray(h, owner);
+        owner_black = h.gc_is_marked((HeapHeader*)owner) && !is_gray(h, owner);
     }
     assert(owner_black && h.gc_phase == heap::GcPhase.MARK);
     h.set_prototype(owner, child);
