@@ -4158,6 +4158,15 @@ fn bool Heap.zct_held(&self, HString* s) @inline {
     }
 }
 
+// Flush until the queue stops shrinking, for a full collection at a quiescent
+// boundary: freeing a rope queues its parts behind the scanned range.
+fn void Heap.zct_drain(&self) {
+    for (uint queued = uint::max; self.zct_count != 0 && self.zct_count < queued;) {
+        queued = self.zct_count;
+        self.zct_flush(true);
+    }
+}
+
 /**
  * Free the queued strings nothing holds. Each entry is dropped if it has an
  * owner again (a count above its table reference) or is pinned; kept if a live
@@ -5989,6 +5998,9 @@ fn void Heap.mark_and_sweep(&self, bool safepoint, bool force_major) {
     }
     while (self.gc_phase != GcPhase.IDLE) self.gc_step(uint::max, !keep_temproots);
     self.gc_quiescent_pending = keep_temproots;
+    // A blocking cycle leaves the string stages alone, so strings whose last
+    // owner went are still queued; a quiescent one can free them.
+    if (!keep_temproots) self.zct_drain();
     gcprofile::gcprof_phase(32, &blocking_start);
 }
 

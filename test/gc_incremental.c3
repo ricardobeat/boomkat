@@ -694,6 +694,8 @@ fn void test_short_concat_cache() {
     foreach (entry : h.concat_cache) assert(entry.result == null);
     h.decref((HeapHeader*)first);
     h.decref((HeapHeader*)second);
+    // A string whose count falls to zero is queued, and freed by the flush.
+    h.zct_flush(true);
     assert(h.large_string_count == 0);
 
     HString* left = h.alloc_concat_string(hstring::narrow_units("left"), 4);
@@ -707,12 +709,14 @@ fn void test_short_concat_cache() {
     HString* extended = h.alloc_concat_string_parts(pair.units(), tail.units(), 25, pair, tail);
     assert(extended.equals("leftright0123456789abcdef") && pair.refcount == 1);
     h.clear_concat_cache();
+    h.zct_flush(true);
     assert(h.large_string_count == 0);
 
     HString* same = h.alloc_concat_string(hstring::narrow_units("same"), 4);
     assert(h.alloc_concat_string_parts(same.units(), same.units(), 8, same, same).equals("samesame"));
     assert(same.refcount == 2);
     h.clear_concat_cache();
+    h.zct_flush(true);
     assert(h.large_string_count == 0);
     HString* reset_left = h.alloc_concat_string(hstring::narrow_units("reset"), 5);
     HString* reset_right = h.alloc_concat_string(hstring::narrow_units("cache"), 5);
@@ -819,7 +823,7 @@ fn void check_string_owners(Heap* h) {
     HObject* inline_obj = h.alloc_object(ObjClass.OBJECT)!!;
     HString* inline_key = h.str_intern("inline-key");
     assert(inline_obj.put_prop(inline_key, inline_value, hobject::PROP_FLAGS_WEC, h));
-    assert(inline_obj.prop_alloc == null && inline_string.refcount == 2);
+    assert(!inline_obj.has_prop_block() && inline_string.refcount == 2);
     h.gc_begin_cycle(true);
     finish_cycle(h);
     assert(inline_string.refcount == 1);
