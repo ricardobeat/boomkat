@@ -3001,7 +3001,10 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
             } else if ((*obj.extra_ptr()).ab.external) {
                 // Embedder memory is released on teardown too.
                 if (hp != null) hp.release_external_buffer(obj);
-            } else if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
+            } else if (hp != null && (*obj.extra_ptr()).ab.data != null) {
+                // Ordinary backing stores are allocated directly via alloc_func
+                // (not tracked on the heap's object lists), so teardown must
+                // release them too.
                 hp.free_func(hp.heap_udata, (*obj.extra_ptr()).ab.data);
                 (*obj.extra_ptr()).ab.data = null;
             }

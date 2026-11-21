@@ -327,6 +327,58 @@ fn void bytecode_image_lifecycle() {
     }
 }
 
+fn void ext_buf_release(void* data, void* opaque) {
+    uint* released = (uint*)opaque;
+    (*released)++;
+    if (data != null) mem::free(data);
+}
+
+fn void heap_teardown_lifecycle() {
+    uint ext_released = 0;
+    {
+        JsContext context;
+        context.create()!!;
+        defer context.destroy();
+
+        // Keep ordinary, resizable, detached, transferred, shared, and external
+        // ArrayBuffers plus Symbol.for entries and WeakRefs rooted across
+        // teardown so Heap.destroy() must release every backing store and
+        // registry table cleanly without double-freeing.
+        double ok = number(&context,
+            "globalThis._ab = new ArrayBuffer(4096);"
+            "globalThis._ta = new Uint8Array(1024);"
+            "globalThis._rz = new ArrayBuffer(128, { maxByteLength: 512 });"
+            "globalThis._rz.resize(256);"
+            "globalThis._detached = new ArrayBuffer(64);"
+            "globalThis._moved = globalThis._detached.transfer();"
+            "globalThis._sab = typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(128) : null;"
+            "globalThis._ta[0] = 42;"
+            "globalThis._s1 = Symbol.for('teardown.a');"
+            "globalThis._s2 = Symbol.for('teardown.b');"
+            "globalThis._wr = new WeakRef({ ok: 1 });"
+            "globalThis._ab.byteLength === 4096 && globalThis._ta[0] === 42"
+            "  && globalThis._rz.byteLength === 256"
+            "  && globalThis._detached.detached === true && globalThis._moved.byteLength === 64"
+            "  && Symbol.keyFor(globalThis._s1) === 'teardown.a'"
+            "  && globalThis._wr.deref().ok === 1 ? 1 : 0"
+        );
+        assert(ok == 1);
+
+        void* c = capi::bk_create();
+        if (c == null) unreachable("bk_create failed");
+        defer capi::bk_destroy(c);
+        char* ext_mem = (char*)mem::malloc(64);
+        ulong ext_ab = capi::bk_new_external_array_buffer(c, ext_mem, 64, &ext_buf_release, &ext_released);
+        if (ext_ab == 0) unreachable("bk_new_external_array_buffer failed");
+        // Keep the external buffer rooted in the global object until destroy().
+        String key = "_ext";
+        int rc = capi::bk_set_global_property(c, key.ptr, key.len, ext_ab);
+        if (rc != capi::BK_OK) unreachable("set _ext failed");
+        capi::bk_free_value(c, ext_ab);
+    }
+    if (ext_released != 1) unreachable("external ArrayBuffer release callback did not run exactly once on destroy");
+}
+
 fn void main() {
     // Prime one-time engine globals outside the leak scope, then assert that
     // full runtime/context/module lifecycles release every `mem` allocation.
@@ -344,6 +396,7 @@ fn void main() {
         sort_lifecycle();
         call_and_deferred_lifecycle();
         bytecode_image_lifecycle();
+        heap_teardown_lifecycle();
     };
     io::printn("C3 context lifecycle: PASS");
 }

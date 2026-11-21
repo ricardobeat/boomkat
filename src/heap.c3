@@ -2559,6 +2559,7 @@ fn void Heap.destroy(&self) {
         self.free_func(self.heap_udata, self.str_table);
         self.str_table = null;
     }
+    self.free_symbol_registry();
 
     // The large-string registry and everything it tracks.
     for (uint i = 0; i < self.large_string_count; i++) {
@@ -2632,6 +2633,21 @@ fn void Heap.destroy(&self) {
     ffn(udata, self);
 }
 
+// Teardown-only: frees the registry arrays after the string-table sweep has
+// already released the interned keys and symbols without decrefing them.
+fn void Heap.free_symbol_registry(&self) {
+    if (self.symbol_registry_keys != null) {
+        self.free_func(self.heap_udata, self.symbol_registry_keys);
+        self.symbol_registry_keys = null;
+    }
+    if (self.symbol_registry_syms != null) {
+        self.free_func(self.heap_udata, self.symbol_registry_syms);
+        self.symbol_registry_syms = null;
+    }
+    self.symbol_registry_count = 0;
+    self.symbol_registry_cap   = 0;
+}
+
 fn void Heap.drain_catcher_pool(&self) {
     void* block = self.catcher_pool;
     while (block != null) {
@@ -2660,6 +2676,7 @@ fn void Heap.reset(&self) {
     self.realms = null;
     self.gc_root_realm_cursor = null;
     assert(self.env_roots == null && self.object_roots == null && self.value_roots == null);
+    assert(self.gc_inhibit == 0);
     // Decref the strings held by live objects before teardown mode starts.
     // Strings driven to zero here unregister themselves, leaving the registry
     // drain below only those still referenced.
@@ -2706,9 +2723,18 @@ fn void Heap.reset(&self) {
     }
     for (uint i = 0; i < OBJECT_LIST_COUNT; i++) self.object_list(i).clear();
     self.gc_sweep_vec = null;
+    self.gc_sweep_page = null;
+    self.gc_sweep_pool = 0;
+    self.gc_sweep_word = 0;
+    self.gc_sweep_read = 0;
+    self.gc_sweep_write = 0;
+    self.gc_sweep_dead = {};
     // The object pages still hold the live bits of the objects freed above.
     foreach (pool : self.obj_pools) pool.free();
     self.run_deferred_finalizers();
+    self.weak_destroy();
+    self.external_buffer_count = 0;
+    self.external_buffer_free = EXTERNAL_NONE;
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2735,11 +2761,13 @@ fn void Heap.reset(&self) {
             }
         }
         // Shrink a table that grew far past its starting size.
+        // Allocate the replacement before releasing the old table so an OOM
+        // keeps the existing table usable instead of writing freed memory below.
         if (self.str_table_size > INITIAL_STR_TABLE_SIZE * 8) {
-            self.free_func(self.heap_udata, self.str_table);
             usz tbl_bytes = str_table_bytes(INITIAL_STR_TABLE_SIZE);
             void* new_tbl = self.alloc_func(self.heap_udata, tbl_bytes);
             if (new_tbl != null) {
+                self.free_func(self.heap_udata, self.str_table);
                 mem::clear(new_tbl, (sz)(tbl_bytes));
                 self.str_table      = (HString**)new_tbl;
                 self.str_table_size = INITIAL_STR_TABLE_SIZE;
@@ -2750,16 +2778,7 @@ fn void Heap.reset(&self) {
         self.str_table_tombstones = 0;
     }
 
-    if (self.symbol_registry_keys != null) {
-        self.free_func(self.heap_udata, self.symbol_registry_keys);
-        self.symbol_registry_keys = null;
-    }
-    if (self.symbol_registry_syms != null) {
-        self.free_func(self.heap_udata, self.symbol_registry_syms);
-        self.symbol_registry_syms = null;
-    }
-    self.symbol_registry_count = 0;
-    self.symbol_registry_cap   = 0;
+    self.free_symbol_registry();
 
     // Env nodes hold TVal bindings pointing into the heap that was just freed,
     // so a stale freelist node reused in the next run would make tval_copy_ref
@@ -2801,6 +2820,8 @@ fn void Heap.reset(&self) {
     self.microtask_count    = 0;
     self.microtask_draining = false;
     self.host_managed_jobs = false;
+    self.host_job_error = false;
+    self.module_waiters = null;
     agent::heap_release(self);
     self.agent_no_block = false;
 
@@ -2841,7 +2862,13 @@ fn void Heap.reset(&self) {
     self.marked_obj_count = 0;
     self.mark_work_last = 0;
     self.gc_pending       = false;
+    self.gc_full_requested = false;
     self.gc_requested     = false;
+    self.gc_inhibit       = 0;
+    self.gc_inhibited_request = false;
+    self.gc_joint_hold    = false;
+    self.gc_joint_active  = false;
+    self.heap_limit_hit   = false;
     self.gc_phase         = GcPhase.IDLE;
     self.gc_in_step       = false;
     self.gc_root_stage = 0;
@@ -3034,6 +3061,14 @@ fn void Heap.reset(&self) {
     // resume decrefing rather than assuming everything is about to be freed.
     // Registration names and prototypes belong to the heap being reset.
     self.host_fn_count = 0;
+    if (self.host_classes != null) {
+        for (uint i = 0; i < self.host_class_count; i++) {
+            if (self.host_classes[i].exotic != null) {
+                self.free_func(self.heap_udata, self.host_classes[i].exotic);
+                self.host_classes[i].exotic = null;
+            }
+        }
+    }
     self.host_class_count = 0;
     self.tearing_down = false;
 }
