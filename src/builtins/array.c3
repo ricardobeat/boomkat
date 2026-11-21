@@ -1849,17 +1849,15 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
             ctx.heap.has_error = false;
             return 0;
         }
-        TVal num;
-        builtin_to_number(&res, &num);
-        if (num.is_number()) {
-            double d = num.get_number();
-            if (!math::is_nan(d)) {
-                cmp = d < 0 ? -1 : (d > 0 ? 1 : 0);
-            }
-        } else if (num.is_fastint()) {
-            long v = num.get_fastint();
-            cmp = v < 0 ? -1 : (v > 0 ? 1 : 0);
+        if (res.is_fastint()) {
+            long v = res.get_fastint();
+            return v < 0 ? -1 : (v > 0 ? 1 : 0);
         }
+        // ToNumber of the result (SortCompare step 4.b): an object's valueOf runs and may throw,
+        // as a Symbol or BigInt result does. NaN compares equal.
+        double d = builtin_to_number_vm(ctx, &res);
+        if (ctx.should_throw) return 0;
+        cmp = d < 0 ? -1 : (d > 0 ? 1 : 0);
     } else {
         Vm* vm_ptr = (Vm*)ctx.vm;
         HString*? a_str_raw = vm::vm_to_string(ctx.vm, &a);
