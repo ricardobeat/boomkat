@@ -43,6 +43,23 @@ int main(void) {
     bk_gc(rt, BK_GC_MINOR);
     assert(stats(rt).gc_cycles > s.gc_cycles);
 
+    /* So do strings the host let go of, even too few to schedule a flush of
+     * their own. */
+    {
+        static char text[16384];
+        bk_value strs[50];
+        uint64_t base = stats(rt).heap_bytes;
+        for (int i = 0; i < 50; i++) {
+            memset(text, 'a' + i % 26, sizeof text);
+            snprintf(text, 8, "%06d", i);
+            strs[i] = bk_new_string(ctx, text, sizeof text);
+        }
+        for (int i = 0; i < 50; i++) bk_free_value(ctx, strs[i]);
+        assert(stats(rt).heap_bytes > base + 50 * 16384);
+        bk_gc(rt, BK_GC_FULL);
+        assert(stats(rt).heap_bytes < base + 5 * 16384);
+    }
+
     /* Crossing the budget terminates uncatchably with BK_ERR_NOMEM. */
     v = eval(ctx, "let keep = []; try { for (;;) keep.push({ a: 1, b: 2, c: [1, 2, 3] }) } catch (e) { 'caught' }");
     assert(v == 0 && bk_get_error_code(ctx) == BK_ERR_NOMEM);

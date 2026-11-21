@@ -3526,6 +3526,14 @@ fn ulong bk_weak_get(void* ctxp, ulong weak) @export("bk_weak_get") {
     embed::clear_err(rt);
     if (rt.heap.weak_entry(weak) == null) return fail_value(rt, BK_ERR_INVALID, "invalid or freed weak handle");
     HeapHeader* target = rt.heap.weak_get(weak);
+    // A queued symbol has no owner left. Outside a native frame only a
+    // register can still hold it uncounted, which the flush checks; handing
+    // it out first would revive a symbol the host already let go.
+    if (target != null && target.is_string() && ((HString*)target).flags.zct_queued
+        && rt.heap.native_frame_depth == 0) {
+        rt.heap.zct_flush(true);
+        target = rt.heap.weak_get(weak);
+    }
     if (target == null) return embed::IMM_UNDEFINED;
     TVal v;
     if (target.flags.htype == HType.STRING) {

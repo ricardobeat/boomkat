@@ -136,6 +136,16 @@ fn void Heap.host_collect(&self, bool minor) {
         return;
     }
     self.mark_and_sweep(self.native_frame_depth == 0, true);
+    // A blocking cycle leaves the string stages alone, so strings whose last
+    // owner went are still queued. Outside a native frame nothing borrows one
+    // without a count, and the flush keeps those a register holds. Freeing a
+    // rope queues its parts behind the scanned range, so repeat while that
+    // frees more.
+    if (self.native_frame_depth != 0) return;
+    for (uint queued = uint::max; self.zct_count != 0 && self.zct_count < queued;) {
+        queued = self.zct_count;
+        self.zct_flush(true);
+    }
 }
 
 // Joint collection with an embedder's tracing collector. The embedder's heap
