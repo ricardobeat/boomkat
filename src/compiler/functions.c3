@@ -1082,18 +1082,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
 fn void CompilerContext.record_eval_var_name(&self, char[] raw_name) {
     HString* hs = ((Heap*)self.heap).str_intern(raw_name);
     uint ni = self.add_string_constant_hstr(hs);
-    for (uint k = 0; k < self.eval_var_coll_count; k++) {
-        if (self.eval_var_coll_idxs[k] == ni) return;
-    }
-    if (self.eval_var_coll_count >= self.eval_var_coll_cap) {
-        uint new_cap = self.eval_var_coll_cap == 0 ? 16 : self.eval_var_coll_cap * 2;
-        void* pn = ((Heap*)self.heap).realloc_func(((Heap*)self.heap).heap_udata,
-            self.eval_var_coll_idxs, (usz)(new_cap * 4));
-        if (pn == null) return;
-        self.eval_var_coll_idxs = (uint*)pn;
-        self.eval_var_coll_cap = new_cap;
-    }
-    self.eval_var_coll_idxs[self.eval_var_coll_count++] = ni;
+    if (!self.eval_var_coll_idxs.contains(ni)) self.eval_var_coll_idxs.push(ni);
 }
 
 fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global) {

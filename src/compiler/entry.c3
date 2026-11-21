@@ -214,27 +214,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // tables) for the §18.2.1.2 step 3.4 intermediate-binding collision
     // check in builtin_eval. Dedup against the collected list (the hoisted
     // tables were not hooked).
-    uint eval_var_count = ctx.eval_var_coll_count;
-    for (uint i = 0; i < ctx.hoisted_fn_count; i++) {
-        uint ni = ctx.add_string_constant(ctx.hoisted_fn_names[i]);
-        bool dup = false;
-        for (uint k = 0; k < eval_var_count; k++) {
-            if (ctx.eval_var_coll_idxs[k] == ni) { dup = true; break; }
-        }
-        if (!dup) {
-            if (eval_var_count >= ctx.eval_var_coll_cap) {
-                uint new_cap = ctx.eval_var_coll_cap == 0 ? 16 : ctx.eval_var_coll_cap * 2;
-                void* pn = ((Heap*)heap).realloc_func(((Heap*)heap).heap_udata,
-                    ctx.eval_var_coll_idxs, (usz)(new_cap * 4));
-                if (pn != null) {
-                    ctx.eval_var_coll_idxs = (uint*)pn;
-                    ctx.eval_var_coll_cap = new_cap;
-                }
-            }
-            if (eval_var_count < ctx.eval_var_coll_cap) {
-                ctx.eval_var_coll_idxs[eval_var_count++] = ni;
-            }
-        }
+    foreach (name : ctx.hoisted_fn_names.array_view()) {
+        uint ni = ctx.add_string_constant(name);
+        if (!ctx.eval_var_coll_idxs.contains(ni)) ctx.eval_var_coll_idxs.push(ni);
     }
 
     // Free any remaining scope_stack entries (top-level lexical declarations)
@@ -249,14 +231,15 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Eval code must NOT get its own scope, var declarations must go
     // to the enclosing scope (global env), not a fresh function scope.
     func.flags.needs_env = false;
-    if (eval_var_count > 0) {
+    uint[] eval_vars = ctx.eval_var_coll_idxs.array_view();
+    if (eval_vars.len > 0) {
         // The function outlives this context, so it takes its own copy.
         Heap* h = (Heap*)heap;
-        uint* idxs = (uint*)h.alloc_func(h.heap_udata, (usz)eval_var_count * 4);
+        uint* idxs = (uint*)h.alloc_func(h.heap_udata, eval_vars.len * uint::size);
         if (idxs != null) {
-            for (uint i = 0; i < eval_var_count; i++) idxs[i] = ctx.eval_var_coll_idxs[i];
+            mem::copy(idxs, eval_vars.ptr, eval_vars.len * uint::size);
             func.eval_var_idxs = idxs;
-            func.eval_var_count = eval_var_count;
+            func.eval_var_count = (uint)eval_vars.len;
         }
     }
     return func;

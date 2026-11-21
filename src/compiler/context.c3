@@ -78,9 +78,6 @@ fn void? CompilerContext.check_stack(&self) {
     char marker;
     if ((uptr)&marker < self.stack_floor) return self.fail("code nested too deeply")~;
 }
-// Initial capacity of the hoisted-function-name table; grows on the heap from
-// here (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
-const uint INITIAL_HOISTED_FNS = 128;
 // Initial scope-stack capacity; grows on the heap from here (see
 // ensure_scope_cap), so there is no fixed ceiling.
 const uint INITIAL_SCOPE_DEPTH = 256;
@@ -665,20 +662,16 @@ int  cur_with_depth;
     bool captures_exact;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
-    // Top-level function declarations seen by the hoisting pre-pass. Heap-grown: one scope can
-    // declare tens of thousands of functions.
-    char[]* hoisted_fn_names;
-    uint    hoisted_fn_cap;
-    uint    hoisted_fn_count;
+    // Top-level function declarations seen by the hoisting pre-pass. One scope can declare tens
+    // of thousands of functions; empty, and unallocated, until the first one.
+    Vec{char[]} hoisted_fn_names;
     // The same names, for lookup. Initialized with the first name.
     HashSet{String} hoisted_fn_set;
     // Eval code only: the source's var-declared names as constant-pool indices, collected by
     // hoist_one_var_name. Global-scope var entries never reach scope_stack, so this is the only
     // collection point. builtin_eval checks it for the ECMA-262 PerformEval intermediate-binding
     // collision.
-    uint*   eval_var_coll_idxs;
-    uint    eval_var_coll_cap;
-    uint    eval_var_coll_count;
+    Vec{uint} eval_var_coll_idxs;
 
     // Every function declaration a body-scope hoist pass saw at the scope's top level: register,
     // inner function index, and name constant index. block() emits CLOSURE+DECLVAR from these once,
@@ -885,8 +878,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     }
     self.inner_func_cap = INITIAL_INNER_FUNCS;
     self.inner_funcs = (CompiledFunction**)h.alloc_func(h.heap_udata, (usz)(INITIAL_INNER_FUNCS * CompiledFunction*::size));
-    self.hoisted_fn_cap = INITIAL_HOISTED_FNS;
-    self.hoisted_fn_names = (char[]*)h.alloc_func(h.heap_udata, (usz)(INITIAL_HOISTED_FNS * char[]::size));
     PrivateNameTable* pnt = (PrivateNameTable*)h.alloc_func(h.heap_udata, (usz)PrivateNameTable::size);
     pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     pnt.count = 0;
@@ -905,24 +896,32 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     // ctx.is_strict after init().
 }
 
+// Return a buffer from the heap's allocator and clear the field that held it.
+macro @heap_release(Heap* h, #buf) @local {
+    if (#buf != null) h.free_func(h.heap_udata, #buf);
+    #buf = null;
+}
+
 // Free the compiler's scratch buffers; the CompiledFunction from finish() owns
 // its own copies. The context's owner defers this where it declares the
-// context, so an error unwinding past it frees them too.
+// context, so an error unwinding past it frees them too. The code, constant,
+// scope and inner-function buffers come from the heap's allocator, which an
+// embedder can account; the bookkeeping lists are Vecs on the thread allocator.
 fn void CompilerContext.cleanup(&self) {
     Heap* h = (Heap*)self.heap;
-    if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
-    if (self.source_positions != null) { h.free_func(h.heap_udata, self.source_positions); self.source_positions = null; }
-    if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
-    if (self.name_top != null) { h.free_func(h.heap_udata, self.name_top); self.name_top = null; }
-    if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
-    if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
-    if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
-    if (self.hoisted_fn_names != null) { h.free_func(h.heap_udata, self.hoisted_fn_names); self.hoisted_fn_names = null; }
-    if (self.eval_var_coll_idxs != null) { h.free_func(h.heap_udata, self.eval_var_coll_idxs); self.eval_var_coll_idxs = null; }
-    self.hoisted_defers.free();
+    @heap_release(h, self.code);
+    @heap_release(h, self.source_positions);
+    @heap_release(h, self.scope_stack);
+    @heap_release(h, self.name_top);
+    @heap_release(h, self.constants);
+    @heap_release(h, self.const_hash);
+    @heap_release(h, self.inner_funcs);
     self.release_private_names();
     if (self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.free();
     if (self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.free();
+    self.hoisted_fn_names.free();
+    self.hoisted_defers.free();
+    self.eval_var_coll_idxs.free();
     self.slot_global_name_idxs.free();
     self.direct_eval_offsets.free();
     self.far_offsets.free();
@@ -1021,33 +1020,16 @@ fn void CompilerContext.ensure_scope_cap(&self) {
 
 // Whether a function declaration hoisted into this scope is named `name`.
 fn bool CompilerContext.is_hoisted_fn(&self, char[] name) {
-    return self.hoisted_fn_count > 0 && self.hoisted_fn_set.contains((String)name);
+    return self.hoisted_fn_names.len > 0 && self.hoisted_fn_set.contains((String)name);
 }
 
 // Record a hoisted function declaration's name; false when it is already there.
 fn bool CompilerContext.add_hoisted_fn(&self, char[] name) {
     if (self.is_hoisted_fn(name)) return false;
-    self.ensure_hoisted_fn_cap();
-    if (self.hoisted_fn_count >= self.hoisted_fn_cap) return true;
     if (!self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.init(mem);
     self.hoisted_fn_set.add((String)name);
-    self.hoisted_fn_names[self.hoisted_fn_count] = name;
-    self.hoisted_fn_count++;
+    self.hoisted_fn_names.push(name);
     return true;
-}
-
-// Grow the hoisted-function-name table.
-fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
-    if (self.hoisted_fn_count < self.hoisted_fn_cap) return;
-    uint new_cap = self.hoisted_fn_cap * 2;
-    Heap* h = (Heap*)self.heap;
-    void* pn = h.realloc_func(h.heap_udata, self.hoisted_fn_names, (usz)(new_cap * char[]::size));
-    if (pn == null) {
-        self.record_error("out of memory growing the hoisted function table");
-        return;
-    }
-    self.hoisted_fn_names = (char[]*)pn;
-    self.hoisted_fn_cap = new_cap;
 }
 
 // Grow constant pool and hash table.
