@@ -919,6 +919,47 @@ fn void Asm.guard_builtin(&self, uint r, uint builtin, Jumps* miss) {
     sljit_set_label(light, sljit_emit_label(c));
 }
 
+// The function a CALL of `f.call(t, args...)` has only ever run through Function.prototype.call
+// (hobject::FB_DOTCALL), when its call entry takes the call of f on t with the arguments after t,
+// as opt_direct_targets takes a callee, or when its body only returns undefined or a parameter
+// (CallFlags.trivial_call 1 and 2); null for any other site.
+fn CompiledFunction* Asm.dotcall_callee(&self) {
+    if (self.opt || self.wide || self.w.op != Opcode.CALL || self.w.c == 0 || self.f.ic_entries == null) return null;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.next - 1];
+    if ((ic.feedback & (hobject::FB_DOTCALL | hobject::FB_POLY)) != hobject::FB_DOTCALL) return null;
+    if (ic.prop_idx >= self.hp.compiled_func_count) return null;
+    CompiledFunction* cf = (CompiledFunction*)self.hp.compiled_funcs[ic.prop_idx];
+    if (cf == null || cf.realm != self.f.realm) return null;
+    if (call_entry_eligible(cf)) return entry_takes(cf, self.w.c - 1, false) ? cf : null;
+    return cf.call_flags.trivial_call == 1 || cf.call_flags.trivial_call == 2 ? cf : null;
+}
+
+// `f.call(t, args...)` of the function `cf` (dotcall_callee) as the method call of f on t with the
+// arguments after it, which the window already holds one slot up: Function.prototype.call's guard,
+// then f's and t's (emit_mono_guard), and cf's direct label with f's slot as the callee's, or the
+// value a trivial body returns. A call either guard rejects or the callee declines joins `generic`
+// with nothing written.
+fn void Asm.emit_dotcall(&self, CompiledFunction* cf, Jumps* generic) {
+    self.guard_builtin(self.w.b, builtins::Builtin.FUNCTION_PROTO_CALL.ordinal, generic);
+    self.emit_mono_guard(cf, self.w.b + 1, generic);
+    if (cf.call_flags.trivial_call != 0) {
+        // The returned parameter, when the call passes it, from the arguments after t.
+        uint param = cf.call_flags.trivial_call == 2 ? cf.code[0].a : self.w.c;
+        if (param < self.w.c - 1) {
+            self.load(R0, self.w.b + 3 + param);
+            self.store(self.w.a, R0);
+            self.track_heap_store(self.w.a);
+        } else {
+            self.store(self.w.a, SLJIT_IMM, K_UNDEF);
+        }
+        return;
+    }
+    self.mov(R3, 0, SLJIT_IMM, (long)(self.w.c - 1) | CALL_METHOD);
+    self.direct_cf = cf;
+    self.emit_call_sub(self.w.b + 1, self.w.a, self.next, generic);
+    self.direct_cf = null;
+}
+
 // Whether the call being emitted is a CALL or CALL_UNDEF_THIS that has only ever called one Math
 // function (opt_math_of), with as many arguments as it takes: its function in `m` and builtin
 // number in `builtin`, for emit_math.

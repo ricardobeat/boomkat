@@ -1485,6 +1485,13 @@ fn bool Asm.emit_call(&self) {
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         miss.bind(sljit_emit_label(c));
     }
+    CompiledFunction* dotcall = self.direct_cf == null ? self.dotcall_callee() : null;
+    if (dotcall != null) {
+        Jumps generic;
+        self.emit_dotcall(dotcall, &generic);
+        done.add(sljit_emit_jump(c, SLJIT_JUMP));
+        generic.bind(sljit_emit_label(c));
+    }
     if (self.w.op == Opcode.NEW_OBJ) {
         Jumps miss;
         Jumps generic;
