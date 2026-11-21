@@ -13,15 +13,19 @@
     "src/dtoa_wrapper.c",
     "src/date_math.c",
     "src/native_stack.c",
-    "src/sysmem.c"
+    "src/sysmem.c",
+    "vendor/sljit/sljit_src/sljitLir.c",
+    "src/jit/sljit_shim.c",
+    "src/jit/pc_sampler.c"
   ],
   "c-include-dirs": [
     "vendor/dtoa",
     "vendor/libregexp",
     "vendor/libunicode",
-    "src"
+    "src",
+    "vendor/sljit/sljit_src"
   ],
-  "cflags": "-O2",
+  "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
   "targets": {
     "macos-aarch64": {},
     "macos-x64": {},
