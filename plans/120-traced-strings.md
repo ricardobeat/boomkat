@@ -58,11 +58,16 @@ marking a string sets one bit and pushes nothing gray.
 - `Heap.mark_tval` (`src/heap.c3:4835`) gains a string case. Today it only
   calls `verify_string_owner` under `GC_VERIFY`.
 - Pooled strings live in `PagePool` pages (`small_pools`), which have no
-  bitmaps. They move into `ObjectPool` size classes, which already have live,
-  mark and teardown bitmaps, page sweep and bump allocation. The class sizes
-  need checking against string length distributions, since strings vary in
-  size more than objects. Strings above 8 KiB stay outside the pools and
-  carry a header mark, like unpooled objects.
+  bitmaps. There are two candidates:
+  - Move them into `ObjectPool` size classes, which already have live, mark
+    and teardown bitmaps, page sweep and bump allocation.
+  - Add a mark bitmap to `PagePool`.
+
+  Phase 2 prototypes both and benchmarks them: peak RSS, fragmentation
+  against string length distributions, and fixed-iteration instructions.
+  Strings vary in size more than objects, so the `ObjectPool` classes may
+  not fit. Strings above 8 KiB stay outside the pools and carry a header
+  mark, like unpooled objects.
 
 ### Barrier
 
@@ -195,12 +200,18 @@ Each phase lands as reviewable commits with the suites green.
      default, slim and tiny builds.
    - Collector share and pause distribution (`GC_PROFILE`).
    - Size of the collector code in the tiny binary.
-1. **`GC_SIMPLE` on tiny and slim.**
+1. **`GC_SIMPLE` on tiny, and on slim if it pays.**
    - Tests: test-local, test-api and a `GC_STRESS` variant.
-   - Gate: tiny no larger; peak memory and pauses recorded against phase 0.
+   - Gate for tiny: no larger; peak memory and pauses recorded against
+     phase 0.
+   - Gate for slim: it takes `GC_SIMPLE` only if the binary shrinks
+     significantly without a large slowdown in fixed-iteration instructions.
+     Decide from the measured pair.
 2. **Mark strings alongside counts.**
    - Add the string case to `mark_tval`, the holders listed above, and the
      missing `ObjClass.REGEXP` case.
+   - Prototype both string page layouts (see Marking) and keep the one that
+     measures better.
    - At the end of a major mark, `GC_VERIFY` walks the string pools, the
      intern table and the large-string registry, and fails on any string
      above its table count that is unmarked. This uses the counts as the
@@ -215,7 +226,8 @@ Each phase lands as reviewable commits with the suites green.
      branch, same tests, only the reclamation changed.
    - **Gate:**
      - Fixed-iteration instructions geomean ≤ 1.00 against `jit` at phase 0.
-     - Peak RSS within the agreed bounds on default, slim and tiny.
+     - Peak RSS on default, slim and tiny: the target is no increase, and
+       no build may exceed +30%.
      - If memory is the binding constraint on small devices, stop here and
        give `main` the ZCT instead.
 4. **Delete counts.**
@@ -244,7 +256,8 @@ as soon as phase 1 passes. Traced strings go to `main` after phase 5, so
   GC-stress build and `GC_VERIFY`.
 - Fixed-iteration Octane instructions geomean ≤ 1.00 against `jit` at
   phase 0.
-- Peak RSS within the bounds set before phase 3.
+- Peak RSS no higher than at phase 0 as the target, and never above +30%
+  on any build.
 - Tiny binary no larger than at phase 0.
 - Net source lines down.
 
@@ -263,9 +276,11 @@ as soon as phase 1 passes. Traced strings go to `main` after phase 5, so
 - **Host extensions** with opaque payloads holding strings need a
   `gc_mark` callback; `IntlSegmentState` is the one in the tree.
 
-## Open questions
+## Decisions
 
-- Peak RSS bounds for phase 3, for the default build and for slim and tiny.
-- Whether slim also takes `GC_SIMPLE`, or only tiny.
-- `ObjectPool` size classes for strings, against a bitmap added to
-  `PagePool`.
+Settled 2026-11-21:
+
+- **Peak RSS.** The target is no increase; the ceiling is +30% on any build.
+- **`GC_SIMPLE` on slim.** Only if it shrinks the binary significantly
+  without a large slowdown.
+- **String pages.** Prototype both layouts and decide by benchmark.
