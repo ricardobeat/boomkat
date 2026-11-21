@@ -416,6 +416,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
             usz buf_size = (usz)arridx_count * 2 * 4;
             uint* sort_buf = (uint*)vm.heap.alloc_func(vm.heap.heap_udata, buf_size);
             if (sort_buf != null) {
+                defer vm.heap.free_func(vm.heap.heap_udata, sort_buf);
                 uint p = 0;
                 for (uint i = 0; i < source.prop_count; i++) {
                     void* key = source.prop_key_at(i, vm.heap);
@@ -442,18 +443,16 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                 for (uint a = 0; a < arridx_count; a++) {
                     uint i = sort_buf[a * 2 + 1];
                     CopyPropResult r = copy_data_property(vm, source, target, i, source.prop_key_at(i, vm.heap));
-                    if (r.vm_error) { vm.heap.free_func(vm.heap.heap_udata, sort_buf); return VM_ERROR~; }
+                    if (r.vm_error) return VM_ERROR~;
                     if (r.getter_threw) {
-                        vm.heap.free_func(vm.heap.heap_udata, sort_buf);
                         if (!vm_throw_value(vm, r.thrown_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             (void)vm_uncaught_error(vm, &r.thrown_val);
                             return VM_ERROR~;
                         }
                         return;
                     }
-                    if (!r.cont) { vm.heap.free_func(vm.heap.heap_udata, sort_buf); return; }
+                    if (!r.cont) return;
                 }
-                vm.heap.free_func(vm.heap.heap_udata, sort_buf);
             }
         }
     }

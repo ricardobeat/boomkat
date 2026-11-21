@@ -399,6 +399,7 @@ fn uint collect_own_string_keys(Heap* heap, HObject* obj, HString** key_buf, boo
             usz sort_size = (usz)(total_int * 3 * 4);
             uint* sort_buf = (uint*)heap.alloc_func(heap.heap_udata, sort_size);
             if (sort_buf != null) {
+                defer heap.free_func(heap.heap_udata, sort_buf);
                 uint p = 0;
                 // Add integer-indexed named properties
                 for (uint i = 0; i < obj.prop_count; i++) {
@@ -453,11 +454,10 @@ fn uint collect_own_string_keys(Heap* heap, HObject* obj, HString** key_buf, boo
                     } else {
                         // Dense array index, always enumerable
                         HString* key = heap.int_to_hstring((long)sort_buf[i * 3]);
-                        if (key == null) { heap.free_func(heap.heap_udata, sort_buf); return key_count; }
+                        if (key == null) return key_count;
                         key_buf[key_count++] = key;
                     }
                 }
-                heap.free_func(heap.heap_udata, sort_buf);
             }
         }
     }
@@ -585,7 +585,8 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
     if (object_shape_own_keys(ctx, obj, OwnKeyFilter.ENUMERABLE_STRINGS)) return;
 
     // Collect keys into a temporary buffer, then build the result from it.
-    HString** key_buf;
+    HString** key_buf = null;
+    defer if (key_buf != null) ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
     uint key_count;
     if (obj.is_proxy()) {
         if (!proxy_filtered_own_keys(ctx.vm, ctx.heap, obj, 0, &key_buf, &key_count)) { proxy_ctx_ok(ctx); return; }
@@ -604,14 +605,12 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
             for (uint ki = 0; ki < key_count; ki++) {
                 ProxyDesc nd;
                 if (!module_ns_own_desc(ctx.vm, ctx.heap, obj, key_buf[ki], &nd)) {
-                    ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
                     proxy_ctx_ok(ctx);
                     return;
                 }
             }
         }
     }
-    defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
 
     keys_result(ctx, key_buf, key_count);
 }
@@ -1241,6 +1240,7 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
     }
 
     TVal* args = null;
+    defer if (args != null) ctx.heap.free_func(ctx.heap.heap_udata, args);
     if (len > 0) {
         args = (TVal*)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal::size * len);
         if (args == null) { ctx.result_undefined(); return; }
@@ -1268,10 +1268,7 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
         if (own_idx >= 0 && arr_obj.get_prop_flags((uint)own_idx, ctx.heap).is_accessor) {
             TVal getter = hobject::hobject_access_getter(arr_obj.prop_values()[own_idx].get());
             elem = arr_invoke_getter_ctx(arr_obj, getter, ctx.heap, ctx);
-            if (ctx.should_throw) {
-                if (args != null) ctx.heap.free_func(ctx.heap.heap_udata, args);
-                return;
-            }
+            if (ctx.should_throw) return;
         } else if (own_idx >= 0) {
             elem = arr_obj.prop_values()[own_idx].get();
         } else if (!is_plain_array && arr_obj.get_class() == hobject::ObjClass.ARRAY && arr_obj.array_part() != null
@@ -1281,10 +1278,7 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
             hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key, true, ctx.heap);
             if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 elem = arr_invoke_getter_ctx(arr_obj, res.acc.accessor_fn, ctx.heap, ctx);
-                if (ctx.should_throw) {
-                    if (args != null) ctx.heap.free_func(ctx.heap.heap_udata, args);
-                    return;
-                }
+                if (ctx.should_throw) return;
             } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
                 elem = res.data_val;
             } else {
@@ -1299,10 +1293,8 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
         ctx.should_throw = true;
         ctx.throw_value = ctx.heap.error_value;
         ctx.heap.has_error = false;
-        if (args != null) ctx.heap.free_func(ctx.heap.heap_udata, args);
         return;
     }
-    if (args != null) ctx.heap.free_func(ctx.heap.heap_udata, args);
     ctx.copy_result(result);
 }
 

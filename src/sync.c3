@@ -111,22 +111,15 @@ fn void* thread_trampoline(void* p) @private {
 fn bool OsThread.start(&self, ThreadFn fn_ptr, void* arg, usz stack_size) {
     ThreadStart* start = (ThreadStart*)libc::malloc(ThreadStart::size);
     if (start == null) return false;
+    defer if (start != null) libc::free(start);
     start.fn_ptr = fn_ptr;
     start.arg = arg;
     ulong[PTHREAD_STORAGE / 8] attr;
-    if (sys_attr_init(&attr) != 0) {
-        libc::free(start);
-        return false;
-    }
+    if (sys_attr_init(&attr) != 0) return false;
     defer (void)sys_attr_destroy(&attr);
-    if (stack_size > 0 && sys_attr_setstacksize(&attr, stack_size) != 0) {
-        libc::free(start);
-        return false;
-    }
-    if (sys_thread_create(&self.handle, &attr, &thread_trampoline, start) != 0) {
-        libc::free(start);
-        return false;
-    }
+    if (stack_size > 0 && sys_attr_setstacksize(&attr, stack_size) != 0) return false;
+    if (sys_thread_create(&self.handle, &attr, &thread_trampoline, start) != 0) return false;
+    start = null;
     return true;
 }
 

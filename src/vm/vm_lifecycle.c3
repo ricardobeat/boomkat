@@ -25,6 +25,7 @@ fn Vm*? vm_create(Heap* heap) {
     if (raw == null) {
         return VM_ERROR~;
     }
+    defer catch heap.free_func(heap.heap_udata, raw);
     mem::clear(raw, (sz)(Vm::size));
 
     Vm* vm = (Vm*)raw;
@@ -43,9 +44,9 @@ $endif
     usz vs_bytes = (usz)INITIAL_VALSTACK * TVal::size;
     void* vs_raw = heap.alloc_func(heap.heap_udata, vs_bytes);
     if (vs_raw == null) {
-        heap.free_func(heap.heap_udata, raw);
         return VM_ERROR~;
     }
+    defer catch heap.free_func(heap.heap_udata, vs_raw);
     mem::clear(vs_raw, (sz)(vs_bytes));
     vm.valstack = (TVal*)vs_raw;
     vm.valstack_size = INITIAL_VALSTACK;
@@ -63,10 +64,9 @@ $endif
 
     EnvRecord*? global = env::env_create(heap, null);
     if (catch err = global) {
-        heap.free_func(heap.heap_udata, vs_raw);
-        heap.free_func(heap.heap_udata, raw);
         return VM_ERROR~;
     }
+    defer catch env::env_pool_free(heap, global);
     vm.global_env = global;
     heap.shade_root_env(global);
 
@@ -77,19 +77,14 @@ $endif
     // Global lexical (declarative) record for top-level let/const/class.
     EnvRecord*? global_lex = env::env_create_declarative(heap, global);
     if (catch err = global_lex) {
-        heap.free_func(heap.heap_udata, vs_raw);
-        heap.free_func(heap.heap_udata, raw);
         return VM_ERROR~;
     }
+    defer catch env::env_pool_free(heap, global_lex);
     vm.global_lex_env = global_lex;
     heap.shade_root_env(global_lex);
     heap.register_gc_root(global_lex.bindings.as_header());
 
     if (!builtins::register_builtins(global, heap)) {
-        env::env_pool_free(heap, global);
-        env::env_pool_free(heap, global_lex);
-        heap.free_func(heap.heap_udata, vs_raw);
-        heap.free_func(heap.heap_udata, raw);
         return VM_ERROR~;
     }
     $if features::TEST262_HOST:

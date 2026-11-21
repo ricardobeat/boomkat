@@ -116,12 +116,7 @@ fn CompiledFunction* dynamic_function_compile(BuiltinContext* ctx, String prefix
         mem::copy(text, prefix.ptr, (sz)prefix.len);
         mem::copy(text + prefix.len, src.data, (sz)src.len);
         // compile_function may have set a source pointer of its own.
-        if (func.src_buf != null) {
-            bytecode::source_buf_release(func.src_buf);
-            func.src_buf = null;
-        } else if (func.src_ptr != null) {
-            mem::free(func.src_ptr);
-        }
+        func.release_source();
         func.src_ptr = text;
         func.src_len = (uint)text_len;
     }

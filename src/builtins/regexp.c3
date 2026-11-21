@@ -2997,38 +2997,40 @@ fn void builtin_regexp_escape(BuiltinContext* ctx) {
     }
     HString* s = (HString*)ctx.regs[ctx.base_reg].get_heapptr();
     usz cap = (usz)s.unit_len() * 6 + 16;
-    char* buf = (char*)alloc::malloc_try(mem, (sz)cap) ?? null;
-    if (buf == null) { ctx.result_undefined(); return; }
-    usz len = 0;
+    HString* result = null;
+    @stack_mem(256; Allocator smem) {
+        if (try buf = alloc::alloc_array_try(smem, char, (sz)cap)) {
+            usz len = 0;
 
-    uint n = s.unit_len();
-    uint offset = 0;
-    bool first = true;
-    while (offset < n) {
-        uint cp = s.unit_at(offset);
-        uint step = 1;
-        // Combine a high surrogate immediately followed by a low surrogate
-        // into its astral code point (StringToCodePoints semantics).
-        if (hstring::is_high_surrogate(cp) && offset + 1 < n && hstring::is_low_surrogate(s.unit_at(offset + 1))) {
-            cp = hstring::surrogates_to_codepoint(cp, s.unit_at(offset + 1));
-            step = 2;
+            uint n = s.unit_len();
+            uint offset = 0;
+            bool first = true;
+            while (offset < n) {
+                uint cp = s.unit_at(offset);
+                uint step = 1;
+                // Combine a high surrogate immediately followed by a low surrogate
+                // into its astral code point (StringToCodePoints semantics).
+                if (hstring::is_high_surrogate(cp) && offset + 1 < n && hstring::is_low_surrogate(s.unit_at(offset + 1))) {
+                    cp = hstring::surrogates_to_codepoint(cp, s.unit_at(offset + 1));
+                    step = 2;
+                }
+
+                bool leading_digit_or_letter = first &&
+                    ((cp >= '0' && cp <= '9') ||
+                     (cp >= 'a' && cp <= 'z') ||
+                     (cp >= 'A' && cp <= 'Z'));
+                if (leading_digit_or_letter) {
+                    re_escape_append_x(buf.ptr, &len, cp);
+                } else {
+                    re_escape_encode_codepoint(buf.ptr, &len, cp);
+                }
+                first = false;
+                offset += step;
+            }
+
+            result = builtin_intern_string(ctx.heap, buf[:len]);
         }
-
-        bool leading_digit_or_letter = first &&
-            ((cp >= '0' && cp <= '9') ||
-             (cp >= 'a' && cp <= 'z') ||
-             (cp >= 'A' && cp <= 'Z'));
-        if (leading_digit_or_letter) {
-            re_escape_append_x(buf, &len, cp);
-        } else {
-            re_escape_encode_codepoint(buf, &len, cp);
-        }
-        first = false;
-        offset += step;
-    }
-
-    HString* result = builtin_intern_string(ctx.heap, buf[:len]);
-    mem::free(buf);
+    };
     if (result == null) { ctx.result_undefined(); return; }
     ctx.result_string(result);
 }
