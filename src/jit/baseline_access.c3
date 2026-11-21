@@ -45,6 +45,7 @@ struct Layout {
     long fn_capture_refs;
     long fn_comp_func;
     long gs_getter;
+    long gs_setter;
     long cf_capture_count;
     long shape_gen;
     long ic_shape;
@@ -214,6 +215,7 @@ fn Layout* layout() {
     l.fn_capture_refs = (char*)&o.extra.func.capture_refs - base;
     l.fn_comp_func = (char*)&o.extra.func.comp_func - base;
     l.gs_getter = (char*)&o.extra.gs.getter - base;
+    l.gs_setter = (char*)&o.extra.gs.setter - base;
     l.cf_capture_count = (char*)&cf.capture_count - base;
     l.shape_gen = (char*)&sh.generation - base;
     l.ic_shape = (char*)&ic.shape_id - base;
@@ -957,18 +959,20 @@ fn void Asm.emit_owner_helper(&self, long ic) {
 
 // Whether the read being emitted into `ra` calls a getter its entry names
 // natively, as th_call_getter does: GETTHISC, whose receiver the frame roots,
-// or GETPROPC(_CACHED) of a receiver register below `ra`, which the getter's
-// frame (from ra + 2 up, over registers dead past the read) leaves intact for
-// the thunk a declined call falls back to. An optimized body's GENERIC read
-// reloads every live value after it, as after a GENERIC call.
+// or GETPROPC(_CACHED), whose receiver the call keeps in ra + 1. The getter's
+// frame, from ra + 2 up, covers only registers dead past the read, and a
+// declined call writes none of them: a receiver register below `ra` or above
+// ra + 1 is left intact for the thunk it falls back to, and one read from `ra`
+// itself is put back from ra + 1 (emit_getter_call). An optimized body's
+// GENERIC read reloads every live value after it, as after a GENERIC call.
+// A read into the frame's last register keeps its receiver in the first of the
+// scratch slots past the frame, where native calls stage their arguments
+// (vm::FRAME_SCRATCH_SLOTS): the root scanners visit them with the frame, and a
+// frame's entry clears them. An optimized body's GENERIC is the outer
+// function's own (OptBuild.generic), so no inlined body's registers are there.
 fn bool Asm.getter_site(&self, uint ra) {
-    if (ra + 1 >= self.f.num_regs) return false;
-    switch (self.w.op) {
-        case GETTHISC: return true;
-        case GETPROPC:
-        case GETPROPC_CACHED: return self.w.b < ra;
-        default: return false;
-    }
+    if (ra >= self.f.num_regs) return false;
+    return self.w.op == Opcode.GETTHISC || self.w.op == Opcode.GETPROPC || self.w.op == Opcode.GETPROPC_CACHED;
 }
 
 // The getter call of a getter_site whose entry (R2, its slot index in R0
@@ -998,10 +1002,23 @@ fn void Asm.emit_getter_call(&self, uint ra, long ic) {
     // from its owner and the receiver from its register or the frame.
     self.store(ra + 1, R1);
     self.store(ra, R0);
-    self.track_heap_store(ra + 1);
+    // A scratch slot is the frame's without a count (getter_site).
+    if (ra + 1 < self.f.num_regs) self.track_heap_store(ra + 1);
     self.mov(R3, 0, SLJIT_IMM, CALL_METHOD | CALL_GETTER);
-    self.emit_call_sub(ra, ra, self.next, &self.call);
+    if (self.w.op == Opcode.GETTHISC || self.w.b != ra) {
+        self.emit_call_sub(ra, ra, self.next, &self.call);
+        self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
+        return;
+    }
+    // The receiver was in `ra`, which now holds the getter: a declined call puts it back for the
+    // thunk from ra + 1, which a decline leaves as it was.
+    Jumps declined;
+    self.emit_call_sub(ra, ra, self.next, &declined);
     self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
+    declined.bind(sljit_emit_label(c));
+    self.load(R0, ra + 1);
+    self.store(ra, R0);
+    self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
 }
 
 // Another receiver shape at a read site, as th_get_other_shape and
@@ -1361,7 +1378,7 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv, bool allow_
     miss.bind(sljit_emit_label(c));
     void* accessor = null;
     if (setter) {
-        // An inherited setter the entry names is called natively (vm::jit_put_setter).
+        // An inherited setter the entry names is called natively (emit_setter_call).
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
         sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
         sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
@@ -1380,16 +1397,59 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv, bool allow_
     if (setter) {
         void* stored = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(accessor, sljit_emit_label(c));
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-        self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_put_setter);
-        self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
-        sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
-        sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+        // A private name keeps PrivateSet's checks, in the thunk.
+        if (((hstring::HString*)key).is_hidden()) {
+            self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+        } else {
+            self.emit_setter_call(ic, key, rv);
+        }
         sljit_set_label(stored, sljit_emit_label(c));
     }
     sljit_set_label(done, sljit_emit_label(c));
     sljit_set_label(absent_done, sljit_emit_label(c));
+}
+
+// The setter call of a PUTPROPC or PUTTHISC whose entry `ic` (in R2) names an accessor, as
+// th_call_setter makes it: an inherited setter for the receiver's shape and the site's `key` is
+// called natively as a method with the value as its one argument, through the shared call
+// subroutine, and the site goes on to the next instruction. The call stages the setter, the
+// receiver and the value in the first three scratch slots past the frame, where native calls stage
+// their arguments (vm::FRAME_SCRATCH_SLOTS), and its result lands in the first, which nothing reads.
+// Anything else, and a call the subroutine does not enter (an undefined setter, a builtin, a callee
+// without an entry), takes the thunk, which stores by lookup.
+fn void Asm.emit_setter_call(&self, long ic, long key, uint rv) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    uint callee = self.f.num_regs;
+    bool own = self.w.op == Opcode.PUTTHISC;
+    if (own) {
+        self.load_this(R0);
+    } else {
+        self.load(R0, self.w.a);
+    }
+    self.unbox_object(R1, R0);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, key));
+    self.guard_shape(R1, R2);
+    self.emit_ic_owner(ic, &self.call);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
+    self.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+    self.unbox_object(R0, R0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, l.gs_setter);
+    self.store(callee, R0);
+    if (own) {
+        self.load_this(R1);
+    } else {
+        self.load(R1, self.w.a);
+    }
+    self.store(callee + 1, R1);
+    self.load(R1, rv);
+    self.store(callee + 2, R1);
+    self.mov(R3, 0, SLJIT_IMM, 1 | CALL_METHOD | CALL_GETTER);
+    self.emit_call_sub(callee, callee, self.next, &self.call);
+    self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
 }
 
 // The site key check of a store: the constant `key`, or the string in

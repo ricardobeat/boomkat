@@ -1046,46 +1046,6 @@ fn long jit_enter_redispatched(Dispatch* ds, Instruction* next, DecodedInsn call
     return jit_run_entered(ds, entry, old_floor, next);
 }
 
-// The store before `next`, a PUTPROPC or PUTTHISC whose entry names an inherited setter for the
-// receiver, run as a native call of that setter, as th_call_setter enters it for the threaded
-// handlers. Returns what jit_call returns, or JIT_CALL_SLOW with nothing written.
-fn long jit_put_setter(Dispatch* ds, ulong next_arg) {
-    Instruction* next = (Instruction*)(usz)next_arg;
-    Instruction* pc = next - 1;
-    Vm* vm = ds.vm;
-    if (ds.jit_depth >= JIT_NATIVE_DEPTH_CAP || ds.ic_base == null || ds.var_ic_base == null) return JIT_CALL_SLOW;
-    TVal* regs = ds.regs_base;
-    bool own = pc.op == Opcode.PUTTHISC;
-    TVal* receiver = own ? &ds.act.this_binding : regs + pc.a;
-    TVal* value = regs + (own ? pc.a : pc.b);
-    if (!receiver.is_object()) return JIT_CALL_SLOW;
-    HObject* hobj = (HObject*)receiver.get_heapptr();
-    if (hobj.get_class() != hobject::ObjClass.OBJECT || hobj.is_proxy() || hobj.flags.exotic_module_ns) return JIT_CALL_SLOW;
-    hobject::ICEntry* ic = ds.ic_base + (pc - ds.code_base);
-    if (!ic.prop_flags.is_accessor || !ic.has_proto || ic.shape_id != hobj.shape_id
-        || ic.key.borrow() != ds.constants[pc.c].get_heapptr() || vm.heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
-    if (((HString*)ic.key.borrow()).is_hidden()) return JIT_CALL_SLOW;
-    if (!own && (uint)pc.a >= ds.act.heap_reg_count) return JIT_CALL_SLOW;
-    if (value.is_heap_allocated() && (uint)(value - regs) >= ds.act.heap_reg_count) return JIT_CALL_SLOW;
-    hobject::PropValue* slot = hobject::ic_resolve_slot(ic, hobj);
-    if (slot == null) return JIT_CALL_SLOW;
-    TVal setter = hobject::hobject_access_setter(slot.get());
-    uint callee_reg = max((uint)vm.current_func.num_regs, (uint)(vm.valstack_top - regs));
-    CompiledFunction* target = th_lean_target(vm, setter, regs + callee_reg + 2, false);
-    if (target == null || target.jit_code == null || target.arguments_in_reg() || target.call_flags.rest_length_only) return JIT_CALL_SLOW;
-    TVal this_value = *receiver;
-    regs[callee_reg] = setter;
-    regs[callee_reg + 2] = *value;
-    uint old_floor = ds.jit_floor;
-    ds.curr_pc = next;
-    ColdCtx* cold = &ds.cold;
-    th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
-    bool needs_arguments = th_publish_lean(pc, regs, cold, target, callee_reg, callee_reg, 1, true, true,
-                                           this_value, true, null);
-    void* entry = jit_enter_published(ds, 1, needs_arguments);
-    return jit_run_entered(ds, entry, old_floor, next);
-}
-
 // A call the operation function entered by pushing the callee's frame and asking for a restart
 // (a callee the lean shapes decline: one with a scope object of its own, a class constructor):
 // run the callee's native code as a nested native call instead of unwinding every native frame
