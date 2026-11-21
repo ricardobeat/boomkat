@@ -18,8 +18,9 @@ static void *default_realloc(void *opaque, void *ptr, size_t size)
     return realloc(ptr, size);
 }
 
-uint32_t* unicode_normalize_simple(const uint32_t* src, int src_len,
-                                    int n_type, int* out_len)
+uint32_t* unicode_normalize_with(const uint32_t* src, int src_len,
+                                 int n_type, int* out_len,
+                                 void* opaque, unicode_realloc_fn* realloc_func)
 {
     uint32_t *result = NULL;
     int len;
@@ -28,7 +29,7 @@ uint32_t* unicode_normalize_simple(const uint32_t* src, int src_len,
 
     len = unicode_normalize(&result, src, src_len,
                             (UnicodeNormalizationEnum)n_type,
-                            NULL, default_realloc);
+                            opaque, realloc_func);
 
     if (len < 0) {
         /* On failure, unicode_normalize sets *pdst to NULL */
