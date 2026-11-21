@@ -34,16 +34,8 @@ fn double math_arg(BuiltinContext* ctx, ushort i) {
         }
         return d;
     }
-    // ToNumber(symbol) throws (ECMA-262 §7.1.4); builtin_to_number below has no
-    // way to report that, so it would quietly yield NaN.
-    if (is_symbol_val(*arg)) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a Symbol value to a number");
-        return double::nan;
-    }
-    // Non-object non-number: undefined / null / boolean / string.
-    TVal num;
-    builtin_to_number(arg, &num);
-    return num.is_fastint() ? (double)num.get_fastint() : num.get_number();
+    // Undefined, null, a boolean or a string; ToNumber of a Symbol or a BigInt throws.
+    return builtin_to_number_getdouble(ctx, arg);
 }
 
 fn void builtin_math_abs(BuiltinContext* ctx) {
