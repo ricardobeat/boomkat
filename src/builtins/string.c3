@@ -882,40 +882,44 @@ fn HString* unicode_case_convert_str(Heap* heap, HString* s, int conv_type, Case
         };
     }
 
-    uint num_cps;
-    uint* cps = string_codepoints(s, &num_cps);
-    if (cps == null) return null;
-    defer mem::free(cps);
-
-    // Apply case mapping: each input codepoint can expand to up to 3 output codepoints
-    uint out_max = num_cps * 3 + 1;
-    uint* out_cps = (uint*)alloc::malloc_try(mem, (sz)((usz)out_max * 4)) ?? null;
-    if (out_cps == null) return null;
-    defer mem::free(out_cps);
-
+    // The source codepoints are freed when the mapping block ends, before the
+    // result string is built, to keep peak memory down on long strings.
+    uint* out_cps;
     uint out_n = 0;
-    uint[3] mapped;
-    for (uint i = 0; i < num_cps; i++) {
-        uint cp = cps[i];
-        int n_mapped = lang == ROOT ? -1 : case_language_map(lang, conv_type, cps, num_cps, i, &mapped[0]);
-        if (n_mapped >= 0) {
-            for (int m = 0; m < n_mapped; m++) {
-                out_cps[out_n] = mapped[m];
+    {
+        uint num_cps;
+        uint* cps = string_codepoints(s, &num_cps);
+        if (cps == null) return null;
+        defer mem::free(cps);
+
+        // Each input codepoint can expand to up to 3 output codepoints.
+        uint out_max = num_cps * 3 + 1;
+        out_cps = (uint*)alloc::malloc_try(mem, (sz)((usz)out_max * 4)) ?? null;
+        if (out_cps == null) return null;
+
+        uint[3] mapped;
+        for (uint i = 0; i < num_cps; i++) {
+            uint cp = cps[i];
+            int n_mapped = lang == ROOT ? -1 : case_language_map(lang, conv_type, cps, num_cps, i, &mapped[0]);
+            if (n_mapped >= 0) {
+                for (int m = 0; m < n_mapped; m++) {
+                    out_cps[out_n] = mapped[m];
+                    out_n++;
+                }
+            } else if (conv_type == 1 && cp == CP_SIGMA) {
+                // Greek capital sigma: context-sensitive lowercase
+                out_cps[out_n] = sigma_lower_form(cps, num_cps, i);
                 out_n++;
-            }
-        } else if (conv_type == 1 && cp == CP_SIGMA) {
-            // Greek capital sigma: context-sensitive lowercase
-            out_cps[out_n] = sigma_lower_form(cps, num_cps, i);
-            out_n++;
-        } else {
-            n_mapped = unicode_bindings::unicode_case_conv(cp, conv_type, &mapped[0]);
-            for (int m = 0; m < n_mapped; m++) {
-                out_cps[out_n] = mapped[m];
-                out_n++;
+            } else {
+                n_mapped = unicode_bindings::unicode_case_conv(cp, conv_type, &mapped[0]);
+                for (int m = 0; m < n_mapped; m++) {
+                    out_cps[out_n] = mapped[m];
+                    out_n++;
+                }
             }
         }
     }
-
+    defer mem::free(out_cps);
     return codepoints_to_hstring(heap, out_cps, out_n);
 }
 
@@ -2393,11 +2397,10 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         ctx.result_string(s_hstr);
         return;
     }
-    defer mem::free(src_cps);
-
     int out_len = 0;
     uint* result_cps = unicode_bindings::unicode_normalize_simple(src_cps,
                         (int)num_cps, n_type, &out_len);
+    mem::free(src_cps);
     defer if (result_cps != null) libc::free(result_cps);
 
     if (result_cps == null || out_len < 0) {
