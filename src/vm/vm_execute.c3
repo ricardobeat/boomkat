@@ -641,14 +641,24 @@ fn TVal* callback_frame_top(Vm* vm) @inline {
     return top;
 }
 
-// Run a host call's entry frame. A callback usually finishes inside one
-// threaded burst, so the burst runs here without Vm.run's frame and loop
-// setup. A burst that stops short, on an opcode the threaded handlers do not
-// cover or a call that needs the switch, resumes in Vm.run from the frame it
-// stopped in.
-fn TVal? vm_run_entry(Vm* vm) @inline {
+// Run a host call's entry frame `act`, of `f`. A callback usually finishes
+// inside one threaded burst, so the burst runs here without Vm.run's frame and
+// loop setup. A burst that stops short, on an opcode the threaded handlers do
+// not cover or a call that needs the switch, resumes in Vm.run from the frame
+// it stopped in. With the JIT on, a callback long enough for its native code
+// to pay for the native entry and return (CALLBACK_NATIVE_MIN) counts its
+// entries toward its baseline code as Vm.run's do, and once it has some runs
+// it (vm_run_native). An embedder's run always goes through Vm.run, which
+// polls its interrupt and enters native code itself.
+fn TVal? vm_run_entry(Vm* vm, CompiledFunction* f, Activation* act) @inline {
 $if $feat(THREADED_DISPATCH):
     if (vm.heap.capi_interrupt_fn == null && vm.heap.capi_runtime == null) {
+    $if $feat(SLJIT):
+        if (f.code_count >= CALLBACK_NATIVE_MIN && vm.heap.jit_enabled && vm.threaded_handoff == ThreadedHandoff.NONE) {
+            void* native = jit::baseline_code(vm.heap, f, act);
+            if (native != null) return vm_run_native(vm, native);
+        }
+    $endif
         // init and load_frame write every field the burst and the code below
         // read, and the burst sets its own IC bias, so the struct is not zeroed.
         Dispatch ds @noinit;
@@ -662,6 +672,42 @@ $if $feat(THREADED_DISPATCH):
         if (!ds.needs_restart) ds.act.curr_pc = ds.curr_pc;
     }
 $endif
+    return Vm.run(vm);
+}
+
+// The instruction words below which a host call's entry frame runs in the
+// threaded burst even when it has native code. Entering and leaving native
+// code from C costs about 170 instructions more than the burst does, and a
+// cached property read in baseline code saves about 12 over its threaded
+// handler: a comparator of two property reads and a subtraction (4 words)
+// would take 450 instructions native against 260, one that tests two
+// properties before a third (19) still runs 5% slower with the baseline tier
+// alone, and three.js's painterSortStable (41) runs 5% faster, 19% with the
+// opt tier.
+const uint CALLBACK_NATIVE_MIN @feat(SLJIT) = 24;
+
+// The baseline code `native` of a host call's entry frame, run without Vm.run's
+// loop (vm_run_entry), as Vm.run runs it: a halt returns the result, a run
+// that left for the interpreter continues in the dispatch, and a frame switch
+// in Vm.run.
+fn TVal? vm_run_native(Vm* vm, void* native) @noinline @feat(SLJIT) {
+    heap::Realm* caller_realm = vm.heap.realm;
+    defer vm.heap.enter_realm(caller_realm);
+    vm.run_depth++;
+    defer vm.run_depth--;
+    Dispatch ds;
+    ds.init(vm);
+    ds.needs_restart = false;
+    ds.load_frame();
+    long status = jit::baseline_run(native, &ds);
+    switch (status) {
+        case OpStatus.HALT.ordinal: return ds.halt_value;
+        case OpStatus.FAULT.ordinal: return ds.failure~;
+        case OpStatus.RESTART.ordinal: return Vm.run(vm);
+        default: break;
+    }
+    TVal? result = vm_dispatch(&ds);
+    if (!ds.needs_restart) return result;
     return Vm.run(vm);
 }
 
@@ -760,7 +806,7 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     vm.valstack_bottom = frame;
     vm.current_func = target;
 
-    TVal? result_opt = vm_run_entry(vm);
+    TVal? result_opt = vm_run_entry(vm, target, act);
     TVal result = vm.return_val;
     if (try r = result_opt) result = r;
 
