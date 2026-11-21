@@ -13,6 +13,7 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::unicode_bindings;
+import libc;
 
 
 const String INTL_COLLATOR_CLASS @feat(INTL_COLLATOR) = "Intl.Collator";
@@ -760,19 +761,20 @@ fn void builtin_intl_collator_resolved(BuiltinContext* ctx) @feat(INTL_COLLATOR)
     ctx.result_object(out);
 }
 
-// The NFD code points of `s` in a buffer the caller frees. Canonically
-// equivalent strings collate equal, so each operand is decomposed first.
+// The NFD code points of `s` in a libc-allocated buffer the caller frees with
+// `libc::free`. Canonically equivalent strings collate equal, so each operand
+// is decomposed first.
 fn uint* coll_decode_nfd(HString* s, int* out_len) @feat(INTL_COLLATOR) {
+    if (s.unit_len() == 0) {
+        *out_len = 0;
+        return (uint*)libc::malloc(4);
+    }
     uint n = 0;
     uint* cps = string_codepoints(s, &n);
     if (cps == null) return null;
-    if (n == 0) {
-        *out_len = 0;
-        return cps;
-    }
+    defer mem::free(cps);
     int nfd_len = 0;
     uint* nfd = unicode_bindings::unicode_normalize_simple(cps, (int)n, unicode_bindings::UNICODE_NFD, &nfd_len);
-    mem::free(cps);
     *out_len = nfd_len;
     return nfd;
 }
@@ -784,8 +786,8 @@ fn int coll_compare_strings(BuiltinContext* ctx, IntlCollatorState* state, HStri
     uint* a = coll_decode_nfd(a_str, &a_len);
     uint* b = coll_decode_nfd(b_str, &b_len);
     defer {
-        if (a != null) mem::free(a);
-        if (b != null) mem::free(b);
+        if (a != null) libc::free(a);
+        if (b != null) libc::free(b);
     }
     int result = a == null || b == null ? 2 : coll_compare_cps(state, a, (usz)a_len, b, (usz)b_len);
     if (result == 2) builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed");

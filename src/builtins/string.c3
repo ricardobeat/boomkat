@@ -11,6 +11,7 @@ import boomkat::hobject;
 import boomkat::re_bindings;
 import boomkat::unicode_bindings;
 import boomkat::vm;
+import libc;
 
 // ============================================================================
 // String constructor builtins
@@ -855,33 +856,42 @@ fn HString* unicode_case_convert_str(Heap* heap, HString* s, int conv_type, Case
     // Fast path: ASCII-only string. Turkic maps the ASCII i and I differently.
     if (lang != TURKIC && s.is_ascii()) {
         char[] data = s.ascii_bytes();
-        char* out_buf = (char*)alloc::malloc_try(mem, (sz)data.len) ?? null;
-        if (out_buf == null) return null;
-        for (usz ai = 0; ai < data.len; ai++) {
-            char c = data[ai];
-            if (conv_type == 1) { // lowercase
-                if (c >= 'A' && c <= 'Z') c = (char)((uint)c + 32);
-            } else { // uppercase
-                if (c >= 'a' && c <= 'z') c = (char)((uint)c - 32);
-            }
-            out_buf[ai] = c;
+        usz first = 0;
+        if (conv_type == 1) { // lowercase
+            while (first < data.len && !(data[first] >= 'A' && data[first] <= 'Z')) first++;
+        } else { // uppercase
+            while (first < data.len && !(data[first] >= 'a' && data[first] <= 'z')) first++;
         }
-        HString* result = builtin_intern_string(heap, out_buf[:data.len]);
-        mem::free(out_buf);
-        return result;
+        if (first == data.len) return s;
+
+        @stack_mem(256; Allocator smem) {
+            char[]? out_opt = alloc::alloc_array_try(smem, char, (sz)data.len);
+            if (catch out_opt) return null;
+            char[] out = out_opt;
+            if (first > 0) mem::copy(out.ptr, data.ptr, (sz)first);
+            for (usz ai = first; ai < data.len; ai++) {
+                char c = data[ai];
+                if (conv_type == 1) {
+                    if (c >= 'A' && c <= 'Z') c = (char)((uint)c + 32);
+                } else {
+                    if (c >= 'a' && c <= 'z') c = (char)((uint)c - 32);
+                }
+                out[ai] = c;
+            }
+            return builtin_intern_string(heap, out);
+        };
     }
 
     uint num_cps;
     uint* cps = string_codepoints(s, &num_cps);
     if (cps == null) return null;
+    defer mem::free(cps);
 
     // Apply case mapping: each input codepoint can expand to up to 3 output codepoints
     uint out_max = num_cps * 3 + 1;
     uint* out_cps = (uint*)alloc::malloc_try(mem, (sz)((usz)out_max * 4)) ?? null;
-    if (out_cps == null) {
-        mem::free(cps);
-        return null;
-    }
+    if (out_cps == null) return null;
+    defer mem::free(out_cps);
 
     uint out_n = 0;
     uint[3] mapped;
@@ -905,11 +915,8 @@ fn HString* unicode_case_convert_str(Heap* heap, HString* s, int conv_type, Case
             }
         }
     }
-    mem::free(cps);
 
-    HString* result = codepoints_to_hstring(heap, out_cps, out_n);
-    mem::free(out_cps);
-    return result;
+    return codepoints_to_hstring(heap, out_cps, out_n);
 }
 
 // String.prototype.toLowerCase(), full Unicode case mapping
@@ -1047,8 +1054,8 @@ $else
     defer {
         if (a_src != null) mem::free(a_src);
         if (b_src != null) mem::free(b_src);
-        if (a_norm != null) mem::free(a_norm);
-        if (b_norm != null) mem::free(b_norm);
+        if (a_norm != null) libc::free(a_norm);
+        if (b_norm != null) libc::free(b_norm);
     }
 
     // If normalization failed, fall back to comparing the code units.
@@ -2386,20 +2393,19 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         ctx.result_string(s_hstr);
         return;
     }
+    defer mem::free(src_cps);
 
     int out_len = 0;
     uint* result_cps = unicode_bindings::unicode_normalize_simple(src_cps,
                         (int)num_cps, n_type, &out_len);
-    mem::free(src_cps);
+    defer if (result_cps != null) libc::free(result_cps);
 
     if (result_cps == null || out_len < 0) {
-        if (result_cps != null) mem::free(result_cps);
         ctx.result_string(s_hstr);
         return;
     }
 
     HString* result_hstr = codepoints_to_hstring(ctx.heap, result_cps, (uint)out_len);
-    mem::free(result_cps);
     ctx.result_string(result_hstr != null ? result_hstr : s_hstr);
 }
 
