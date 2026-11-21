@@ -782,6 +782,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 uint cap = 4;
                 TVal* items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)cap * TVal::size);
                 if (items == null) { ctx.result_undefined(); return; }
+                defer heap.free_func(heap.heap_udata, items);
                 uint count = 0;
 
                 HString* next_key = builtin_intern_string(heap, "next");
@@ -798,10 +799,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                     // may be an accessor, and the raw slot lookup would hand
                     // back the getter-setter box instead of calling it.
                     TVal? next_method_opt = builtins_generic_get(iter_obj0, next_key, ctx);
-                    if (ctx.should_throw) {
-                        heap.free_func(heap.heap_udata, items);
-                        return;
-                    }
+                    if (ctx.should_throw) return;
                     if (try nm = next_method_opt) {
                         next_method = nm;
                         if (next_method.is_lightfunc()) {
@@ -817,14 +815,12 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
 
                     TVal result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
                     if (ctx.heap.has_error) {
-                        heap.free_func(heap.heap_udata, items);
                         ctx.should_throw = true;
                         ctx.throw_value = ctx.heap.error_value;
                         ctx.heap.has_error = false;
                         return;
                     }
                     if (!result.is_object() || result.get_heapptr() == null) {
-                        heap.free_func(heap.heap_udata, items);
                         arraybuffer_throw_type_error(ctx, "TypedArray: iterator result is not an object");
                         arr_iterator_close_after_throw(ctx, iterator);
                         return;
@@ -838,17 +834,14 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
 
                     // Use builtins_generic_get so that throwing getters on .value propagate.
                     TVal? value_opt = builtins_generic_get(result_obj, value_key, ctx);
-                    if (ctx.should_throw) {
-                        heap.free_func(heap.heap_udata, items);
-                        return;
-                    }
+                    if (ctx.should_throw) return;
                     TVal next_value; next_value.set_undefined();
                     if (try vv = value_opt) next_value = vv;
 
                     if (count == cap) {
                         uint new_cap = cap * 2;
                         TVal* new_items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)new_cap * TVal::size);
-                        if (new_items == null) { heap.free_func(heap.heap_udata, items); ctx.result_undefined(); return; }
+                        if (new_items == null) { ctx.result_undefined(); return; }
                         mem::copy(new_items, items, (sz)((usz)count * TVal::size));
                         heap.free_func(heap.heap_udata, items);
                         items = new_items;
@@ -861,7 +854,6 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 uint total_bytes = count * elem_size;
                 buf = typedarray_alloc_buffer(ctx, total_bytes);
                 if (buf == null) {
-                    heap.free_func(heap.heap_udata, items);
                     arraybuffer_throw_range_error(ctx, "Out of memory allocating TypedArray");
                     return;
                 }
@@ -869,9 +861,8 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 byte_length = total_bytes;
                 for (uint i = 0; i < count; i++) {
                     typedarray_store_converted(buf, 0, obj_class, i, &items[i], ctx);
-                    if (ctx.should_throw) { heap.free_func(heap.heap_udata, items); return; }
+                    if (ctx.should_throw) return;
                 }
-                heap.free_func(heap.heap_udata, items);
             } else {
                 // Array-like: read .length then Get(o, i) for i in [0, length).
                 HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1371,15 +1362,15 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
                     arraybuffer_throw_range_error(ctx, "TypedArray.set: out of memory");
                     return;
                 }
+                defer heap.free_func(heap.heap_udata, scratch);
                 for (uint i = 0; i < src_len; i++) {
                     scratch[i] = ta_load_element(ctx.heap, src_data, src_cls, i);
                 }
                 for (uint i = 0; i < src_len; i++) {
                     char* dp = (*dst_buf.extra_ptr()).ab.data + dst_byte_off + ((target_offset + i) << dst_shift);
                     ta_write_element(dp, dst_cls, &scratch[i], ctx);
-                    if (ctx.should_throw) { heap.free_func(heap.heap_udata, scratch); return; }
+                    if (ctx.should_throw) return;
                 }
-                heap.free_func(heap.heap_udata, scratch);
             } else {
                 // Cross-class, different buffers: element loop.
                 for (uint i = 0; i < src_len; i++) {
@@ -2560,11 +2551,11 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
         arraybuffer_throw_range_error(ctx, "TypedArray.filter: out of memory");
         return;
     }
+    defer if (scratch != null) heap.free_func(heap.heap_udata, scratch);
     uint count = 0;
 
     for (uint i = 0; i < len; i++) {
         if (ctx.should_throw) {
-            if (scratch != null) heap.free_func(heap.heap_udata, scratch);
             ctx.result_undefined();
             return;
         }
@@ -2572,7 +2563,6 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
         elem = ta_read_element_checked(ctx.heap, obj, i);
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
         if (ctx.should_throw) {
-            if (scratch != null) heap.free_func(heap.heap_udata, scratch);
             ctx.result_undefined();
             return;
         }
@@ -2583,10 +2573,7 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
     }
 
     HObject* result = ta_species_create(ctx, obj, count);
-    if (result == null) {
-        if (scratch != null) heap.free_func(heap.heap_udata, scratch);
-        return;
-    }
+    if (result == null) return;
 
     hobject::ObjClass result_cls = result.flags.obj_class;
     uint result_shift = ta_elem_shift(result_cls);
@@ -2598,12 +2585,10 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
         char* dp = res_base + (i << result_shift);
         ta_write_element(dp, result_cls, &scratch[i], ctx);
         if (ctx.should_throw) {
-            heap.free_func(heap.heap_udata, scratch);
             ctx.result_undefined();
             return;
         }
     }
-    if (scratch != null) heap.free_func(heap.heap_udata, scratch);
     ctx.result_object(result);
 }
 
@@ -3505,6 +3490,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
         uint cap = 8;
         TVal* items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)cap * TVal::size);
         if (items == null) { ctx.result_undefined(); return; }
+        defer heap.free_func(heap.heap_udata, items);
         uint count = 0;
 
         // §7.4.2 GetIterator reads `next` ONCE, when the iterator is obtained;
@@ -3515,14 +3501,12 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
         HObject* iter_obj = (HObject*)iterator.get_heapptr();
         TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
         if (ctx.should_throw) {
-            heap.free_func(heap.heap_udata, items);
             ctx.result_undefined();
             return;
         }
         TVal next_method;
         if (try nm = next_method_opt) { next_method = nm; }
         else {
-            heap.free_func(heap.heap_udata, items);
             arraybuffer_throw_type_error(ctx, "TypedArray.from: iterator has no next method");
             return;
         }
@@ -3530,7 +3514,6 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
             (next_method.is_object() && next_method.get_heapptr() != null &&
              ((HObject*)next_method.get_heapptr()).is_callable());
         if (!nm_callable) {
-            heap.free_func(heap.heap_udata, items);
             arraybuffer_throw_type_error(ctx, "TypedArray.from: iterator.next is not callable");
             return;
         }
@@ -3543,12 +3526,10 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 ctx.should_throw = true;
                 ctx.throw_value = heap.error_value;
                 heap.has_error = false;
-                heap.free_func(heap.heap_udata, items);
                 ctx.result_undefined();
                 return;
             }
             if (!step_result.is_object() || step_result.get_heapptr() == null) {
-                heap.free_func(heap.heap_udata, items);
                 arraybuffer_throw_type_error(ctx, "TypedArray.from: iterator result is not an object");
                 return;
             }
@@ -3556,7 +3537,6 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
 
             TVal? done_opt = builtins_generic_get(result_obj, done_key, ctx);
             if (ctx.should_throw) {
-                heap.free_func(heap.heap_udata, items);
                 ctx.result_undefined();
                 return;
             }
@@ -3566,7 +3546,6 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
 
             TVal? value_opt = builtins_generic_get(result_obj, value_key, ctx);
             if (ctx.should_throw) {
-                heap.free_func(heap.heap_udata, items);
                 ctx.result_undefined();
                 return;
             }
@@ -3577,7 +3556,6 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 uint new_cap = cap * 2;
                 TVal* new_items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)new_cap * TVal::size);
                 if (new_items == null) {
-                    heap.free_func(heap.heap_udata, items);
                     ctx.result_undefined();
                     return;
                 }
@@ -3593,10 +3571,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
         // Step 7: TypedArrayCreate(C, «count»).
         TVal len_arg; len_arg.set_fastint((long)count);
         HObject* target_obj = ta_typed_array_create(ctx, &len_arg, 1);
-        if (target_obj == null) {
-            heap.free_func(heap.heap_udata, items);
-            return;
-        }
+        if (target_obj == null) return;
 
         // Step 8: Write each collected value (with optional mapping).
         hobject::ObjClass res_cls = target_obj.flags.obj_class;
@@ -3615,7 +3590,6 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                     ctx.should_throw = true;
                     ctx.throw_value = heap.error_value;
                     heap.has_error = false;
-                    heap.free_func(heap.heap_udata, items);
                     ctx.result_undefined();
                     return;
                 }
@@ -3629,14 +3603,12 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 char* dp = res_base2 + (k << res_shift);
                 ta_write_element(dp, res_cls, &mapped, ctx);
                 if (ctx.should_throw) {
-                    heap.free_func(heap.heap_udata, items);
                     ctx.result_undefined();
                     return;
                 }
             }
         }
 
-        heap.free_func(heap.heap_udata, items);
         ctx.result_object(target_obj);
         return;
     }
@@ -4033,21 +4005,20 @@ fn void builtin_uint8array_from_base64(BuiltinContext* ctx) {
     uint out_cap = (str_len / 4) * 3 + 3;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(out_cap == 0 ? 1 : out_cap));
     if (buf == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
+    defer ctx.heap.free_func(ctx.heap.heap_udata, buf);
 
     B64DecodeResult res = from_base64(str, str_len, buf, out_cap, alphabet, last_chunk);
     if (res.err) {
-        ctx.heap.free_func(ctx.heap.heap_udata, buf);
         builtin_throw(ctx, ctx.heap.syntax_err_proto, "invalid base64 string");
         return;
     }
     HObject* result = b64_alloc_uint8array(ctx, res.written);
-    if (result == null) { ctx.heap.free_func(ctx.heap.heap_udata, buf); return; }
+    if (result == null) return;
     if (res.written > 0) {
         HObject* rbuf = (*result.extra_ptr()).view.buffer;
         char* dst = (*rbuf.extra_ptr()).ab.data + (*result.extra_ptr()).view.byte_offset;
         mem::copy(dst, buf, (sz)((usz)res.written));
     }
-    ctx.heap.free_func(ctx.heap.heap_udata, buf);
     ctx.result_object(result);
 }
 
@@ -4060,21 +4031,20 @@ fn void builtin_uint8array_from_hex(BuiltinContext* ctx) {
     uint out_cap = str_len / 2 + 1;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)out_cap);
     if (buf == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
+    defer ctx.heap.free_func(ctx.heap.heap_udata, buf);
 
     B64DecodeResult res = from_hex(str, str_len, buf, out_cap);
     if (res.err) {
-        ctx.heap.free_func(ctx.heap.heap_udata, buf);
         builtin_throw(ctx, ctx.heap.syntax_err_proto, "invalid hex string");
         return;
     }
     HObject* result = b64_alloc_uint8array(ctx, res.written);
-    if (result == null) { ctx.heap.free_func(ctx.heap.heap_udata, buf); return; }
+    if (result == null) return;
     if (res.written > 0) {
         HObject* rbuf = (*result.extra_ptr()).view.buffer;
         char* dst = (*rbuf.extra_ptr()).ab.data + (*result.extra_ptr()).view.byte_offset;
         mem::copy(dst, buf, (sz)((usz)res.written));
     }
-    ctx.heap.free_func(ctx.heap.heap_udata, buf);
     ctx.result_object(result);
 }
 
@@ -4111,6 +4081,7 @@ fn void builtin_uint8array_proto_to_base64(BuiltinContext* ctx) {
     uint out_len = 4 * ((len + 2) / 3);
     char* out = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(out_len == 0 ? 1 : out_len));
     if (out == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
+    defer ctx.heap.free_func(ctx.heap.heap_udata, out);
 
     uint i = 0;
     uint j = 0;
@@ -4137,7 +4108,6 @@ fn void builtin_uint8array_proto_to_base64(BuiltinContext* ctx) {
     }
 
     HString* result = ctx.heap.str_intern(out[:j]);
-    ctx.heap.free_func(ctx.heap.heap_udata, out);
     if (result == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
     ctx.result_string(result);
 }
@@ -4157,13 +4127,13 @@ fn void builtin_uint8array_proto_to_hex(BuiltinContext* ctx) {
     uint out_len = len * 2;
     char* out = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(out_len == 0 ? 1 : out_len));
     if (out == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
+    defer ctx.heap.free_func(ctx.heap.heap_udata, out);
     for (uint i = 0; i < len; i++) {
         char b = data[i];
         out[i * 2]     = HEX_DIGITS[(b >> 4) & 0xF];
         out[i * 2 + 1] = HEX_DIGITS[b & 0xF];
     }
     HString* result = ctx.heap.str_intern(out[:out_len]);
-    ctx.heap.free_func(ctx.heap.heap_udata, out);
     if (result == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
     ctx.result_string(result);
 }

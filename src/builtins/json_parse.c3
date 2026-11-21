@@ -159,12 +159,11 @@ fn bool json_token_to_double(JsonParseCtx* jctx, uint start, double* result) {
         text = (char*)jctx.heap.alloc_func(jctx.heap.heap_udata, (usz)count + 1);
         if (text == null) return false;
     }
+    defer if (text != &stack) jctx.heap.free_func(jctx.heap.heap_udata, text);
     for (uint i = 0; i < count; i++) text[i] = (char)jctx.src[start + i];
     text[count] = 0;
     char* endptr;
-    double d = dtoa_bindings::atod_strtod_compat(text, &endptr);
-    if (text != &stack) jctx.heap.free_func(jctx.heap.heap_udata, text);
-    *result = d;
+    *result = dtoa_bindings::atod_strtod_compat(text, &endptr);
     return true;
 }
 
@@ -267,9 +266,13 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     bool recording = out_rec != null && jctx.record;
     JsonParseRecord** elems = null;
     uint elem_cap = 0;
+    uint idx = 0;
+    defer if (elems != null) {
+        for (uint i = 0; i < idx; i++) builtins::json_record_free(jctx.heap, elems[i]);
+        jctx.heap.free_func(jctx.heap.heap_udata, elems);
+    }
 
     HString* len_key = jctx.heap.str(heap::BuiltinStr.LENGTH);
-    uint idx = 0;
 
     if (jctx.pos < jctx.len && jctx.src[jctx.pos] != ']') {
         while (true) {
@@ -279,10 +282,6 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
             defer jctx.heap.decref_tval(&elem);
             if (jctx.error || (elem.is_undefined() && elem.get_heapptr() == null && jctx.pos < jctx.len)) {
                 jctx.error = true;
-                if (elems != null) {
-                    for (uint i = 0; i < idx; i++) builtins::json_record_free(jctx.heap, elems[i]);
-                    jctx.heap.free_func(jctx.heap.heap_udata, elems);
-                }
                 builtins::json_record_free(jctx.heap, child);
                 TVal r; r.set_undefined(); return r; // parse error
             }
@@ -312,10 +311,6 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
 
             if (jctx.pos >= jctx.len) {
                 jctx.error = true;
-                if (elems != null) {
-                    for (uint i = 0; i < idx; i++) builtins::json_record_free(jctx.heap, elems[i]);
-                    jctx.heap.free_func(jctx.heap.heap_udata, elems);
-                }
                 TVal r; r.set_undefined(); return r;
             }
             if (jctx.src[jctx.pos] == ',') {
@@ -328,10 +323,6 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
 
     if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != ']') {
         jctx.error = true;
-        if (elems != null) {
-            for (uint i = 0; i < idx; i++) builtins::json_record_free(jctx.heap, elems[i]);
-            jctx.heap.free_func(jctx.heap.heap_udata, elems);
-        }
         TVal r; r.set_undefined(); return r;
     }
     jctx.pos++; // skip ']'
@@ -352,14 +343,9 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
             rec.value = result;
             rec.elements = elems;
             rec.elem_count = idx;
+            elems = null;
             *out_rec = rec;
-        } else if (elems != null) {
-            for (uint i = 0; i < idx; i++) builtins::json_record_free(jctx.heap, elems[i]);
-            jctx.heap.free_func(jctx.heap.heap_udata, elems);
         }
-    } else if (elems != null) {
-        for (uint i = 0; i < idx; i++) builtins::json_record_free(jctx.heap, elems[i]);
-        jctx.heap.free_func(jctx.heap.heap_udata, elems);
     }
 
     return result;
@@ -384,26 +370,24 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
     JsonEntry* entries = null;
     uint entry_count = 0;
     uint entry_cap = 0;
+    defer if (entries != null) builtins::json_entries_free(jctx.heap, entries, entry_count);
 
     if (jctx.pos < jctx.len && jctx.src[jctx.pos] != '}') {
         while (true) {
             json_skip_ws(jctx);
             if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != '\"') {
                 jctx.error = true;
-                builtins::json_entries_free(jctx.heap, entries, entry_count);
                 TVal r; r.set_undefined(); return r;
             }
             HString*? key_str = json_parse_string(jctx);
             if (try k = key_str) {
                 if (k == null) {
                     jctx.error = true;
-                    builtins::json_entries_free(jctx.heap, entries, entry_count);
                     TVal r; r.set_undefined(); return r;
                 }
                 json_skip_ws(jctx);
                 if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != ':') {
                     jctx.error = true;
-                    builtins::json_entries_free(jctx.heap, entries, entry_count);
                     TVal r; r.set_undefined(); return r;
                 }
                 jctx.pos++; // skip ':'
@@ -413,7 +397,6 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                 defer jctx.heap.decref_tval(&val);
                 if (jctx.error || (val.is_undefined() && val.get_heapptr() == null && jctx.pos < jctx.len)) {
                     jctx.error = true;
-                    builtins::json_entries_free(jctx.heap, entries, entry_count);
                     builtins::json_record_free(jctx.heap, child);
                     TVal r; r.set_undefined(); return r;
                 }
@@ -456,7 +439,6 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                 json_skip_ws(jctx);
                 if (jctx.pos >= jctx.len) {
                     jctx.error = true;
-                    builtins::json_entries_free(jctx.heap, entries, entry_count);
                     TVal r; r.set_undefined(); return r;
                 }
                 if (jctx.src[jctx.pos] == ',') {
@@ -466,7 +448,6 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                 }
             } else {
                 jctx.error = true;
-                builtins::json_entries_free(jctx.heap, entries, entry_count);
                 TVal r; r.set_undefined(); return r;
             }
         }
@@ -474,7 +455,6 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
 
     if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != '}') {
         jctx.error = true;
-        builtins::json_entries_free(jctx.heap, entries, entry_count);
         TVal r; r.set_undefined(); return r;
     }
     jctx.pos++; // skip '}'
@@ -491,12 +471,9 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
             rec.value = result;
             rec.entries = entries;
             rec.entry_count = entry_count;
+            entries = null;
             *out_rec = rec;
-        } else {
-            builtins::json_entries_free(jctx.heap, entries, entry_count);
         }
-    } else {
-        builtins::json_entries_free(jctx.heap, entries, entry_count);
     }
 
     return result;
