@@ -382,43 +382,39 @@ fn JsValue? JsContext.call(&self, JsValue func, JsValue[] args = {},
 
     // call_fn wants a contiguous TVal array; the handles have to be resolved
     // into one rather than cast, since a JsValue is a slot id, not a value.
-    TVal[MAX_INLINE_CALL_ARGS] inline_args;
-    TVal* argv = null;
-    TVal[] spill;
-    if (args.len > 0) {
-        if (args.len <= MAX_INLINE_CALL_ARGS) {
-            argv = &inline_args[0];
-        } else {
-            spill = mem::new_array(TVal, args.len);
-            argv = spill.ptr;
+    @stack_mem(CALL_ARGS_STACK_BYTES; Allocator smem) {
+        TVal[] argv_slice;
+        if (args.len > 0) {
+            TVal[]? alloced = alloc::alloc_array_try(smem, TVal, (sz)args.len);
+            if (catch alloced) return OUT_OF_MEMORY~;
+            argv_slice = alloced;
+            for (usz i = 0; i < args.len; i++) {
+                TVal a;
+                if (!self.load(args[i], &a)) a.set_undefined();
+                argv_slice[i] = a;
+            }
         }
-        for (usz i = 0; i < args.len; i++) {
-            TVal a;
-            if (!self.load(args[i], &a)) a.set_undefined();
-            argv[i] = a;
-        }
-    }
-    defer if (spill.len > 0) free(spill);
 
-    TVal tv;
-    if (!self.load(this_value, &tv)) tv.set_undefined();
+        TVal tv;
+        if (!self.load(this_value, &tv)) tv.set_undefined();
 
-    self.rt.heap.has_error = false;
-    TVal res = self.rt.heap.call_fn((void*)self.rt.vm, fv, argv, (uint)args.len, tv);
-    if (self.rt.heap.has_error || self.rt.heap.uncatchable_throw) {
-        // Keep interrupts distinct from throws, as vm_fault does.
-        if (self.rt.heap.uncatchable_throw) {
-            embed::finish_interrupt(self.rt);
-            embed::set_err(self.rt, embed::BK_ERR_INTERRUPT, "interrupted");
-            return INTERRUPTED~;
-        }
-        embed::describe_error(self.rt, &self.rt.heap.error_value);
         self.rt.heap.has_error = false;
-        self.rt.vm.has_error = false;
-        self.rt.vm.throw_pending = false;
-        return JS_EXCEPTION~;
-    }
-    return self.root(res);
+        TVal res = self.rt.heap.call_fn((void*)self.rt.vm, fv, argv_slice.ptr, (uint)args.len, tv);
+        if (self.rt.heap.has_error || self.rt.heap.uncatchable_throw) {
+            // Keep interrupts distinct from throws, as vm_fault does.
+            if (self.rt.heap.uncatchable_throw) {
+                embed::finish_interrupt(self.rt);
+                embed::set_err(self.rt, embed::BK_ERR_INTERRUPT, "interrupted");
+                return INTERRUPTED~;
+            }
+            embed::describe_error(self.rt, &self.rt.heap.error_value);
+            self.rt.heap.has_error = false;
+            self.rt.vm.has_error = false;
+            self.rt.vm.throw_pending = false;
+            return JS_EXCEPTION~;
+        }
+        return self.root(res);
+    };
 }
 
 // A native promise capability. These three owned roots outlive @scope; copies
@@ -445,8 +441,7 @@ fn JsDeferred? JsContext.deferred(&self) {
     builtins::PromiseCapability cap = builtins::promise_new_capability(h, p);
     if (cap.promise == null) return OUT_OF_MEMORY~;
     JsDeferred out;
-    bool complete;
-    defer if (!complete) self.release_deferred(out);
+    defer catch self.release_deferred(out);
     out.promise.slot = embed::slot_alloc(self.rt, tv);
     if (!out.promise.slot) return VALUE_TABLE_FULL~;
     tv.set_object(cap.resolve_func);
@@ -455,7 +450,6 @@ fn JsDeferred? JsContext.deferred(&self) {
     tv.set_object(cap.reject_func);
     out.reject.slot = embed::slot_alloc(self.rt, tv);
     if (!out.reject.slot) return VALUE_TABLE_FULL~;
-    complete = true;
     return out;
 }
 
@@ -1107,36 +1101,33 @@ fn void JsCtx.throw_value(self, JsArg v) => builtins::host_throw(self.ctx, v.tv)
 // reports JS_EXCEPTION. Returning immediately propagates it to JS. A `ret` after
 // a failed `call` is ignored, so the exception is not swallowed.
 //
-// Faults: NOT_CALLABLE, JS_EXCEPTION
+// Faults: NOT_CALLABLE, JS_EXCEPTION, OUT_OF_MEMORY
 fn JsArg? JsCtx.call(self, JsArg func, JsArg[] args = {}, JsArg this_value = {}) {
     if (func.type_of() != JsType.FUNCTION) return NOT_CALLABLE~;
 
     // host_call wants a contiguous TVal array. Copying rather than casting the
     // JsArg slice keeps the single-field layout an implementation detail.
-    TVal[MAX_INLINE_CALL_ARGS] inline_args;
-    TVal* argv = null;
-    TVal[] spill;
-    if (args.len > 0) {
-        if (args.len <= MAX_INLINE_CALL_ARGS) {
-            argv = &inline_args[0];
-        } else {
-            spill = mem::new_array(TVal, args.len);
-            argv = spill.ptr;
+    @stack_mem(CALL_ARGS_STACK_BYTES; Allocator smem) {
+        TVal[] argv_slice;
+        if (args.len > 0) {
+            TVal[]? alloced = alloc::alloc_array_try(smem, TVal, (sz)args.len);
+            if (catch alloced) return OUT_OF_MEMORY~;
+            argv_slice = alloced;
+            for (usz i = 0; i < args.len; i++) argv_slice[i] = args[i].tv;
         }
-        for (usz i = 0; i < args.len; i++) argv[i] = args[i].tv;
-    }
-    defer if (spill.len > 0) free(spill);
 
-    bool ok = false;
-    TVal r = builtins::host_call(self.ctx, func.tv, argv, (uint)args.len, this_value.tv, &ok);
-    if (!ok) return JS_EXCEPTION~;
-    JsArg out = { .tv = r };
-    return out;
+        bool ok = false;
+        TVal r = builtins::host_call(self.ctx, func.tv, argv_slice.ptr, (uint)args.len, this_value.tv, &ok);
+        if (!ok) return JS_EXCEPTION~;
+        JsArg out = { .tv = r };
+        return out;
+    };
 }
 
 // Argument counts up to this are staged on the C3 stack; beyond it `call`
-// allocates. Sized to cover every realistic callback signature.
+// falls back to `mem`. Extra slack covers OnStackAllocator header/alignment.
 const usz MAX_INLINE_CALL_ARGS = 8;
+const sz  CALL_ARGS_STACK_BYTES = (sz)(MAX_INLINE_CALL_ARGS * TVal::size + 32);
 
 // The callback runs synchronously on the engine thread. It may inspect and
 // retain values, but must not execute JS or replace the hook. Promise identity

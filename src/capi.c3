@@ -13,7 +13,6 @@ import boomkat::hstring;
 import boomkat::hbigint;
 import boomkat::bytecode;
 import boomkat::types;
-import libc;
 
 // C ABI marshalling over the shared embedding core. Context selection owns
 // per-realm error state; the runtime owns registry roots and callback payloads.
@@ -382,13 +381,14 @@ const uint BK_LOADER_NO_FILESYSTEM_FALLBACK = 2;
 alias BkResolveFn = fn int(void* ctx, char* referrer, char* specifier, ModuleRequest* request, void* opaque);
 alias BkLoadFn    = fn int(void* ctx, char* name, ModuleRequest* request, void* opaque);
 
-// `bytes` as a NUL-terminated malloc'd string, or null.
-fn char* cstr_copy(char[] bytes) {
-    char* out = (char*)libc::malloc(bytes.len + 1);
-    if (out == null) return null;
-    if (bytes.len > 0) mem::copy(out, bytes.ptr, (sz)bytes.len);
-    out[bytes.len] = 0;
-    return out;
+const sz RESOLVE_STACK_BYTES = 512;
+
+// `bytes` as a NUL-terminated C string in `allocator`.
+fn char*? copy_cstr(Allocator allocator, char[] bytes) @local {
+    char[] buf = alloc::alloc_array_try(allocator, char, (sz)bytes.len + 1)!;
+    if (bytes.len > 0) mem::copy(buf.ptr, bytes.ptr, (sz)bytes.len);
+    buf[bytes.len] = 0;
+    return buf.ptr;
 }
 
 // Parks the host's failure as the pending module error.
@@ -409,17 +409,19 @@ fn char[]? loader_resolve(char[] base_name, char[] specifier, void* udata) {
         if (!fallback) return esm::MODULE_ERROR~;
         return esm::default_resolve_name(base_name, specifier);
     }
-    char* ref = cstr_copy(base_name);
-    char* spec = cstr_copy(specifier);
-    defer { libc::free(ref); libc::free(spec); }
-    if (ref == null || spec == null) return esm::MODULE_ERROR~;
-    ModuleRequest req = { .rt = rt };
-    int rc = ((BkResolveFn)l.resolve)(rt.active, ref, spec, &req, l.opaque);
-    if (rc == BK_OK && req.name.ptr != null) return req.name;
-    if (req.name.ptr != null) mem::free(req.name.ptr);
-    if (rc == BK_OK && !req.failed && fallback) return esm::default_resolve_name(base_name, specifier);
-    park_module_error(rt, &req);
-    return esm::MODULE_ERROR~;
+    @stack_mem(RESOLVE_STACK_BYTES; Allocator smem) {
+        char*? ref = copy_cstr(smem, base_name);
+        if (catch ref) return esm::MODULE_ERROR~;
+        char*? spec = copy_cstr(smem, specifier);
+        if (catch spec) return esm::MODULE_ERROR~;
+        ModuleRequest req = { .rt = rt };
+        int rc = ((BkResolveFn)l.resolve)(rt.active, ref, spec, &req, l.opaque);
+        if (rc == BK_OK && req.name.ptr != null) return req.name;
+        if (req.name.ptr != null) mem::free(req.name.ptr);
+        if (rc == BK_OK && !req.failed && fallback) return esm::default_resolve_name(base_name, specifier);
+        park_module_error(rt, &req);
+        return esm::MODULE_ERROR~;
+    };
 }
 
 // The request for `name` an asynchronous load left on the runtime, or null.
@@ -541,52 +543,57 @@ fn int define_native(Runtime* rt, char[] name, TVal exports) {
     if (rc != BK_OK) return rc;
     HObject* karr = (HObject*)keys.get_heapptr();
     ulong keys_held = embed::slot_alloc(rt, keys);
+    if (keys_held == 0) return fail(rt, BK_ERR_FULL, "value registry full");
     defer embed::slot_release(rt, keys_held);
     ulong count;
     rc = length_of(rt, karr, &count);
     if (rc != BK_OK) return rc;
-    char[][] names = mem::new_array(char[], (sz)(count + 1));
-    TVal[] values = mem::new_array(TVal, (sz)(count + 1));
-    // Registry roots keep values read so far alive while later getters run.
-    ulong[] held = mem::new_array(ulong, (sz)(count + 1));
-    defer {
-        foreach (n : names) if (n.ptr != null) mem::free(n.ptr);
-        foreach (h : held) if (h != 0) embed::slot_release(rt, h);
-        mem::free(names.ptr);
-        mem::free(values.ptr);
-        mem::free(held.ptr);
-    }
-    usz used = 0;
-    bool has_default = false;
-    HObject* eo = (HObject*)exports.get_heapptr();
-    for (ulong i = 0; i < count; i++) {
-        TVal kv;
-        hp.has_error = false;
-        char[24] digits;
-        usz nd = 0;
-        ulong x = i;
-        do { digits[23 - nd++] = (char)('0' + x % 10); x /= 10; } while (x != 0);
-        HString* index = hp.str_intern(digits[24 - nd:nd]);
-        if (index == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
-        if (!builtins::js_get_with_receiver((void*)rt.vm, hp, karr, index, keys, &kv)) return vm_fault(rt);
-        if (!kv.is_string()) continue;
-        HString* key = (HString*)kv.get_heapptr();
-        if (!builtins::js_get_with_receiver((void*)rt.vm, hp, eo, key, exports, &values[used])) return vm_fault(rt);
-        held[used] = embed::slot_alloc(rt, values[used]);
-        char[] buf = mem::new_array(char, (sz)key.unit_len() * 3 + 1);
-        names[used] = buf[:key.write_cesu8(buf)];
-        if (names[used] == "default") has_default = true;
-        used++;
-    }
-    if (!has_default) {
-        char[] buf = mem::new_array(char, 8);
-        mem::copy(buf.ptr, "default", 7);
-        names[used] = buf[:7];
-        values[used] = exports;
-        used++;
-    }
-    if (!esm::define_native_module(hp, name, names[:used], values[:used])) return fail(rt, BK_ERR_NOMEM, "out of memory");
-    return BK_OK;
+    if (count >= (ulong)((usz)sz::max / char[]::size)) return fail(rt, BK_ERR_NOMEM, "out of memory");
+    @pool() {
+        sz cap = (sz)(count + 1);
+        char[][]? names = alloc::alloc_array_try(tmem, char[], cap);
+        if (catch names) return fail(rt, BK_ERR_NOMEM, "out of memory");
+        TVal[]? values = alloc::alloc_array_try(tmem, TVal, cap);
+        if (catch values) return fail(rt, BK_ERR_NOMEM, "out of memory");
+        // Registry roots keep values read so far alive while later getters run.
+        // Zero-initialized so cleanup walks the whole slice (including an entry
+        // whose name allocation fails before `used` advances).
+        ulong[]? held = alloc::new_array_try(tmem, ulong, cap);
+        if (catch held) return fail(rt, BK_ERR_NOMEM, "out of memory");
+        defer foreach (h : held) if (h != 0) embed::slot_release(rt, h);
+        usz used = 0;
+        bool has_default = false;
+        HObject* eo = (HObject*)exports.get_heapptr();
+        for (ulong i = 0; i < count; i++) {
+            TVal kv;
+            hp.has_error = false;
+            char[24] digits;
+            usz nd = 0;
+            ulong x = i;
+            do { digits[23 - nd++] = (char)('0' + x % 10); x /= 10; } while (x != 0);
+            HString* index = hp.str_intern(digits[24 - nd:nd]);
+            if (index == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
+            if (!builtins::js_get_with_receiver((void*)rt.vm, hp, karr, index, keys, &kv)) return vm_fault(rt);
+            if (!kv.is_string()) continue;
+            HString* key = (HString*)kv.get_heapptr();
+            if (!builtins::js_get_with_receiver((void*)rt.vm, hp, eo, key, exports, &values[used])) return vm_fault(rt);
+            ulong slot = embed::slot_alloc(rt, values[used]);
+            if (slot == 0) return fail(rt, BK_ERR_FULL, "value registry full");
+            held[used] = slot;
+            char[]? buf = alloc::alloc_array_try(tmem, char, (sz)((usz)key.unit_len() * 3 + 1));
+            if (catch buf) return fail(rt, BK_ERR_NOMEM, "out of memory");
+            names[used] = buf[:key.write_cesu8(buf)];
+            if (names[used] == "default") has_default = true;
+            used++;
+        }
+        if (!has_default) {
+            names[used] = "default";
+            values[used] = exports;
+            used++;
+        }
+        if (!esm::define_native_module(hp, name, names[:used], values[:used])) return fail(rt, BK_ERR_NOMEM, "out of memory");
+        return BK_OK;
+    };
 }
 
 fn int bk_module_provide_native(ModuleRequest* req, ulong exports) @export("bk_module_provide_native") {

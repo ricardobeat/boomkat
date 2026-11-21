@@ -251,6 +251,33 @@ fn void sort_lifecycle() {
     assert(ok == 1);
 }
 
+fn void call_and_deferred_lifecycle() {
+    JsContext context;
+    context.create()!!;
+    defer context.destroy();
+
+    // Exceed the inline argument buffer so JsContext.call exercises heap fallback.
+    JsValue sum = context.eval("(function(...xs) { let s = 0; for (let x of xs) s += x; return s; })")!!;
+    defer context.release(sum);
+    JsValue[12] args;
+    for (usz i = 0; i < args.len; i++) args[i] = context.number((double)(i + 1))!!;
+    defer foreach (a : args) context.release(a);
+    JsValue total = context.call(sum, args[..])!!;
+    defer context.release(total);
+    if (context.as_number(total)!! != 78.0) unreachable("12-arg JsContext.call failed");
+
+    // Exercise 0-arg JsContext.call and JsContext.deferred() normal lifecycle.
+    JsValue zero = context.call(sum)!!;
+    defer context.release(zero);
+    if (context.as_number(zero)!! != 0.0) unreachable("0-arg JsContext.call failed");
+    JsDeferred d = context.deferred()!!;
+    defer context.release_deferred(d);
+    JsValue forty_two = context.number(42.0)!!;
+    defer context.release(forty_two);
+    context.settle_deferred(d, true, forty_two)!!;
+    context.get_runtime().drain_microtasks()!!;
+}
+
 fn void main() {
     // Prime one-time engine globals outside the leak scope, then assert that
     // full runtime/context/module lifecycles release every `mem` allocation.
@@ -266,6 +293,7 @@ fn void main() {
         module_lifecycle();
         async_loader_lifecycle();
         sort_lifecycle();
+        call_and_deferred_lifecycle();
     };
     io::printn("C3 context lifecycle: PASS");
 }
