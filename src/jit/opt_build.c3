@@ -1387,6 +1387,10 @@ fn bool OptBuild.get_variable(&self, bool scoped) {
     uint ra = self.w.a;
     if (ra >= self.nregs) return false;
     if (!scoped && self.fold_global()) return true;
+    // GETGLOBAL's var IC lives on the function being optimized (self.f), allocated lazily on a
+    // frame's first run: an entry compiled before that (--opt-always on a host callback's first
+    // call) has none yet, so the fast path below, whose vic is a bare offset into it, must not run.
+    if (!scoped && self.f.var_ic_entries == null) return self.generic();
     uint closure = NO_NODE;
     if (scoped && !self.body_closure(&closure)) return self.generic();
     uint t = self.typed_load(OptOp.LOAD_GLOBAL, NO_NODE);
