@@ -66,7 +66,8 @@ upsert "$(jq -nc --arg p "$prefix" --arg h "$HOST" '{
     Triggers: [{Type: 0, PatternMatchingType: 0, PatternMatches: ["*/\($p)"]}]
 }')"
 
-purge=$(jq -rn --arg u "$HOST/$prefix/*" '$u | @uri')
-bunny api POST "/purge?url=$purge&async=false" >/dev/null
+# Purge the whole zone: a wildcard URL purge can leave pages cached, and the
+# zone caches for 30 days.
+bunny api POST "/pullzone/$MAIN_PULL_ZONE/purgeCache" >/dev/null
 
 echo "$HOST/$prefix/ -> $site $(jq -r .ActionParameter3 <<<"$serve")"
