@@ -512,8 +512,10 @@ fn void Parser.destroy(&self) {
 }
 
 // Return to the state `saved` and `lex` hold, taken before a speculative parse.
-// The parser's lists keep the buffers they have now, which the speculation may
-// have reallocated: only their lengths go back.
+// Stack-like lists keep the buffers they have now (which speculation may have
+// reallocated) and roll back only their lengths; reused scratch tables
+// (dv_binds/dv_bflags/dv_slot/dv_seen and their counters) keep their live state
+// so generation stamps cannot collide after a rewind.
 fn void Parser.rewind(&self, Parser* saved, Lexer* lex) {
     *self.lex = *lex;
     Vec{uint} scratch = self.scratch;
@@ -521,15 +523,39 @@ fn void Parser.rewind(&self, Parser* saved, Lexer* lex) {
     Vec{uint} param_props = self.ts_param_props;
     Vec{uint} scope_names = self.ts_scope_names;
     Vec{uint} type_imports = self.ts_type_imports;
+    Vec{DvScope} dv_scopes = self.dv_scopes;
+    Vec{DvSite} dv_sites = self.dv_sites;
+    Vec{uint} dv_refs = self.dv_refs;
+    Vec{uint} dv_marks = self.dv_marks;
+    Vec{DvBinding} dv_binds = self.dv_binds;
+    Vec{char} dv_bflags = self.dv_bflags;
+    Vec{uint} dv_slot = self.dv_slot;
+    uint dv_slot_count = self.dv_slot_count;
+    Vec{uint} dv_seen = self.dv_seen;
+    uint dv_seen_gen = self.dv_seen_gen;
     *self = *saved;
     scratch.len = saved.scratch.len;
     exports.len = saved.ts_exports.len;
     param_props.len = saved.ts_param_props.len;
     scope_names.len = saved.ts_scope_names.len;
     type_imports.len = saved.ts_type_imports.len;
+    dv_scopes.len = saved.dv_scopes.len;
+    dv_sites.len = saved.dv_sites.len;
+    dv_refs.len = saved.dv_refs.len;
+    dv_marks.len = saved.dv_marks.len;
     self.scratch = scratch;
     self.ts_exports = exports;
     self.ts_param_props = param_props;
     self.ts_scope_names = scope_names;
     self.ts_type_imports = type_imports;
+    self.dv_scopes = dv_scopes;
+    self.dv_sites = dv_sites;
+    self.dv_refs = dv_refs;
+    self.dv_marks = dv_marks;
+    self.dv_binds = dv_binds;
+    self.dv_bflags = dv_bflags;
+    self.dv_slot = dv_slot;
+    self.dv_slot_count = dv_slot_count;
+    self.dv_seen = dv_seen;
+    self.dv_seen_gen = dv_seen_gen;
 }
