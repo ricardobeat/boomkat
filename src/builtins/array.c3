@@ -1891,43 +1891,51 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
 // A larger buffer costs 128 KB of native stack per level, which can fault before
 // the run-depth guard throws.
 const usz SORT_INLINE_ELEMS = 64;
+// +32 covers OnStackAllocatorHeader (8 B) and up to 15 B alignment padding so
+// all SORT_INLINE_ELEMS elements stay on the stack without falling back to mem.
+const sz  SORT_STACK_BYTES  = (sz)(SORT_INLINE_ELEMS * TVal::size + 32);
 
-// Stable bottom-up merge sort. Returns false if comparefn threw. The caller
-// must keep the items rooted, since comparefn can release them.
+// Stable bottom-up merge sort. Returns false if comparefn threw or OOM. The
+// caller must keep the items rooted, since comparefn can release them.
 fn bool array_merge_sort(BuiltinContext* ctx, TVal[] items, TVal comparefn, bool has_comparefn) {
     usz count = items.len;
     if (count <= 1) return true;
-    TVal[SORT_INLINE_ELEMS] stack_temp;
-    TVal[] temp = count > SORT_INLINE_ELEMS ? mem::temp_array(TVal, (sz)count) : stack_temp[:count];
-
-    for (usz width = 1; width < count; width *= 2) {
-        for (usz i = 0; i < count; i += 2 * width) {
-            usz left = i;
-            usz mid = i + width < count ? i + width : count;
-            usz right = i + 2 * width < count ? i + 2 * width : count;
-
-            // Copy left run into temp buffer.
-            for (usz j = left; j < mid; j++) {
-                temp[j] = items[j];
-            }
-
-            // Merge temp[left..mid-1] and items[mid..right-1] back into items.
-            usz l = left;
-            usz r = mid;
-            usz k = left;
-            while (l < mid && r < right) {
-                int cmp = array_sort_compare(ctx, comparefn, has_comparefn, temp[l], items[r]);
-                if (ctx.should_throw) return false;
-                if (cmp <= 0) {
-                    items[k++] = temp[l++];
-                } else {
-                    items[k++] = items[r++];
-                }
-            }
-            while (l < mid) items[k++] = temp[l++];
+    @stack_mem(SORT_STACK_BYTES; Allocator smem) {
+        TVal[]? temp = alloc::alloc_array_try(smem, TVal, (sz)count);
+        if (catch temp) {
+            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+            return false;
         }
-    }
-    return true;
+
+        for (usz width = 1; width < count; width *= 2) {
+            for (usz i = 0; i < count; i += 2 * width) {
+                usz left = i;
+                usz mid = i + width < count ? i + width : count;
+                usz right = i + 2 * width < count ? i + 2 * width : count;
+
+                // Copy left run into temp buffer.
+                for (usz j = left; j < mid; j++) {
+                    temp[j] = items[j];
+                }
+
+                // Merge temp[left..mid-1] and items[mid..right-1] back into items.
+                usz l = left;
+                usz r = mid;
+                usz k = left;
+                while (l < mid && r < right) {
+                    int cmp = array_sort_compare(ctx, comparefn, has_comparefn, temp[l], items[r]);
+                    if (ctx.should_throw) return false;
+                    if (cmp <= 0) {
+                        items[k++] = temp[l++];
+                    } else {
+                        items[k++] = items[r++];
+                    }
+                }
+                while (l < mid) items[k++] = temp[l++];
+            }
+        }
+        return true;
+    };
 }
 
 fn void builtin_array_proto_sort(BuiltinContext* ctx) {
@@ -1958,84 +1966,100 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         return;
     }
 
-    // Collect present elements into a C3 buffer.  Holes are skipped here and
-    // restored as deletions at the end, which avoids the dense/named-property
-    // mismatch that occurs when writing "undefined" into a slot that still has
-    // a named property.
-    TVal[SORT_INLINE_ELEMS] stack_items;
-    TVal[] items;
-    if (len > SORT_INLINE_ELEMS) {
-        uint heap_len = len > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)len;
-        items = mem::temp_array(TVal, (sz)heap_len);
-    } else {
-        items = stack_items[0:(uint)len];
-    }
+    // Collect present elements into a C3 buffer, starting on the stack and
+    // growing as present elements appear so huge sparse lengths do not reserve
+    // memory for holes.  Holes are skipped here and restored as deletions at
+    // the end, which avoids the dense/named-property mismatch that occurs when
+    // writing "undefined" into a slot that still has a named property.
+    @stack_mem(SORT_STACK_BYTES; Allocator smem) {
+        usz init_cap = len < SORT_INLINE_ELEMS ? (usz)len : SORT_INLINE_ELEMS;
+        TVal[]? items_opt = alloc::alloc_array_try(smem, TVal, (sz)init_cap);
+        if (catch items_opt) {
+            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+            return;
+        }
+        TVal[] items = items_opt;
 
-    // Getters can release earlier elements during collection, and write-back
-    // can release elements still waiting in items. Retain each value before
-    // the next observable operation; the root also covers comparator calls.
-    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch holder_obj) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* holder = holder_obj;
-    heap::ObjectRoot holder_root;
-    ctx.heap.push_object_root(&holder_root, holder);
-    defer ctx.heap.pop_object_root(&holder_root);
+        // Getters can release earlier elements during collection, and write-back
+        // can release elements still waiting in items. Retain each value before
+        // the next observable operation; the root also covers comparator calls.
+        HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (catch holder_obj) {
+            ctx.result_undefined();
+            return;
+        }
+        HObject* holder = holder_obj;
+        heap::ObjectRoot holder_root;
+        ctx.heap.push_object_root(&holder_root, holder);
+        defer ctx.heap.pop_object_root(&holder_root);
 
-    ulong present_count = 0;
-    for (ulong i = 0; i < len; i++) {
-        // Re-read the current length before each collection step.  Getters may
-        // have decreased length, in which case indices at or beyond the new
-        // length are treated as absent (matching V8's array semantics), while
-        // the loop still stops at the originally-captured length so elements
-        // appended during collection are not picked up.
-        ulong current_len;
-        if (!array_to_length(obj, ctx.heap, ctx, &current_len)) { ctx.result_undefined(); return; }
-        if (i >= current_len) continue;
+        ulong present_count = 0;
+        for (ulong i = 0; i < len; i++) {
+            // Re-read the current length before each collection step.  Getters may
+            // have decreased length, in which case indices at or beyond the new
+            // length are treated as absent (matching V8's array semantics), while
+            // the loop still stops at the originally-captured length so elements
+            // appended during collection are not picked up.
+            ulong current_len;
+            if (!array_to_length(obj, ctx.heap, ctx, &current_len)) { ctx.result_undefined(); return; }
+            if (i >= current_len) continue;
 
-        bool present = arr_has_prop_ctx(ctx, obj, i);
-        if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (present) {
-            TVal v;
-            if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                if (!holder.set_array_idx((uint)present_count, v, ctx.heap)) {
-                    ctx.result_undefined();
-                    return;
+            bool present = arr_has_prop_ctx(ctx, obj, i);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (present) {
+                TVal v;
+                if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
+                    if (ctx.should_throw) { ctx.result_undefined(); return; }
+                    if (!holder.set_array_idx((uint)present_count, v, ctx.heap)) {
+                        ctx.result_undefined();
+                        return;
+                    }
+                    if (present_count == items.len) {
+                        if (items.len > (usz)sz::max / (2 * TVal::size)) {
+                            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+                            return;
+                        }
+                        usz new_cap = items.len * 2;
+                        if ((ulong)new_cap > len) new_cap = (usz)len;
+                        TVal[]? grown = alloc::realloc_array_try(smem, items.ptr, TVal, (sz)new_cap);
+                        if (catch grown) {
+                            arr_throw_range_error(ctx, "Array.prototype.sort out of memory");
+                            return;
+                        }
+                        items = grown;
+                    }
+                    items[present_count] = v;
+                    present_count++;
                 }
-                items[present_count] = v;
-                present_count++;
             }
         }
-    }
 
-    if (!array_merge_sort(ctx, items[:present_count], comparefn, has_comparefn)) {
-        ctx.result_undefined();
-        return;
-    }
-
-    // Write sorted present elements back to indices 0..present_count-1 using
-    // [[Set]] semantics so that accessor setters are invoked.
-    for (ulong i = 0; i < present_count; i++) {
-        if (!array_set_elem_ulong_set(ctx, obj, i, items[i])) {
+        if (!array_merge_sort(ctx, items[:present_count], comparefn, has_comparefn)) {
             ctx.result_undefined();
             return;
         }
-    }
 
-    // Delete trailing slots so holes remain holes (ES2026 §23.1.3.30).
-    for (ulong i = present_count; i < len; i++) {
-        if (!array_delete_elem_ulong_checked(ctx, obj, i)) {
-            ctx.result_undefined();
-            return;
+        // Write sorted present elements back to indices 0..present_count-1 using
+        // [[Set]] semantics so that accessor setters are invoked.
+        for (ulong i = 0; i < present_count; i++) {
+            if (!array_set_elem_ulong_set(ctx, obj, i, items[i])) {
+                ctx.result_undefined();
+                return;
+            }
         }
-    }
 
-    // The spec does not set length after sorting; any side effects from
-    // getters/setters during the sort are allowed to persist.
-    ctx.result_object(obj);
+        // Delete trailing slots so holes remain holes (ES2026 §23.1.3.30).
+        for (ulong i = present_count; i < len; i++) {
+            if (!array_delete_elem_ulong_checked(ctx, obj, i)) {
+                ctx.result_undefined();
+                return;
+            }
+        }
+
+        // The spec does not set length after sorting; any side effects from
+        // getters/setters during the sort are allowed to persist.
+        ctx.result_object(obj);
+    };
 }
 
 // ============================================================================
@@ -2263,62 +2287,71 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
 
     // Step 3: Read all elements, holes included, into a list. The holder
     // keeps them alive while getters and comparefn run.
-    TVal[SORT_INLINE_ELEMS] stack_items;
-    TVal[] items = len > SORT_INLINE_ELEMS ? mem::temp_array(TVal, (sz)len) : stack_items[:(usz)len];
-
-    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch holder_obj) {
-        ctx.result_undefined();
+    if (len > (ulong)((usz)sz::max / TVal::size)) {
+        arr_throw_range_error(ctx, "Array.prototype.toSorted out of memory");
         return;
     }
-    HObject* holder = holder_obj;
-    heap::ObjectRoot holder_root;
-    ctx.heap.push_object_root(&holder_root, holder);
-    defer ctx.heap.pop_object_root(&holder_root);
+    @stack_mem(SORT_STACK_BYTES; Allocator smem) {
+        TVal[]? items = alloc::alloc_array_try(smem, TVal, (sz)len);
+        if (catch items) {
+            arr_throw_range_error(ctx, "Array.prototype.toSorted out of memory");
+            return;
+        }
 
-    for (ulong i = 0; i < len; i++) {
-        TVal elem; elem.set_undefined();
-        arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
-        if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (!holder.set_array_idx((uint)i, elem, ctx.heap)) {
+        HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (catch holder_obj) {
             ctx.result_undefined();
             return;
         }
-        items[i] = elem;
-    }
+        HObject* holder = holder_obj;
+        heap::ObjectRoot holder_root;
+        ctx.heap.push_object_root(&holder_root, holder);
+        defer ctx.heap.pop_object_root(&holder_root);
 
-    // Step 4: SortCompare (§23.1.3.34.1) puts undefined last without calling
-    // comparefn.
-    if (!array_merge_sort(ctx, items, comparefn, !comparefn.is_undefined())) {
-        ctx.result_undefined();
-        return;
-    }
-
-    // Step 5: Create result array and populate with sorted elements
-    HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch new_arr) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* result = new_arr;
-    ctx.heap.set_prototype(result, ctx.heap.array_proto);
-
-    for (ulong i = 0; i < len; i++) {
-        TVal elem = items[i];
-        if (elem.is_undefined()) {
-            // Undefined (including former holes) must be an own property in
-            // the result, and array_set_elem_ulong treats undefined as a hole.
-            HString* key = ctx.heap.int_to_hstring((long)i);
-            if (key != null) {
-                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
+        for (ulong i = 0; i < len; i++) {
+            TVal elem; elem.set_undefined();
+            arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (!holder.set_array_idx((uint)i, elem, ctx.heap)) {
+                ctx.result_undefined();
+                return;
             }
-        } else {
-            array_set_elem_ulong(result, i, elem, ctx.heap);
+            items[i] = elem;
         }
-    }
-    array_set_length_ulong(result, len, ctx.heap, ctx.vm);
 
-    ctx.result_object(result);
+        // Step 4: SortCompare (§23.1.3.34.1) puts undefined last without calling
+        // comparefn.
+        if (!array_merge_sort(ctx, items, comparefn, !comparefn.is_undefined())) {
+            ctx.result_undefined();
+            return;
+        }
+
+        // Step 5: Create result array and populate with sorted elements
+        HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (catch new_arr) {
+            ctx.result_undefined();
+            return;
+        }
+        HObject* result = new_arr;
+        ctx.heap.set_prototype(result, ctx.heap.array_proto);
+
+        for (ulong i = 0; i < len; i++) {
+            TVal elem = items[i];
+            if (elem.is_undefined()) {
+                // Undefined (including former holes) must be an own property in
+                // the result, and array_set_elem_ulong treats undefined as a hole.
+                HString* key = ctx.heap.int_to_hstring((long)i);
+                if (key != null) {
+                    result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
+                }
+            } else {
+                array_set_elem_ulong(result, i, elem, ctx.heap);
+            }
+        }
+        array_set_length_ulong(result, len, ctx.heap, ctx.vm);
+
+        ctx.result_object(result);
+    };
 }
 
 // ============================================================================

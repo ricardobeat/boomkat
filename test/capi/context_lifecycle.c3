@@ -223,6 +223,34 @@ fn void async_loader_lifecycle() {
     }
 }
 
+fn void sort_lifecycle() {
+    JsContext context;
+    context.create()!!;
+    defer context.destroy();
+    // Arrays > SORT_INLINE_ELEMS (64) exercise heap fallback in @stack_mem:
+    // sort, toSorted, empty toSorted, re-entrant nested sort, and throw unwind.
+    double ok = number(&context,
+        "(() => {"
+        "  const a = []; for (let i = 200; i > 0; i--) a.push(i);"
+        "  a.sort((x, y) => x - y);"
+        "  if (a[0] !== 1 || a[199] !== 200) return 0;"
+        "  const b = a.toSorted((x, y) => y - x);"
+        "  if (b[0] !== 200 || b[199] !== 1 || [].toSorted().length !== 0) return 0;"
+        "  let threw = false;"
+        "  try { b.sort((x, y) => { if (x === 50) throw new Error('stop'); return x - y; }); } catch (e) { threw = true; }"
+        "  if (!threw) return 0;"
+        "  let nested = 0;"
+        "  const c = []; for (let i = 80; i > 0; i--) c.push(i);"
+        "  c.sort((x, y) => { if (nested === 0) { nested = 1; a.toSorted((p, q) => q - p); } return x - y; });"
+        "  if (c[0] !== 1 || c[79] !== 80) return 0;"
+        "  const sparse = { length: 5000, 0: 3, 4999: 1 };"
+        "  Array.prototype.sort.call(sparse, (x, y) => x - y);"
+        "  return sparse[0] === 1 && sparse[1] === 3 && !(4999 in sparse) ? 1 : 0;"
+        "})()"
+    );
+    assert(ok == 1);
+}
+
 fn void main() {
     // Prime one-time engine globals outside the leak scope, then assert that
     // full runtime/context/module lifecycles release every `mem` allocation.
@@ -237,6 +265,7 @@ fn void main() {
         owned_hooks();
         module_lifecycle();
         async_loader_lifecycle();
+        sort_lifecycle();
     };
     io::printn("C3 context lifecycle: PASS");
 }

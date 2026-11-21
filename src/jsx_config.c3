@@ -17,12 +17,14 @@ fn char[] find(char[] module_path) {
         sz slash = (sz)end - 1;
         while (slash >= 0 && module_path[slash] != '/') slash--;
         String dir = (String)module_path[:(usz)(slash + 1)];
-        foreach (name : names) {
-            if (try text = file::load(mem, string::tformat("%s%s", dir, name))) {
-                if (text.len > 0) return text;
-                mem::free(text.ptr);
+        @pool() {
+            foreach (name : names) {
+                if (try text = file::load(mem, string::tformat("%s%s", dir, name))) {
+                    if (text.len > 0) return text;
+                    mem::free(text.ptr);
+                }
             }
-        }
+        };
         if (slash <= 0) return {};
         end = (usz)slash;
     }
