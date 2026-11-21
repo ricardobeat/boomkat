@@ -3008,6 +3008,8 @@ fn void Heap.reset(&self) {
     self.gc_joint_hold    = false;
     self.gc_joint_active  = false;
     self.heap_limit_hit   = false;
+    // A limit collection asked for before the reset never completes.
+    if (self.accounting) self.plan_limit_gc();
     self.gc_phase         = GcPhase.IDLE;
     self.gc_in_step       = false;
     self.gc_root_stage = 0;

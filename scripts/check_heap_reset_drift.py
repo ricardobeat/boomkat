@@ -96,6 +96,49 @@ ALLOWED_NOT_RESET = {
 
     # ── Large string registry — count reset; cap kept ──
     "large_string_capacity", # Allocation capacity kept, count zeroed
+
+    # ── Object vectors and pools — reset reaches them indirectly ──
+    "objects_young",       # Cleared through object_list(i)
+    "objects_old",         # Same
+    "gc_sweep_young",      # Same
+    "obj_pool_plain",      # Freed through the obj_pools pointer array
+    "obj_pool_compact",
+    "obj_pool_shaped",
+    "obj_pool_array",
+    "obj_pool_dense_array",
+    "obj_pool_inline_arrays",
+    "obj_pool_gs",
+    "obj_pool_small",
+    "obj_pool_func",
+    "obj_pool_big",
+    "small_pools",         # Blocks freed one by one; pages kept for reuse
+
+    # ── Collector state valid across runs ──
+    "gc_major_epoch",      # Monotonic; freed pages carry no epoch
+    "gc_alloc_bitmap",     # Set at the start of every cycle
+    "gc_cycles",           # Statistic, and observed-death bookkeeping compares against it
+    "prototype_epoch",     # Monotonic so stale prototype caches stay invalid
+    "gc_trace_allocs",     # Debug switch
+
+    # ── Backing storage kept; counts reset ──
+    "deferred_final_capacity",
+    "external_buffers",
+    "external_buffer_capacity",
+
+    # ── Byte accounting — chosen at creation; heap_bytes follows live blocks ──
+    "accounting",
+    "user_alloc",
+    "user_realloc",
+    "user_free",
+    "user_udata",
+    "heap_bytes",
+    "heap_limit",
+    "external_bytes",      # Host-reported; the host releases it
+
+    # ── Job hook — installed by the host, kept like the rejection tracker ──
+    "job_hook",
+    "job_hook_runtime",
+    "job_hook_opaque",
 }
 
 
@@ -134,6 +177,11 @@ RESET_HELPERS = {
     "hobject::env_pool_teardown(self)": ("src/hobject.c3", "env_pool_teardown", "h"),
     "env::env_pool_teardown(h)": ("src/env.c3", "env_pool_teardown", "h"),
     "esm::free_defined_modules(self)": ("src/module.c3", "free_defined_modules", "heap"),
+    "self.clear_concat_cache()": ("src/heap.c3", "Heap.clear_concat_cache", "self"),
+    "self.run_deferred_finalizers()": ("src/heap.c3", "Heap.run_deferred_finalizers", "self"),
+    "self.weak_destroy()": ("src/gc/gc_weak.c3", "Heap.weak_destroy", "self"),
+    "self.free_symbol_registry()": ("src/heap.c3", "Heap.free_symbol_registry", "self"),
+    "self.plan_limit_gc()": ("src/gc/gc_control.c3", "Heap.plan_limit_gc", "self"),
 }
 
 
@@ -197,7 +245,7 @@ def extract_reset_fields(text, sources=None):
         if path not in sources:
             with open(os.path.join(PROJECT_DIR, path)) as f:
                 sources[path] = f.read()
-        body = extract_body(sources[path], rf'^fn void {re.escape(name)}\([^)]*\)')
+        body = extract_body(sources[path], rf'^fn [\w:*]+ {re.escape(name)}\([^)]*\)')
         fields = set(re.findall(rf'\b{re.escape(receiver)}\.(\w+)', body))
         calls = re.sub(r'\s+', '', body)
         for call, helper in RESET_HELPERS.items():
